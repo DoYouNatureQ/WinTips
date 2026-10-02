@@ -1,6 +1,6 @@
 # WinTips
 
-Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / Scroll Lock** 时，在任务栏上方居中弹出同款 Win11 质感的亚克力浮窗（外观 1:1 复刻 [FluentFlyout](https://github.com/unchihugo/FluentFlyout) 的锁键浮窗设计）；**Insert** 键以事件方式提示（系统层面没有开/关状态，改写模式由各应用自行维护）。
+Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / Scroll Lock** 时，在任务栏上方居中弹出同款 Win11 质感的亚克力浮窗
 
 ## 特性
 
@@ -64,7 +64,7 @@ dotnet publish -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
   -p:EnableCompressionInSingleFile=true -o publish
 
-# 重新生成应用图标（苹果风格 squircle）
+# 重新生成应用图标
 powershell -File tools/icogen.ps1
 ```
 
