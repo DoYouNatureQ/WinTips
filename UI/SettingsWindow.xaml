@@ -82,8 +82,8 @@
         </StackPanel>
 
         <TextBlock x:Name="FooterText" Grid.Row="4" FontSize="11.5" Margin="1,20,0,0"
-                   TextWrapping="Wrap">
-            <Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate">By NatureQ</Hyperlink>
+                   TextWrapping="Wrap" TextAlignment="Center">
+            <Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
         </TextBlock>
     </Grid>
 </Window>

@@ -5,7 +5,6 @@
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="Transparent" ShowInTaskbar="False" Topmost="True">
     <Window.Resources>
-        <!-- Win11 强调色主按钮 -->
         <Style x:Key="AccentButton" TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -36,7 +35,6 @@
         </Style>
     </Window.Resources>
 
-    <!-- 与设置窗口一致的 Win11 风格：Mica 底 + Fluent 排版 -->
     <Grid x:Name="Panel" Margin="26,20,26,22" MouseLeftButtonDown="Panel_MouseLeftButtonDown">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

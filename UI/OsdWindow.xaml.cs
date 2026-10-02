@@ -71,9 +71,10 @@ public partial class OsdWindow : Window
     {
         try
         {
-            Reposition();
             Root.Opacity = 0;
             Show();
+            ApplyChrome();
+            Reposition();
             Hide();
             _visible = false;
             Root.Opacity = 1;
@@ -100,10 +101,23 @@ public partial class OsdWindow : Window
             return;
         }
 
+        bool ready = new WindowInteropHelper(this).Handle != IntPtr.Zero;
+        if (ready)
+        {
+            ApplyChrome();
+            Reposition();
+        }
+
+        int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
+        if (ms > 0) Root.Opacity = 0;
+
         Show();
         _visible = true;
-        ApplyChrome();
-        Reposition();
+        if (!ready)
+        {
+            ApplyChrome();
+            Reposition();
+        }
         AnimateIn();
         RestartTimer();
     }

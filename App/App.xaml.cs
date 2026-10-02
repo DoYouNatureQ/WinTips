@@ -60,12 +60,15 @@ public partial class App : Application
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));
 
-        if (e.Args.Length > 0 && e.Args[0] == "--test")
-            RunTest(e.Args.Skip(1).ToArray());
-        else if (e.Args.Contains("--settings"))
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(ShowSettings));
-        else
-            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => _osd?.PreWarm()));
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+        {
+            _osd?.PreWarm();
+
+            if (e.Args.Length > 0 && e.Args[0] == "--test")
+                RunTest(e.Args.Skip(1).ToArray());
+            else if (e.Args.Contains("--settings"))
+                ShowSettings();
+        }));
     }
 
     private void RunTest(string[] args)
