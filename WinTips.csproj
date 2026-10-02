@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>WinTips</RootNamespace>
+    <AssemblyName>WinTips</AssemblyName>
+    <Version>1.0.0</Version>
+    <Product>WinTips</Product>
+    <Description>Win11 风格的键盘状态提示（大写/数字/滚动锁定与 Insert 键）</Description>
+    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\app.ico" />
+  </ItemGroup>
+
+  <!-- App.xaml 移入 App/ 子目录后需显式声明为应用定义 -->
+  <ItemGroup>
+    <ApplicationDefinition Include="App\App.xaml" />
+    <Page Remove="App\App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <!-- tools/docs 目录只放辅助脚本与参考资料，不参与编译 -->
+  <ItemGroup>
+    <Compile Remove="tools\**" />
+    <Page Remove="tools\**" />
+    <Content Remove="tools\**" />
+    <Compile Remove="docs\**" />
+    <Page Remove="docs\**" />
+    <Content Remove="docs\**" />
+  </ItemGroup>
+
+</Project>
