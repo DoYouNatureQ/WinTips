@@ -14,19 +14,15 @@ public sealed class AppSettings
     public double DisplaySeconds { get; set; } = 2.0;
     public bool LaunchAtStartup { get; set; }
 
-    /// <summary>浮现动画速度档位（FluentFlyout 同款）：0 无动画、1=0.5x、2=1x、3=1.5x、4=2x、5=3x。</summary>
-    public int AnimationSpeed { get; set; } = 3;
+    /// <summary>设置文件结构版本；V1.1 及以前没有该字段（AnimationSpeed 为整数档位）。</summary>
+    public int SettingsVersion { get; set; } = 2;
 
-    /// <summary>档位对应的基准动画时长（毫秒）。</summary>
-    public static int AnimationMs(int speed) => speed switch
-    {
-        0 => 0,
-        1 => 150,
-        2 => 300,
-        3 => 450,
-        4 => 600,
-        _ => 900,
-    };
+    /// <summary>浮现动画速度倍率：0 无动画，否则动画时长 = 300ms × 倍率（0.1–3.0，步进 0.1）。</summary>
+    public double AnimationSpeed { get; set; } = 1.0;
+
+    /// <summary>倍率对应的动画时长（毫秒）。</summary>
+    public static int AnimationMs(double speed) =>
+        speed <= 0 ? 0 : (int)Math.Round(300 * speed);
 
     public int AnimationMs() => AnimationMs(AnimationSpeed);
 
@@ -46,13 +42,43 @@ public sealed class AppSettings
         {
             if (File.Exists(FilePath))
             {
-                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath));
-                if (s != null) { Instance = s; return s; }
+                var text = File.ReadAllText(FilePath);
+                var s = JsonSerializer.Deserialize<AppSettings>(text);
+                if (s != null)
+                {
+                    if (MigrateFromV1(s, text)) s.Save();
+                    Instance = s;
+                    return s;
+                }
             }
         }
         catch { }
         Instance = new AppSettings();
         return Instance;
+    }
+
+    /// <summary>
+    /// V1.1 及以前 AnimationSpeed 是 0–5 整数档位（档距 0.5x），改为 0–3 倍率（步进 0.1）后，
+    /// 旧档位 g 等价于倍率 0.5 × g（档位 3=1.5x → 倍率 1.5，动画毫秒数不变）。
+    /// </summary>
+    private static bool MigrateFromV1(AppSettings s, string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                doc.RootElement.TryGetProperty(nameof(SettingsVersion), out _))
+                return false;
+
+            if (doc.RootElement.TryGetProperty(nameof(AnimationSpeed), out var el) &&
+                el.ValueKind == JsonValueKind.Number)
+            {
+                double gear = el.GetDouble();
+                s.AnimationSpeed = gear <= 0 ? 0 : Math.Min(gear * 0.5, 3.0);
+            }
+            return true;
+        }
+        catch { return false; }
     }
 
     public void Save()

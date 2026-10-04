@@ -13,8 +13,8 @@ namespace WinTips.UI;
 /// 左侧挂锁图标（锁扣随开/关旋转+回弹）、中间“大写锁定 开启/关闭”、
 /// 底部强调色指示条（开=60px 全不透明，关=36px 20% 不透明）。
 /// 显示于主显示器任务栏上方居中；点击穿透、不抢焦点。
-/// 注意：必须先 Show() 再触碰窗口句柄（改样式/定位），
-/// 否则 WPF 会创建一个永远无法真正显示的窗口。
+/// 预热用 EnsureHandle() 只建句柄不显示窗口（Show() 会带出一帧
+/// DWM 背景）；句柄就绪后 Show() 走快路径，无创建迟滞。
 /// </summary>
 public partial class OsdWindow : Window
 {
@@ -71,13 +71,14 @@ public partial class OsdWindow : Window
     {
         try
         {
-            Root.Opacity = 0;
-            Show();
+            // 只创建句柄、不显示窗口。若 Show/Hide 预热，冷启动时两者之间
+            // 的帧会被 DWM 合成出来：Root 全透明时系统背景（Mica）可见，
+            // 表现为开机首次启动闪现一个空窗口。EnsureHandle 同样会触发
+            // OnSourceInitialized，句柄就绪后首次 ShowTip 无创建迟滞。
+            if (new WindowInteropHelper(this).EnsureHandle() == IntPtr.Zero) return;
             ApplyChrome();
             Reposition();
-            Hide();
             _visible = false;
-            Root.Opacity = 1;
         }
         catch { }
     }

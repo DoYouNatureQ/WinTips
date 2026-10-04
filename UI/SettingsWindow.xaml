@@ -69,7 +69,7 @@
                             <TextBlock Text="浮现动画速度" FontSize="14"/>
                             <TextBlock x:Name="AnimSpeedText" FontSize="14" HorizontalAlignment="Right"/>
                         </Grid>
-                        <Slider x:Name="AnimSpeedSlider" Style="{StaticResource Win11Slider}" Minimum="0" Maximum="5" TickFrequency="1"
+                        <Slider x:Name="AnimSpeedSlider" Style="{StaticResource Win11Slider}" Minimum="0" Maximum="3" TickFrequency="0.1"
                                 IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,12,0,4"/>
                     </StackPanel>
                     <Border x:Name="SepB2" Height="1" Margin="0,3" Opacity="0.5"/>

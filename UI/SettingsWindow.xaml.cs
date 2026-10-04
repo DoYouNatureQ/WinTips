@@ -51,22 +51,19 @@ public partial class SettingsWindow : Window
         InsertToggle.IsChecked = s.ShowInsert;
         DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 1, 5);
         UpdateDurationText(s.DisplaySeconds);
-        AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 5);
+        AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
         StartupToggle.IsChecked = AppSettings.IsStartupSet();
     }
 
-    private static string AnimSpeedLabel(int speed) => speed switch
+    private static string AnimSpeedLabel(double speed)
     {
-        0 => "无动画",
-        1 => "0.5x（150 毫秒）",
-        2 => "1x（300 毫秒）",
-        3 => "1.5x（450 毫秒）",
-        4 => "2x（600 毫秒）",
-        _ => "3x（900 毫秒）",
-    };
+        if (speed <= 0) return "无动画";
+        string x = speed == Math.Floor(speed) ? $"{speed:0}x" : $"{speed:0.#}x";
+        return $"{x}（{AppSettings.AnimationMs(speed)} 毫秒）";
+    }
 
-    private void UpdateAnimSpeedText(int speed) => AnimSpeedText.Text = AnimSpeedLabel(speed);
+    private void UpdateAnimSpeedText(double speed) => AnimSpeedText.Text = AnimSpeedLabel(speed);
 
     private void WireEvents()
     {
@@ -87,7 +84,7 @@ public partial class SettingsWindow : Window
 
         AnimSpeedSlider.ValueChanged += (_, e) =>
         {
-            int speed = (int)e.NewValue;
+            double speed = Math.Round(e.NewValue, 1);
             UpdateAnimSpeedText(speed);
             Save(v => v.AnimationSpeed = speed);
         };
