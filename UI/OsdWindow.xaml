@@ -28,7 +28,8 @@
                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
                         <Path.RenderTransform>
                             <TransformGroup>
-                                <RotateTransform x:Name="ShackleRotation" Angle="0" CenterX="16" CenterY="7"/>
+                                <!-- 初始取“关闭”态，首次弹出（多为“开启”）才能完整播放过渡 -->
+                                <RotateTransform x:Name="ShackleRotation" Angle="25" CenterX="16" CenterY="7"/>
                                 <TranslateTransform x:Name="ShackleBounce" Y="0"/>
                             </TransformGroup>
                         </Path.RenderTransform>
@@ -38,7 +39,8 @@
             <TextBlock x:Name="LockTextBlock" FontSize="14" FontWeight="Medium"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Margin="18,0,0,2"/>
         </Grid>
+        <!-- 初始为“关闭”态（36px、20% 不透明），与锁扣初始角度配套 -->
         <Rectangle x:Name="LockIndicator" Fill="#0067C0" Height="3" RadiusX="2" RadiusY="2"
-                   Width="60" VerticalAlignment="Bottom" Margin="0,0,0,7"/>
+                   Width="36" Opacity="0.2" VerticalAlignment="Bottom" Margin="0,0,0,7"/>
     </Grid>
 </Window>
