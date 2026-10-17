@@ -15,7 +15,7 @@
         TextOptions.TextFormattingMode="Ideal">
     <!-- 布局与动效 1:1 复刻 FluentFlyout LockWindow（GPL-3.0 项目的设计） -->
     <Grid x:Name="Root">
-        <Grid Margin="16,6,12,10">
+    <Grid x:Name="ContentGrid" Margin="16,6,12,10">
             <Viewbox x:Name="LockSymbol" HorizontalAlignment="Left" Width="22" Height="22"
                      VerticalAlignment="Center" Margin="0,0,0,-2">
                 <Canvas Width="24" Height="24" ClipToBounds="False">
@@ -28,7 +28,7 @@
                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Window}}}">
                         <Path.RenderTransform>
                             <TransformGroup>
-                                <!-- 初始取“关闭”态，首次弹出（多为“开启”）才能完整播放过渡 -->
+                                <!-- 初始取“关闭”态；首次弹出前会按按键前的真实状态重摆，过渡起点才真实 -->
                                 <RotateTransform x:Name="ShackleRotation" Angle="25" CenterX="16" CenterY="7"/>
                                 <TranslateTransform x:Name="ShackleBounce" Y="0"/>
                             </TransformGroup>
@@ -36,10 +36,36 @@
                     </Path>
                 </Canvas>
             </Viewbox>
+            <Viewbox x:Name="ClipSymbol" HorizontalAlignment="Left" Width="22" Height="22"
+                     VerticalAlignment="Center" Visibility="Collapsed">
+                <Canvas Width="24" Height="24" ClipToBounds="False">
+                    <!-- 复制/粘贴：对勾折线，用 StrokeDashOffset 做“一笔画出”描边动画 -->
+                    <Path x:Name="CheckMark"
+                          Data="M5,12.5 L10,17.5 L19,7"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                          StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          StrokeLineJoin="Round" StrokeDashArray="8.75 8.75" StrokeDashOffset="8.75"/>
+                    <!-- 剪切：Segoe Fluent Icons 剪刀字形 -->
+                    <TextBlock x:Name="CutGlyph" Text="&#xE8C6;" Visibility="Collapsed"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"
+                               FontSize="16" Width="24" Height="24" Padding="0,4,0,0"
+                               TextAlignment="Center"
+                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"/>
+                </Canvas>
+            </Viewbox>
             <TextBlock x:Name="LockTextBlock" FontSize="14" FontWeight="Medium"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Margin="18,0,0,2"/>
+            <!-- 剪贴板提示的连续操作计数徽章（×1、×2…） -->
+            <Border x:Name="CountBadge" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    CornerRadius="9" Padding="7,2" Visibility="Collapsed"
+                    RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform>
+                    <ScaleTransform x:Name="BadgeScale"/>
+                </Border.RenderTransform>
+                <TextBlock x:Name="CountText" FontSize="12.5" FontWeight="SemiBold"/>
+            </Border>
         </Grid>
-        <!-- 初始为“关闭”态（36px、20% 不透明），与锁扣初始角度配套 -->
+        <!-- 初始为“关闭”态（36px、20% 不透明），与锁扣初始角度配套；首次弹出前按真实状态重摆 -->
         <Rectangle x:Name="LockIndicator" Fill="#0067C0" Height="3" RadiusX="2" RadiusY="2"
                    Width="36" Opacity="0.2" VerticalAlignment="Bottom" Margin="0,0,0,7"/>
     </Grid>

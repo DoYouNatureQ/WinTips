@@ -10,11 +10,32 @@ internal sealed class OsdController
     private TipKind _verifyKind;
     private bool _verifyState;
     private bool _verifyPending;
+
+    /// <summary>复制/剪切的“意图窗口”：按键后等剪贴板真正更新才提示，超时静默。</summary>
+    private readonly DispatcherTimer _clipPending = new() { Interval = TimeSpan.FromMilliseconds(800) };
+    private TipKind _clipPendingKind;
+
     private UI.OsdWindow? _window;
 
-    public OsdController() => _verify.Tick += VerifyTick;
+    public OsdController()
+    {
+        _verify.Tick += VerifyTick;
+        _clipPending.Tick += (_, _) => _clipPending.Stop();
+    }
 
-    private UI.OsdWindow Window => _window ??= new UI.OsdWindow();
+    /// <summary>创建浮窗并挂接剪贴板更新事件（PreWarm 启动时即会创建）。</summary>
+    private UI.OsdWindow Window
+    {
+        get
+        {
+            if (_window == null)
+            {
+                _window = new UI.OsdWindow();
+                _window.ClipboardUpdated += OnClipboardUpdated;
+            }
+            return _window;
+        }
+    }
 
     /// <summary>启动时预热浮窗，消除首次提示的创建迟滞。</summary>
     public void PreWarm() => Window.PreWarm();
@@ -39,6 +60,29 @@ internal sealed class OsdController
         Show(kind, null);
     }
 
+    /// <summary>Ctrl+C / Ctrl+V / Ctrl+X 按下。粘贴无法确认结果，按键即提示；
+    /// 复制/剪切等 WM_CLIPBOARDUPDATE 确认（终端里的 Ctrl+C 中断不会误弹）。</summary>
+    public void OnClipboardPressed(TipKind kind)
+    {
+        if (!IsEnabled(kind)) return;
+        if (kind == TipKind.Paste)
+        {
+            Show(kind, null);
+            return;
+        }
+        _clipPendingKind = kind;
+        _clipPending.Stop();
+        _clipPending.Start();
+    }
+
+    /// <summary>系统剪贴板更新：仅当处于复制/剪切意图窗口内才提示。</summary>
+    private void OnClipboardUpdated()
+    {
+        if (!_clipPending.IsEnabled) return;
+        _clipPending.Stop();
+        Show(_clipPendingKind, null);
+    }
+
     private void VerifyTick(object? sender, EventArgs e)
     {
         _verify.Stop();
@@ -59,6 +103,9 @@ internal sealed class OsdController
         TipKind.CapsLock => AppSettings.Instance.ShowCapsLock,
         TipKind.NumLock => AppSettings.Instance.ShowNumLock,
         TipKind.ScrollLock => AppSettings.Instance.ShowScrollLock,
+        TipKind.Copy => AppSettings.Instance.ShowCopy,
+        TipKind.Paste => AppSettings.Instance.ShowPaste,
+        TipKind.Cut => AppSettings.Instance.ShowCut,
         _ => AppSettings.Instance.ShowInsert,
     };
 }

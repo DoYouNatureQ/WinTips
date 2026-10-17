@@ -37,8 +37,9 @@ public partial class SettingsWindow : Window
         Resources["CardStrokeBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00));
         Resources["SliderRestBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x3D, 0x00, 0x00, 0x00));
         Resources["ThumbRingBrush"] = new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White);
+        Resources["SegHoverBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0F, 0x00, 0x00, 0x00));
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepB1, SepB2 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepB1, SepB2, SepB3 })
             sep.Background = divider;
     }
 
@@ -49,11 +50,22 @@ public partial class SettingsWindow : Window
         NumToggle.IsChecked = s.ShowNumLock;
         ScrollToggle.IsChecked = s.ShowScrollLock;
         InsertToggle.IsChecked = s.ShowInsert;
+        CopyToggle.IsChecked = s.ShowCopy;
+        PasteToggle.IsChecked = s.ShowPaste;
+        CutToggle.IsChecked = s.ShowCut;
         DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 1, 5);
         UpdateDurationText(s.DisplaySeconds);
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
+        LoadPlacement(s.TipPlacement);
         StartupToggle.IsChecked = AppSettings.IsStartupSet();
+    }
+
+    private void LoadPlacement(string placement)
+    {
+        PosLeft.IsChecked = placement == AppSettings.PlacementLeft;
+        PosCenter.IsChecked = placement != AppSettings.PlacementLeft && placement != AppSettings.PlacementRight;
+        PosRight.IsChecked = placement == AppSettings.PlacementRight;
     }
 
     private static string AnimSpeedLabel(double speed)
@@ -75,6 +87,12 @@ public partial class SettingsWindow : Window
         ScrollToggle.Unchecked += (_, _) => Save(v => v.ShowScrollLock = false);
         InsertToggle.Checked += (_, _) => Save(v => v.ShowInsert = true);
         InsertToggle.Unchecked += (_, _) => Save(v => v.ShowInsert = false);
+        CopyToggle.Checked += (_, _) => Save(v => v.ShowCopy = true);
+        CopyToggle.Unchecked += (_, _) => Save(v => v.ShowCopy = false);
+        PasteToggle.Checked += (_, _) => Save(v => v.ShowPaste = true);
+        PasteToggle.Unchecked += (_, _) => Save(v => v.ShowPaste = false);
+        CutToggle.Checked += (_, _) => Save(v => v.ShowCut = true);
+        CutToggle.Unchecked += (_, _) => Save(v => v.ShowCut = false);
 
         DurationSlider.ValueChanged += (_, e) =>
         {
@@ -91,6 +109,10 @@ public partial class SettingsWindow : Window
 
         StartupToggle.Checked += (_, _) => { AppSettings.SetStartup(true); Save(_ => { }); };
         StartupToggle.Unchecked += (_, _) => { AppSettings.SetStartup(false); Save(_ => { }); };
+
+        PosLeft.Checked += (_, _) => Save(v => v.TipPlacement = AppSettings.PlacementLeft);
+        PosCenter.Checked += (_, _) => Save(v => v.TipPlacement = AppSettings.PlacementCenter);
+        PosRight.Checked += (_, _) => Save(v => v.TipPlacement = AppSettings.PlacementRight);
     }
 
     private void Save(Action<AppSettings> apply)

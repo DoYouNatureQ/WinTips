@@ -174,6 +174,9 @@ public partial class TrayMenuWindow : Window
         _testSection.Children.Add(MakeTestItem("滚动锁定 开启", TipKind.ScrollLock, true));
         _testSection.Children.Add(MakeTestItem("滚动锁定 关闭", TipKind.ScrollLock, false));
         _testSection.Children.Add(MakeTestItem("Insert 键已按下", TipKind.Insert, null));
+        _testSection.Children.Add(MakeTestItem("已复制", TipKind.Copy, null));
+        _testSection.Children.Add(MakeTestItem("已粘贴", TipKind.Paste, null));
+        _testSection.Children.Add(MakeTestItem("已剪切", TipKind.Cut, null));
         ItemsHost.Children.Add(_testSection);
         _ = testBorder;
 

@@ -20,6 +20,9 @@ public sealed class KeyboardHook : IDisposable
     /// <summary>Insert 按下（事件式，无系统级状态）。</summary>
     public event Action<TipKind>? Pressed;
 
+    /// <summary>Ctrl+C / Ctrl+V / Ctrl+X 按下（复制/粘贴/剪切意图）。</summary>
+    public event Action<TipKind>? ClipboardPressed;
+
     public KeyboardHook() => _proc = HookProc;
 
     public bool Installed => _hook != IntPtr.Zero;
@@ -49,15 +52,27 @@ public sealed class KeyboardHook : IDisposable
                         0x2D => TipKind.Insert,
                         _ => null,
                     };
+                    // 低级钩子里左右 Ctrl 分别是 0xA2/0xA3，0x11 仅作兜底
+                    if (kind == null &&
+                        (_down.Contains(0xA2) || _down.Contains(0xA3) || _down.Contains(0x11)))
+                    {
+                        kind = info.vkCode switch
+                        {
+                            0x43 => TipKind.Copy,   // Ctrl+C
+                            0x56 => TipKind.Paste,  // Ctrl+V
+                            0x58 => TipKind.Cut,    // Ctrl+X
+                            _ => null,
+                        };
+                    }
                     if (kind != null)
                     {
                         var k = kind.Value;
-                        bool isToggle = TipInfo.IsToggle(k);
                         System.Windows.Application.Current?.Dispatcher.BeginInvoke(
                             System.Windows.Threading.DispatcherPriority.Send, () =>
                         {
-                            if (isToggle) ToggleChanged?.Invoke(k);
-                            else Pressed?.Invoke(k);
+                            if (TipInfo.IsToggle(k)) ToggleChanged?.Invoke(k);
+                            else if (k == TipKind.Insert) Pressed?.Invoke(k);
+                            else ClipboardPressed?.Invoke(k);
                         });
                     }
                 }

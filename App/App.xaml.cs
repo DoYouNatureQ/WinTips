@@ -56,6 +56,7 @@ public partial class App : Application
         _hook = new KeyboardHook();
         _hook.ToggleChanged += k => _osd!.OnToggleChanged(k);
         _hook.Pressed += k => _osd!.OnInsertPressed(k);
+        _hook.ClipboardPressed += k => _osd!.OnClipboardPressed(k);
         _hook.Install();
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));

@@ -42,6 +42,15 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern short GetKeyState(int nVirtKey);
 
+    // ---- 剪贴板更新监听 ----
+    public const uint WM_CLIPBOARDUPDATE = 0x031D;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
     // ---- 窗口扩展样式 ----
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x00000080;
@@ -169,4 +178,31 @@ internal static partial class NativeMethods
 
     [DllImport("shell32.dll")]
     public static extern IntPtr SHAppBarMessage(uint dwMessage, ref APPBARDATA pData);
+
+    // ---- Per-Monitor DPI（跨显示器自适应）----
+    // 隐藏窗口收不到系统的 WM_DPICHANGED：切换显示器/主屏或改缩放时浮窗正隐藏，
+    // WPF 的 TransformToDevice 停留在旧 DPI，下次弹出按旧缩放渲染导致变形。
+    // 这里提供 MonitorFromPoint + GetDpiForMonitor 供浮窗主动查询目标显示器
+    // 的有效 DPI，并手工补发 WM_DPICHANGED 让 WPF 同步。
+    public const uint WM_DPICHANGED = 0x02E0;
+    public const uint WM_DISPLAYCHANGE = 0x007E;
+    public const uint WM_SETTINGCHANGE = 0x001A;
+
+    public const uint MONITOR_DEFAULTTONULL = 0;
+    public const uint MONITOR_DEFAULTTOPRIMARY = 1;
+    public const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    public const int MDT_EFFECTIVE_DPI = 0;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(IntPtr hMonitor, int dpiType, out uint dpiX, out uint dpiY);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
 }

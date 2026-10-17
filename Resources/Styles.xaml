@@ -114,4 +114,29 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- Win11 风格分段选择（RadioButton 组）：选中项为强调色胶囊，悬停微亮 -->
+    <Style x:Key="SegRadio" TargetType="RadioButton">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="Bg" CornerRadius="6" Background="Transparent" BorderThickness="1"
+                            BorderBrush="Transparent" Padding="12,5" SnapsToDevicePixels="True">
+                        <ContentPresenter x:Name="Body" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SegHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="Body" Property="TextElement.Foreground" Value="#FFFFFF"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

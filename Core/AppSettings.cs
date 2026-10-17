@@ -11,8 +11,22 @@ public sealed class AppSettings
     public bool ShowNumLock { get; set; } = true;
     public bool ShowScrollLock { get; set; } = true;
     public bool ShowInsert { get; set; } = true;
+    public bool ShowCopy { get; set; } = true;
+    public bool ShowPaste { get; set; } = true;
+    public bool ShowCut { get; set; } = true;
     public double DisplaySeconds { get; set; } = 2.0;
     public bool LaunchAtStartup { get; set; }
+
+    public const string PlacementLeft = "Left";
+    public const string PlacementCenter = "Center";
+    public const string PlacementRight = "Right";
+
+    /// <summary>浮窗水平位置：Left / Center / Right（默认居中）。</summary>
+    public string TipPlacement { get; set; } = PlacementCenter;
+
+    /// <summary>容错归一化：非法值一律回落为居中。</summary>
+    public static string NormalizePlacement(string? value) =>
+        value == PlacementLeft || value == PlacementRight ? value : PlacementCenter;
 
     /// <summary>设置文件结构版本；V1.1 及以前没有该字段（AnimationSpeed 为整数档位）。</summary>
     public int SettingsVersion { get; set; } = 2;
@@ -46,6 +60,7 @@ public sealed class AppSettings
                 var s = JsonSerializer.Deserialize<AppSettings>(text);
                 if (s != null)
                 {
+                    s.TipPlacement = NormalizePlacement(s.TipPlacement);
                     if (MigrateFromV1(s, text)) s.Save();
                     Instance = s;
                     return s;
