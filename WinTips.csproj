@@ -32,14 +32,4 @@
     <Using Remove="System.Drawing" />
   </ItemGroup>
 
-  <!-- tools/docs 目录只放辅助脚本与参考资料，不参与编译 -->
-  <ItemGroup>
-    <Compile Remove="tools\**" />
-    <Page Remove="tools\**" />
-    <Content Remove="tools\**" />
-    <Compile Remove="docs\**" />
-    <Page Remove="docs\**" />
-    <Content Remove="docs\**" />
-  </ItemGroup>
-
 </Project>

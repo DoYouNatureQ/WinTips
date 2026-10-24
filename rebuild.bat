@@ -66,25 +66,27 @@ echo        WinTips stopped.
 echo.
 
 rem ----------------------------------------
-rem 4. Clean publish directory
+rem 4. Clean all build output (bin, obj, publish)
 rem ----------------------------------------
 
-echo [2/4] Cleaning publish directory...
+echo [2/4] Cleaning build output (bin, obj, publish)...
 
-if exist "%~dp0publish" (
-    rmdir /s /q "%~dp0publish"
+for %%D in (bin obj publish) do (
+    if exist "%~dp0%%D" (
+        rmdir /s /q "%~dp0%%D"
 
-    if exist "%~dp0publish" (
-        echo [ERROR] Failed to remove publish directory.
-        echo Please make sure no program is using files inside:
-        echo %~dp0publish
-        echo.
-        pause
-        exit /b 1
+        if exist "%~dp0%%D" (
+            echo [ERROR] Failed to remove %%D directory.
+            echo Please make sure no program is using files inside:
+            echo %~dp0%%D
+            echo.
+            pause
+            exit /b 1
+        )
     )
 )
 
-echo        Publish directory cleaned.
+echo        Build output cleaned.
 echo.
 
 rem ----------------------------------------

@@ -33,7 +33,7 @@ dotnet publish -c Release -r win-x64 --self-contained true `
   -p:EnableCompressionInSingleFile=true -o publish
 ```
 
-> 一键重建：双击根目录的 `rebuild.bat`（自动结束旧进程 → 发布 → 重新启动）。
+> 一键重建：双击根目录的 `rebuild.bat`（自动结束旧进程 → 清理打包产物 bin/obj/publish → 重新发布 → 重新启动）。
 
 ## 已知限制
 
