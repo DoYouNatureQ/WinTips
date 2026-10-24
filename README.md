@@ -1,5 +1,7 @@
 # WinTips
 
+![WinTips 宣传图](promo/wintips-promo.png)
+
 Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / Scroll Lock**（及复制/粘贴/剪切）时，在任务栏上方弹出 Win11 质感的亚克力浮窗。
 
 ## 特性
