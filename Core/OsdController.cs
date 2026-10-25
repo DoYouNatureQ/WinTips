@@ -15,6 +15,14 @@ internal sealed class OsdController
     private readonly DispatcherTimer _clipPending = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private TipKind _clipPendingKind;
 
+    /// <summary>
+    /// 无按键意图更新与真实复制的区分：剪贴板管理器（Ditto 等）收到复制后常会把数据
+    /// 读出再写回一次，产生紧随其后的第二次 WM_CLIPBOARDUPDATE。真实复制至少要
+    /// 重新选中再操作，间隔远大于该窗口，故 250ms 内的连续更新合并为一次。
+    /// </summary>
+    private const int ClipMergeMs = 250;
+    private long _lastShowTick;
+
     private UI.OsdWindow? _window;
 
     public OsdController()
@@ -75,13 +83,35 @@ internal sealed class OsdController
         _clipPending.Start();
     }
 
-    /// <summary>系统剪贴板更新：仅当处于复制/剪切意图窗口内才提示。</summary>
+    /// <summary>
+    /// 系统剪贴板更新：处于复制/剪切意图窗口内则按意图提示（终端里的 Ctrl+C 中断
+    /// 不写剪贴板，天然不弹）；否则视为非键盘来源的复制（右键菜单、应用内“复制”
+    /// 按钮等），按设置以“复制”提示。清空剪贴板（如密码管理器超时自动清除）同样
+    /// 触发更新事件，须先排除。
+    /// </summary>
     private void OnClipboardUpdated()
     {
-        if (!_clipPending.IsEnabled) return;
-        _clipPending.Stop();
-        Show(_clipPendingKind, null);
+        if (_clipPending.IsEnabled)
+        {
+            _clipPending.Stop();
+            Show(_clipPendingKind, null);
+            return;
+        }
+
+        if (!AppSettings.Instance.ShowCopy || !AppSettings.Instance.ShowAnyCopy) return;
+        if (!ClipboardHasContent()) return;
+        if (Environment.TickCount64 - _lastShowTick < ClipMergeMs) return;
+        Show(TipKind.Copy, null);
     }
+
+    /// <summary>剪贴板当前是否还有内容：常用标准格式均不在（被清空）时视为无内容。</summary>
+    private static bool ClipboardHasContent() =>
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_UNICODETEXT) ||
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_HDROP) ||
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_BITMAP) ||
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_DIB) ||
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_ENHMETAFILE) ||
+        NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_METAFILEPICT);
 
     private void VerifyTick(object? sender, EventArgs e)
     {
@@ -92,8 +122,13 @@ internal sealed class OsdController
         if (actual != _verifyState) _window?.UpdateState(_verifyKind, actual);
     }
 
-    private void Show(TipKind kind, bool? state) =>
+    private void Show(TipKind kind, bool? state)
+    {
+        // 任何提示弹出都记入合并窗口：既覆盖剪贴板管理器的回写，也覆盖粘贴后
+        // 个别程序改写剪贴板导致的伪“复制”更新
+        _lastShowTick = Environment.TickCount64;
         Window.ShowTip(kind, state, AppSettings.Instance.DisplaySeconds);
+    }
 
     public void ShowTest(TipKind kind, bool? state, double? hold = null) =>
         Window.ShowTip(kind, state, hold ?? AppSettings.Instance.DisplaySeconds);

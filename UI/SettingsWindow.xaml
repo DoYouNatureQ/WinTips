@@ -61,6 +61,15 @@
                         <ToggleButton x:Name="CutToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
                         <TextBlock Text="剪切提示（Ctrl+X）" FontSize="14" Margin="58,0,0,0" VerticalAlignment="Center"/>
                     </Grid>
+                    <Border x:Name="SepK7" Height="1" Margin="0,3" Opacity="0.5"/>
+                    <Grid Margin="0,8">
+                        <ToggleButton x:Name="AnyCopyToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
+                        <StackPanel Margin="58,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="任意复制方式都提示" FontSize="14"/>
+                            <TextBlock x:Name="AnyCopyDesc" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"
+                                       Text="右键菜单、应用内“复制”按钮等非键盘复制也弹出提示（需开启复制提示）"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
             </Border>
         </StackPanel>
@@ -97,6 +106,17 @@
                         </StackPanel>
                     </Grid>
                     <Border x:Name="SepB3" Height="1" Margin="0,3" Opacity="0.5"/>
+                    <Grid Margin="0,10">
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="自定义位置" FontSize="14"/>
+                            <TextBlock x:Name="CustomPosDesc" Text="把提示固定到屏幕任意位置" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button x:Name="CustomPosBtn" Content="调整位置" Style="{StaticResource Win11Button}"/>
+                            <Button x:Name="ResetPosBtn" Content="还原默认" Style="{StaticResource Win11Button}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                    <Border x:Name="SepB4" Height="1" Margin="0,3" Opacity="0.5"/>
                     <Grid Margin="0,8">
                         <ToggleButton x:Name="StartupToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
                         <TextBlock Text="开机自动运行" FontSize="14" Margin="58,0,0,0" VerticalAlignment="Center"/>

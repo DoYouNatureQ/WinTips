@@ -518,32 +518,13 @@ public partial class OsdWindow : Window
             if (m > 0) scale = m;
         }
 
-        const double gap = 16;
-        double bottomEdge;
-        var tb = TaskbarInfo.GetPrimaryTaskbar();
-        if (tb.HasValue && tb.Value.Edge == NativeMethods.ABE_BOTTOM && !tb.Value.AutoHide)
-            bottomEdge = tb.Value.Rect.Top / scale - gap;
-        else
-            bottomEdge = SystemParameters.WorkArea.Bottom - gap;
-
         BeginAnimation(TopProperty, null);
-        Top = bottomEdge - Height;
-        _lastTop = Top;
 
-        // 水平位置按设置摆放：左侧/右侧贴工作区边缘，默认居中。
-        // 左右位置用工作区（DIP，已扣除竖放任务栏），居中保持屏幕几何中心。
-        switch (AppSettings.NormalizePlacement(AppSettings.Instance.TipPlacement))
-        {
-            case AppSettings.PlacementLeft:
-                Left = SystemParameters.WorkArea.Left + gap;
-                break;
-            case AppSettings.PlacementRight:
-                Left = SystemParameters.WorkArea.Right - gap - Width;
-                break;
-            default:
-                Left = SystemParameters.PrimaryScreenWidth / 2 - Width / 2;
-                break;
-        }
+        var s = AppSettings.Instance;
+        (Left, Top) = s.HasCustomPosition
+            ? OsdPlacement.ClampToPrimary(s.CustomLeft!.Value, s.CustomTop!.Value, Width, Height)
+            : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement), Width, Height, scale);
+        _lastTop = Top;
     }
 
     private void AnimateIn()

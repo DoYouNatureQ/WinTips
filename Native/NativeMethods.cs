@@ -51,6 +51,18 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
+    // 判断剪贴板当前是否有内容。IsClipboardFormatAvailable 无需 OpenClipboard，
+    // 不会与正在写入剪贴板的程序发生打开冲突；延迟渲染的格式也按“存在”返回。
+    public const uint CF_BITMAP = 2;
+    public const uint CF_METAFILEPICT = 3;
+    public const uint CF_DIB = 8;
+    public const uint CF_UNICODETEXT = 13;
+    public const uint CF_ENHMETAFILE = 14;
+    public const uint CF_HDROP = 15;
+
+    [DllImport("user32.dll")]
+    public static extern bool IsClipboardFormatAvailable(uint format);
+
     // ---- 窗口扩展样式 ----
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x00000080;

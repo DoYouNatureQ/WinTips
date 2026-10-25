@@ -11,8 +11,12 @@ namespace WinTips.UI;
 
 public partial class SettingsWindow : Window
 {
-    public SettingsWindow()
+    /// <summary>测试提示回调（由 App 注入），保存自定义位置后预览真实效果。</summary>
+    private readonly Action<TipKind, bool?>? _showTest;
+
+    public SettingsWindow(Action<TipKind, bool?>? showTest = null)
     {
+        _showTest = showTest;
         InitializeComponent();
         ApplyTheme();
         LoadValues();
@@ -28,6 +32,8 @@ public partial class SettingsWindow : Window
         SubText.Foreground = secondary;
         DurationText.Foreground = secondary;
         AnimSpeedText.Foreground = secondary;
+        CustomPosDesc.Foreground = secondary;
+        AnyCopyDesc.Foreground = secondary;
         FooterText.Foreground = secondary;
         LblKeys.Foreground = secondary;
         LblBehavior.Foreground = secondary;
@@ -39,7 +45,7 @@ public partial class SettingsWindow : Window
         Resources["ThumbRingBrush"] = new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White);
         Resources["SegHoverBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0F, 0x00, 0x00, 0x00));
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepB1, SepB2, SepB3 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepB1, SepB2, SepB3, SepB4 })
             sep.Background = divider;
     }
 
@@ -53,12 +59,38 @@ public partial class SettingsWindow : Window
         CopyToggle.IsChecked = s.ShowCopy;
         PasteToggle.IsChecked = s.ShowPaste;
         CutToggle.IsChecked = s.ShowCut;
+        AnyCopyToggle.IsChecked = s.ShowAnyCopy;
         DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 1, 5);
         UpdateDurationText(s.DisplaySeconds);
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
         LoadPlacement(s.TipPlacement);
         StartupToggle.IsChecked = AppSettings.IsStartupSet();
+        RefreshPlacementUi();
+    }
+
+    /// <summary>位置行 UI 状态：自定义生效时禁用预设单选并启用「还原默认」。</summary>
+    private void RefreshPlacementUi()
+    {
+        bool custom = AppSettings.Instance.HasCustomPosition;
+        ResetPosBtn.IsEnabled = custom;
+        bool presetEnabled = !custom;
+        PosLeft.IsEnabled = presetEnabled;
+        PosCenter.IsEnabled = presetEnabled;
+        PosRight.IsEnabled = presetEnabled;
+    }
+
+    private void OpenPlacementPicker()
+    {
+        var picker = new PlacementPickerWindow { Owner = this };
+        picker.Saved += (left, top) =>
+        {
+            Save(v => { v.CustomLeft = left; v.CustomTop = top; });
+            RefreshPlacementUi();
+            _showTest?.Invoke(TipKind.CapsLock, true); // 保存后弹出真实提示，直观确认位置
+        };
+        picker.ShowDialog();
+        RefreshPlacementUi();
     }
 
     private void LoadPlacement(string placement)
@@ -93,6 +125,8 @@ public partial class SettingsWindow : Window
         PasteToggle.Unchecked += (_, _) => Save(v => v.ShowPaste = false);
         CutToggle.Checked += (_, _) => Save(v => v.ShowCut = true);
         CutToggle.Unchecked += (_, _) => Save(v => v.ShowCut = false);
+        AnyCopyToggle.Checked += (_, _) => Save(v => v.ShowAnyCopy = true);
+        AnyCopyToggle.Unchecked += (_, _) => Save(v => v.ShowAnyCopy = false);
 
         DurationSlider.ValueChanged += (_, e) =>
         {
@@ -110,9 +144,19 @@ public partial class SettingsWindow : Window
         StartupToggle.Checked += (_, _) => { AppSettings.SetStartup(true); Save(_ => { }); };
         StartupToggle.Unchecked += (_, _) => { AppSettings.SetStartup(false); Save(_ => { }); };
 
-        PosLeft.Checked += (_, _) => Save(v => v.TipPlacement = AppSettings.PlacementLeft);
-        PosCenter.Checked += (_, _) => Save(v => v.TipPlacement = AppSettings.PlacementCenter);
-        PosRight.Checked += (_, _) => Save(v => v.TipPlacement = AppSettings.PlacementRight);
+        // 切换预设位置后弹一次真实提示，让用户直观看到落点
+        PosLeft.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementLeft); _showTest?.Invoke(TipKind.CapsLock, true); };
+        PosCenter.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementCenter); _showTest?.Invoke(TipKind.CapsLock, true); };
+        PosRight.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementRight); _showTest?.Invoke(TipKind.CapsLock, true); };
+
+        CustomPosBtn.Click += (_, _) => OpenPlacementPicker();
+        ResetPosBtn.Click += (_, _) =>
+        {
+            Save(v => { v.CustomLeft = null; v.CustomTop = null; });
+            LoadPlacement(AppSettings.Instance.TipPlacement);
+            RefreshPlacementUi();
+            _showTest?.Invoke(TipKind.CapsLock, true);
+        };
     }
 
     private void Save(Action<AppSettings> apply)

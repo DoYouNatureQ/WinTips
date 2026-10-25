@@ -14,6 +14,12 @@ public sealed class AppSettings
     public bool ShowCopy { get; set; } = true;
     public bool ShowPaste { get; set; } = true;
     public bool ShowCut { get; set; } = true;
+
+    /// <summary>
+    /// 任意复制方式都提示：右键菜单、应用内“复制”按钮等非键盘复制（剪贴板更新即触发，
+    /// 期间清空剪贴板的操作不会提示）。需同时开启 ShowCopy 才生效。
+    /// </summary>
+    public bool ShowAnyCopy { get; set; } = true;
     public double DisplaySeconds { get; set; } = 2.0;
     public bool LaunchAtStartup { get; set; }
 
@@ -27,6 +33,24 @@ public sealed class AppSettings
     /// <summary>容错归一化：非法值一律回落为居中。</summary>
     public static string NormalizePlacement(string? value) =>
         value == PlacementLeft || value == PlacementRight ? value : PlacementCenter;
+
+    /// <summary>自定义位置的浮窗左上角（DIP，主屏坐标系）。两项都有值才生效并覆盖 TipPlacement。</summary>
+    public double? CustomLeft { get; set; }
+    public double? CustomTop { get; set; }
+
+    [JsonIgnore]
+    public bool HasCustomPosition => CustomLeft.HasValue && CustomTop.HasValue;
+
+    /// <summary>自定义位置字段损坏（NaN/Infinity/只剩一项）时整体作废，回落到预设位置。</summary>
+    private static void NormalizeCustomPosition(AppSettings s)
+    {
+        if (s.CustomLeft is not double l || !double.IsFinite(l) ||
+            s.CustomTop is not double t || !double.IsFinite(t))
+        {
+            s.CustomLeft = null;
+            s.CustomTop = null;
+        }
+    }
 
     /// <summary>设置文件结构版本；V1.1 及以前没有该字段（AnimationSpeed 为整数档位）。</summary>
     public int SettingsVersion { get; set; } = 2;
@@ -61,6 +85,7 @@ public sealed class AppSettings
                 if (s != null)
                 {
                     s.TipPlacement = NormalizePlacement(s.TipPlacement);
+                    NormalizeCustomPosition(s);
                     if (MigrateFromV1(s, text)) s.Save();
                     Instance = s;
                     return s;

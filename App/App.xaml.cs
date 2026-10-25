@@ -88,7 +88,7 @@ public partial class App : Application
     private void ShowSettings()
     {
         if (_settings != null) { _settings.Activate(); return; }
-        _settings = new SettingsWindow();
+        _settings = new SettingsWindow((k, s) => _osd!.ShowTest(k, s));
         _settings.Closed += (_, _) => _settings = null;
         _settings.Show();
     }
