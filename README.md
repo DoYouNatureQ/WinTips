@@ -1,23 +1,16 @@
+<div align="center">
+
 # WinTips
 
-[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE)
-![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square)
-![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square)
-![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
+[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
 
 **简体中文** | [English](README.en.md)
 
 ![WinTips 宣传图](promo/wintips-promo.png)
 
+</div>
+
 Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / Scroll Lock**（及复制/粘贴/剪切）时，在任务栏上方弹出 Win11 质感的亚克力浮窗。
-
-## 目录
-
-- [特性](#特性)
-- [使用](#使用)
-- [构建与发布](#构建与发布)
-- [已知限制](#已知限制)
-- [致谢](#致谢)
 
 ## 特性
 

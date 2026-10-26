@@ -1,23 +1,16 @@
+<div align="center">
+
 # WinTips
 
-[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE)
-![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square)
-![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square)
-![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
+[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
 
 [简体中文](README.md) | **English**
 
-![WinTips promo](promo/wintips-promo.png)
+![WinTips promo banner](promo/wintips-promo-en.png)
+
+</div>
 
 A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scroll Lock** (or copy / paste / cut) and an acrylic flyout with Win11 polish appears just above the taskbar.
-
-## Contents
-
-- [Features](#features)
-- [Usage](#usage)
-- [Build and Publish](#build-and-publish)
-- [Known Limitations](#known-limitations)
-- [Credits](#credits)
 
 ## Features
 
