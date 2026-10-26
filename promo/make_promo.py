@@ -2,8 +2,17 @@
 """
 WinTips 宣传图生成器（横版 + 竖版）
 现代细边画框 + Win11 亚克力浮窗（大写锁定开启态）
+
+多语言：文案与字体按语言切换（中文=微软雅黑，英文=Segoe UI Variable / Segoe UI），
+浮窗文案与片尾标语同视频版保持一致，输出文件名加 -en 后缀。
+
+用法：
+    python make_promo.py        # 中英两版都出（4 张）
+    python make_promo.py zh     # 仅中文横版/竖版
+    python make_promo.py en     # 仅英文横版/竖版
 """
 import os
+import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance
 
 S = 2                       # 超采样倍率
@@ -21,17 +30,43 @@ def load_font(cands, size):
 
 YAHEI      = [r"C:\Windows\Fonts\msyh.ttc", r"C:\Windows\Fonts\msyh.ttf"]
 YAHEI_BOLD = [r"C:\Windows\Fonts\msyhbd.ttc"]
+SEGOE      = [r"C:\Windows\Fonts\segoeui.ttf", r"C:\Windows\Fonts\arial.ttf"]
 SEGOE_SB   = [r"C:\Windows\Fonts\seguisb.ttf", r"C:\Windows\Fonts\seguib.ttf", r"C:\Windows\Fonts\arialbd.ttf"]
+# 应用正文用 "Segoe UI Variable Display, Segoe UI" Medium；PIL 没有 Medium 实例，取 Variable 默认字重
+SEGVAR     = [r"C:\Windows\Fonts\SegUIVar.ttf", r"C:\Windows\Fonts\segoeui.ttf"]
+
+# ---------- 语言表（文案取自 Core/Localization.cs，与宣传片一致） ----------
+LANGS = {
+    "zh": dict(
+        suffix="",
+        osd_font=YAHEI,      osd_size=56,     # 浮窗 14dip × 4
+        tag_font=YAHEI,      tag_size=31,
+        cap_font=YAHEI_BOLD, cap_size=15,
+        osd_text="大写锁定 开启",
+        tag_text="键盘状态 · 一目了然",
+    ),
+    "en": dict(
+        suffix="-en",
+        osd_font=SEGVAR,     osd_size=56,     # 与中文同字号（对应应用 14dip）
+        tag_font=SEGOE,      tag_size=34,     # 拉丁 x-height 偏小，字号略放大以求视觉等重
+        cap_font=SEGOE_SB,   cap_size=15,
+        osd_text="Caps Lock On",
+        tag_text="Keyboard status, at a glance",
+    ),
+}
 
 FONTS = {}
+LANG = "zh"
 
-def init_fonts():
+def init_fonts(code):
+    """按语言装载字体，返回 (字体表, 文案表)。"""
+    L = LANGS[code]
     f = {}
     f["word"],  _ = load_font(SEGOE_SB, s(66))
-    f["tag"],   _ = load_font(YAHEI, s(31))
-    f["osd"],   _ = load_font(YAHEI, s(56))
-    f["cap"],   _ = load_font(YAHEI_BOLD, s(15))
-    return f
+    f["tag"],   _ = load_font(L["tag_font"], s(L["tag_size"]))
+    f["osd"],   _ = load_font(L["osd_font"], s(L["osd_size"]))
+    f["cap"],   _ = load_font(L["cap_font"], s(L["cap_size"]))
+    return f, L
 
 # ---------- 尺寸参数（设计坐标）----------
 # 现代细边框：窄深灰框条 + 大留白卡纸 + 卡纸底部小字说明
@@ -94,7 +129,7 @@ def shackle_layer(icon_size, k, color):
     return lay, pad
 
 # ============================================================
-def render(cfg):
+def render(cfg, L):
     W, H = cfg["W"], cfg["H"]
     CW, CH = W * S, H * S
     fx0, fy0, fx1, fy1 = cfg["frame"]
@@ -185,7 +220,7 @@ def render(cfg):
     lay = lay.rotate(-30, resample=Image.BICUBIC, center=(spad + 16 * K, spad + 7 * K))
     art.alpha_composite(lay, (int(IX - spad), int(IY - spad)))
     draw_lock(do, IX, IY, K, ICON_COLOR)
-    do.text((FX + FW / 2 + s(36), FY + FH / 2 + s(4)), "大写锁定 开启",
+    do.text((FX + FW / 2 + s(36), FY + FH / 2 + s(4)), L["osd_text"],
             font=FONTS["osd"], fill=(26, 26, 26, 255), anchor="mm")
     BAR_W, BAR_H, BAR_R = s(144), s(12), s(6)
     bx0 = FX + (FW - BAR_W) / 2
@@ -201,7 +236,7 @@ def render(cfg):
                                 fill=(0, 0, 0, 110), anchor="mm")
     art.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(s(5))))
     do.text((wxc, wy), "WinTips", font=FONTS["word"], fill=(255, 255, 255, 255), anchor="mm")
-    do.text((wxc, ty), "键盘状态 · 一目了然", font=FONTS["tag"], fill=(224, 234, 248, 215), anchor="mm")
+    do.text((wxc, ty), L["tag_text"], font=FONTS["tag"], fill=(224, 234, 248, 215), anchor="mm")
 
     # ---- 合成 + 卡纸说明小字（替代铭牌）----
     wall.paste(art.convert("RGB"), (int(ART[0]), int(ART[1])))
@@ -217,12 +252,22 @@ def render(cfg):
         dd.text((tx0, tyc), c, font=fp, fill=CAPTION_COLOR + (255,), anchor="lm")
         tx0 += wch + ls
 
-    out = os.path.join(OUT_DIR, cfg["out"])
+    out = os.path.join(OUT_DIR, cfg["out"].replace(".png", L["suffix"] + ".png"))
     wall.convert("RGB").resize((W, H), Image.LANCZOS).save(out, "PNG")
     print("saved:", out)
 
 # ============================================================
+def main():
+    arg = (sys.argv[1].lower() if len(sys.argv) > 1 else "all")
+    codes = ["zh", "en"] if arg in ("all", "both") else [arg]
+    for code in codes:
+        if code not in LANGS:
+            raise SystemExit(f"unknown lang: {code} (choose from {', '.join(LANGS)} or all)")
+        FONTS.clear()
+        fonts, L = init_fonts(code)
+        FONTS.update(fonts)
+        for cfg in LAYOUTS.values():
+            render(cfg, L)
+
 if __name__ == "__main__":
-    FONTS.update(init_fonts())
-    for cfg in LAYOUTS.values():
-        render(cfg)
+    main()

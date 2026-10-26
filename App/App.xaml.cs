@@ -42,14 +42,18 @@ public partial class App : Application
 
         _mutex = new Mutex(true, @"Local\WinTips.SingleInstance", out bool createdNew);
         _ownsMutex = createdNew;
+
+        // 读配置并确定界面语言：任何窗口（含下面的单实例提示窗）创建前必须完成
+        var settings = AppSettings.Load();
+        Loc.Apply(Loc.Parse(settings.Language));
+
         if (!createdNew)
         {
-            new NoticeWindow("WinTips 已在运行", "另一个 WinTips 实例已经在运行").ShowDialog();
+            new NoticeWindow(Loc.T("NoticeRunningTitle"), Loc.T("NoticeRunningMessage")).ShowDialog();
             Shutdown();
             return;
         }
 
-        var settings = AppSettings.Load();
         settings.LaunchAtStartup = AppSettings.IsStartupSet();
 
         _osd = new OsdController();

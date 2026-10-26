@@ -18,7 +18,7 @@ internal sealed class TrayService : IDisposable
         _showTest = showTest;
 
         _notify.Icon = LoadIcon();
-        _notify.Text = $"WinTips 键盘状态提示 ({DateTime.Now:HH:mm:ss} 构建)";
+        _notify.Text = Loc.T("TrayTooltip");
         _notify.Visible = true;
         _notify.DoubleClick += (_, _) => _openSettings();
         _notify.MouseDown += (_, e) =>
@@ -26,7 +26,12 @@ internal sealed class TrayService : IDisposable
             if (e.Button == MouseButtons.Left) _openSettings();
             else if (e.Button == MouseButtons.Right) ShowMenu();
         };
+
+        Loc.Changed += RefreshText;
     }
+
+    /// <summary>界面语言切换后刷新托盘悬停提示。</summary>
+    private void RefreshText() => _notify.Text = Loc.T("TrayTooltip");
 
     private void ShowMenu()
     {
@@ -71,6 +76,7 @@ internal sealed class TrayService : IDisposable
 
     public void Dispose()
     {
+        Loc.Changed -= RefreshText;
         _notify.Visible = false;
         _notify.Dispose();
     }

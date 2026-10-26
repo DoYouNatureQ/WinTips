@@ -163,32 +163,35 @@ public partial class TrayMenuWindow : Window
 
     private void BuildItems()
     {
-        AddItem("设置", "\uE713", _openSettings);
+        AddItem(Loc.T("MenuSettings"), "\uE713", _openSettings);
 
-        var testBorder = AddItem("测试提示", "\uE765", ToggleTestSection, isChevron: true, closeOnClick: false);
+        var testBorder = AddItem(Loc.T("MenuTest"), "\uE765", ToggleTestSection, isChevron: true, closeOnClick: false);
         _testSection = new StackPanel { Visibility = Visibility.Collapsed };
-        _testSection.Children.Add(MakeTestItem("大写锁定 开启", TipKind.CapsLock, true));
-        _testSection.Children.Add(MakeTestItem("大写锁定 关闭", TipKind.CapsLock, false));
-        _testSection.Children.Add(MakeTestItem("数字锁定 开启", TipKind.NumLock, true));
-        _testSection.Children.Add(MakeTestItem("数字锁定 关闭", TipKind.NumLock, false));
-        _testSection.Children.Add(MakeTestItem("滚动锁定 开启", TipKind.ScrollLock, true));
-        _testSection.Children.Add(MakeTestItem("滚动锁定 关闭", TipKind.ScrollLock, false));
-        _testSection.Children.Add(MakeTestItem("Insert 键已按下", TipKind.Insert, null));
-        _testSection.Children.Add(MakeTestItem("已复制", TipKind.Copy, null));
-        _testSection.Children.Add(MakeTestItem("已粘贴", TipKind.Paste, null));
-        _testSection.Children.Add(MakeTestItem("已剪切", TipKind.Cut, null));
+
+        // 测试项文案即浮窗文案，直接复用 TipInfo.Describe，避免两处维护
+        (TipKind Kind, bool? State)[] tests =
+        {
+            (TipKind.CapsLock, true), (TipKind.CapsLock, false),
+            (TipKind.NumLock, true), (TipKind.NumLock, false),
+            (TipKind.ScrollLock, true), (TipKind.ScrollLock, false),
+            (TipKind.Insert, null), (TipKind.Copy, null),
+            (TipKind.Paste, null), (TipKind.Cut, null),
+        };
+        foreach (var (kind, state) in tests)
+            _testSection.Children.Add(MakeTestItem(TipInfo.Describe(kind, state), kind, state));
+
         ItemsHost.Children.Add(_testSection);
         _ = testBorder;
 
         AddSeparator();
 
-        AddItem("开机自动运行", null, () =>
+        AddItem(Loc.T("RowStartup"), null, () =>
         {
             _startup = !_startup;
             _toggleStartup(_startup);
         }, isChecked: _startup);
 
-        AddItem("退出", "\uE7E8", _exit);
+        AddItem(Loc.T("MenuExit"), "\uE7E8", _exit);
     }
 
     private Border MakeTestItem(string label, TipKind kind, bool? state)

@@ -22,6 +22,16 @@ public partial class SettingsWindow : Window
         LoadValues();
         WireEvents();
         TrySetIcon();
+
+        // 语言切换后 XAML 文案由绑定自动刷新，代码里拼好的数值标签需手动重算
+        Loc.Changed += RefreshValueLabels;
+        Closed += (_, _) => Loc.Changed -= RefreshValueLabels;
+    }
+
+    private void RefreshValueLabels()
+    {
+        UpdateDurationText(DurationSlider.Value);
+        UpdateAnimSpeedText(AnimSpeedSlider.Value);
     }
 
     private void ApplyTheme()
@@ -45,7 +55,7 @@ public partial class SettingsWindow : Window
         Resources["ThumbRingBrush"] = new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White);
         Resources["SegHoverBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0F, 0x00, 0x00, 0x00));
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepB1, SepB2, SepB3, SepB4 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepB1, SepB2, SepB3, SepB4, SepB5 })
             sep.Background = divider;
     }
 
@@ -66,6 +76,9 @@ public partial class SettingsWindow : Window
         UpdateAnimSpeedText(s.AnimationSpeed);
         LoadPlacement(s.TipPlacement);
         StartupToggle.IsChecked = AppSettings.IsStartupSet();
+        LangSystem.IsChecked = Loc.Language == AppLanguage.System;
+        LangZh.IsChecked = Loc.Language == AppLanguage.Chinese;
+        LangEn.IsChecked = Loc.Language == AppLanguage.English;
         RefreshPlacementUi();
     }
 
@@ -102,9 +115,9 @@ public partial class SettingsWindow : Window
 
     private static string AnimSpeedLabel(double speed)
     {
-        if (speed <= 0) return "无动画";
+        if (speed <= 0) return Loc.T("AnimNone");
         string x = speed == Math.Floor(speed) ? $"{speed:0}x" : $"{speed:0.#}x";
-        return $"{x}（{AppSettings.AnimationMs(speed)} 毫秒）";
+        return Loc.Format("ValueAnimSpeed", x, AppSettings.AnimationMs(speed));
     }
 
     private void UpdateAnimSpeedText(double speed) => AnimSpeedText.Text = AnimSpeedLabel(speed);
@@ -144,6 +157,10 @@ public partial class SettingsWindow : Window
         StartupToggle.Checked += (_, _) => { AppSettings.SetStartup(true); Save(_ => { }); };
         StartupToggle.Unchecked += (_, _) => { AppSettings.SetStartup(false); Save(_ => { }); };
 
+        LangSystem.Checked += (_, _) => SetLanguage(AppLanguage.System);
+        LangZh.Checked += (_, _) => SetLanguage(AppLanguage.Chinese);
+        LangEn.Checked += (_, _) => SetLanguage(AppLanguage.English);
+
         // 切换预设位置后弹一次真实提示，让用户直观看到落点
         PosLeft.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementLeft); _showTest?.Invoke(TipKind.CapsLock, true); };
         PosCenter.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementCenter); _showTest?.Invoke(TipKind.CapsLock, true); };
@@ -159,6 +176,13 @@ public partial class SettingsWindow : Window
         };
     }
 
+    /// <summary>切换界面语言：写入设置并立即生效（XAML 文案由绑定自动刷新，无需重启）。</summary>
+    private void SetLanguage(AppLanguage language)
+    {
+        Save(v => v.Language = Loc.ToSetting(language));
+        Loc.Apply(language);
+    }
+
     private void Save(Action<AppSettings> apply)
     {
         apply(AppSettings.Instance);
@@ -166,7 +190,7 @@ public partial class SettingsWindow : Window
     }
 
     private void UpdateDurationText(double v) =>
-        DurationText.Text = v == Math.Floor(v) ? $"{v:0} 秒" : $"{v:0.#} 秒";
+        DurationText.Text = Loc.Format("ValueSeconds", v == Math.Floor(v) ? $"{v:0}" : $"{v:0.#}");
 
     private void TrySetIcon()
     {

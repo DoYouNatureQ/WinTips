@@ -187,7 +187,7 @@ public partial class OsdWindow : Window
     {
         if (_visible) return; // 真实提示已在显示（首弹早于预热），不能再挪动窗口
 
-        LockTextBlock.Text = "大写锁定 开启";
+        LockTextBlock.Text = TipInfo.Describe(TipKind.CapsLock, true);
         SetPoseInstant(true);
         UpdateSize();
 
@@ -303,15 +303,8 @@ public partial class OsdWindow : Window
 
     private bool SetStatusText(TipKind kind, bool? state)
     {
-        if (!TipInfo.IsToggle(kind))
-        {
-            LockTextBlock.Text = kind == TipKind.Insert ? "Insert 键已按下" : TipInfo.Name(kind);
-            return true;
-        }
-
-        bool on = state == true;
-        LockTextBlock.Text = $"{TipInfo.Name(kind)} {(on ? "开启" : "关闭")}";
-        return on;
+        LockTextBlock.Text = TipInfo.Describe(kind, state);
+        return !TipInfo.IsToggle(kind) || state == true;
     }
 
     /// <summary>按提示类型切换浮窗内容：锁具+指示条（锁键）或 对勾/剪刀+计数徽章（剪贴板）。</summary>

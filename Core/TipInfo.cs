@@ -28,14 +28,24 @@ internal static class TipInfo
 
     public static string Name(TipKind k) => k switch
     {
-        TipKind.CapsLock => "大写锁定",
-        TipKind.NumLock => "数字锁定",
-        TipKind.ScrollLock => "滚动锁定",
-        TipKind.Copy => "已复制",
-        TipKind.Paste => "已粘贴",
-        TipKind.Cut => "已剪切",
+        TipKind.CapsLock => Loc.T("KeyCapsLock"),
+        TipKind.NumLock => Loc.T("KeyNumLock"),
+        TipKind.ScrollLock => Loc.T("KeyScrollLock"),
+        TipKind.Copy => Loc.T("TipCopied"),
+        TipKind.Paste => Loc.T("TipPasted"),
+        TipKind.Cut => Loc.T("TipCut"),
         _ => "Insert",
     };
+
+    /// <summary>
+    /// 浮窗显示文案：锁键为「名称 开/关」，Insert 与剪贴板为事件文案。
+    /// 开/关状态的返回值由调用方另行判断（见 <see cref="IsToggle"/>）。
+    /// </summary>
+    public static string Describe(TipKind k, bool? state)
+    {
+        if (!IsToggle(k)) return k == TipKind.Insert ? Loc.T("TipInsertPressed") : Name(k);
+        return Loc.Format("TipToggleFormat", Name(k), Loc.T(state == true ? "StateOn" : "StateOff"));
+    }
 
     public static bool IsToggle(TipKind k) =>
         k is TipKind.CapsLock or TipKind.NumLock or TipKind.ScrollLock;

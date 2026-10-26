@@ -23,6 +23,9 @@ public sealed class AppSettings
     public double DisplaySeconds { get; set; } = 2.0;
     public bool LaunchAtStartup { get; set; }
 
+    /// <summary>界面语言：System（跟随系统）/ zh（简体中文）/ en（English）。</summary>
+    public string Language { get; set; } = "System";
+
     public const string PlacementLeft = "Left";
     public const string PlacementCenter = "Center";
     public const string PlacementRight = "Right";
