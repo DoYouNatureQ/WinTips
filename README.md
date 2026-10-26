@@ -1,8 +1,23 @@
 # WinTips
 
+[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE)
+![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square)
+![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square)
+![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
+
+**简体中文** | [English](README.en.md)
+
 ![WinTips 宣传图](promo/wintips-promo.png)
 
 Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / Scroll Lock**（及复制/粘贴/剪切）时，在任务栏上方弹出 Win11 质感的亚克力浮窗。
+
+## 目录
+
+- [特性](#特性)
+- [使用](#使用)
+- [构建与发布](#构建与发布)
+- [已知限制](#已知限制)
+- [致谢](#致谢)
 
 ## 特性
 
@@ -38,6 +53,18 @@ dotnet publish -c Release -r win-x64 --self-contained true `
 
 > 一键重建：双击根目录的 `rebuild.bat`（自动结束旧进程 → 清理打包产物 bin/obj/publish → 重新发布 → 重新启动）。
 
+### 一键重建
+
+双击根目录的 `rebuild.bat`，它会依次：
+
+1. 校验 `dotnet` 与 `.csproj` 是否就位（缺失则报错退出）；
+2. 结束正在运行的 `WinTips.exe`，并等到进程真正退出（避免文件占用）；
+3. 删除 `bin` / `obj` / `publish`（删除失败会提示被谁占用）；
+4. 以「单文件 + 自包含 + 压缩」参数重新发布到 `publish\`；
+5. 校验产物存在后启动新的 exe。
+
+任何一步失败都会 `pause` 并保留现场，便于排查。
+
 ## 已知限制
 
 - Insert 提示为事件式，不显示开/关状态（Windows 不在系统层维护该状态）。
@@ -48,3 +75,7 @@ dotnet publish -c Release -r win-x64 --self-contained true `
 ## 致谢
 
 浮窗外观与动效复刻自 [FluentFlyout](https://github.com/unchihugo/FluentFlyout)（GPL-3.0）的 LockWindow 设计，代码为独立实现。
+
+---
+
+[↑ 回到顶部](#wintips) · [English version](README.en.md)
