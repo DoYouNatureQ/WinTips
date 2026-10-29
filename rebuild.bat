@@ -48,7 +48,7 @@ rem ----------------------------------------
 rem 3. Stop running WinTips
 rem ----------------------------------------
 
-echo [1/4] Stopping running WinTips...
+echo [1/5] Stopping running WinTips...
 
 taskkill /f /im WinTips.exe >nul 2>nul
 
@@ -69,7 +69,7 @@ rem ----------------------------------------
 rem 4. Clean all build output (bin, obj, publish)
 rem ----------------------------------------
 
-echo [2/4] Cleaning build output (bin, obj, publish)...
+echo [2/5] Cleaning build output (bin, obj, publish)...
 
 for %%D in (bin obj publish) do (
     if exist "%~dp0%%D" (
@@ -90,10 +90,40 @@ echo        Build output cleaned.
 echo.
 
 rem ----------------------------------------
-rem 5. Publish
+rem 5. Clean single-file self-extract cache
+rem    With PublishSingleFile + IncludeNativeLibrariesForSelfExtract,
+rem    every build unpacks native libs into TEMP\.net\WinTips\hash.
+rem    Old hash folders are never reused, so they must be cleaned here.
 rem ----------------------------------------
 
-echo [3/4] Publishing WinTips...
+echo [3/5] Cleaning stale self-extract cache...
+
+set "CACHE_LEFT="
+
+for %%C in ("%LOCALAPPDATA%\Temp\.net\WinTips" "%TEMP%\.net\WinTips") do (
+    if exist "%%~C" (
+        rmdir /s /q "%%~C" 2>nul
+
+        if exist "%%~C" (
+            set "CACHE_LEFT=1"
+        )
+    )
+)
+
+if defined CACHE_LEFT (
+    echo        [WARN] Some cache files are still in use and were skipped.
+    echo        Path: %LOCALAPPDATA%\Temp\.net\WinTips
+) else (
+    echo        Self-extract cache cleaned.
+)
+
+echo.
+
+rem ----------------------------------------
+rem 6. Publish
+rem ----------------------------------------
+
+echo [4/5] Publishing WinTips...
 echo.
 
 dotnet publish ^
@@ -118,7 +148,7 @@ echo        Publish completed.
 echo.
 
 rem ----------------------------------------
-rem 6. Check output
+rem 7. Check output
 rem ----------------------------------------
 
 if not exist "%~dp0publish\WinTips.exe" (
@@ -131,10 +161,10 @@ if not exist "%~dp0publish\WinTips.exe" (
 )
 
 rem ----------------------------------------
-rem 7. Start WinTips
+rem 8. Start WinTips
 rem ----------------------------------------
 
-echo [4/4] Starting WinTips...
+echo [5/5] Starting WinTips...
 
 start "" "%~dp0publish\WinTips.exe"
 

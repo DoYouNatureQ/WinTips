@@ -28,6 +28,7 @@ public partial class OsdWindow : Window
     private EventHandler? _warmRendered;
     private DispatcherTimer? _warmGuard;
     private TipKind _currentKind;
+    private double _lastLeft;
     private double _lastTop;
 
     /// <summary>系统剪贴板更新（WM_CLIPBOARDUPDATE），由 OsdController 订阅。</summary>
@@ -215,6 +216,7 @@ public partial class OsdWindow : Window
         _warmGuard = null;
         if (_visible) return; // 真实提示已弹出，位置交给 ShowTip 管理
         Hide();
+        BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
         Left = left;
         Top = top;
@@ -511,6 +513,7 @@ public partial class OsdWindow : Window
             if (m > 0) scale = m;
         }
 
+        BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
 
         var s = AppSettings.Instance;
@@ -518,21 +521,22 @@ public partial class OsdWindow : Window
             ? OsdPlacement.ClampToPrimary(s.CustomLeft!.Value, s.CustomTop!.Value, Width, Height)
             : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement),
                 AppSettings.NormalizeVertical(s.TipVertical), Width, Height, scale);
+        _lastLeft = Left;
         _lastTop = Top;
     }
 
     /// <summary>
-    /// 入场/退场滑动偏移（DIP）：浮窗落在屏幕上半区（顶部预设）时自上方滑入/滑出，
-    /// 落在下半区（底部预设或自定义低位置）时自下方滑入/滑出，始终朝贴边方向收起。
+    /// 入场/退场滑动偏移：贴边方向决定滑动轴（左右 15% 区横向滑入、上下 15% 区竖向滑入、
+    /// 四角对角滑入），落在屏幕中部时回落到竖向。始终朝最近的屏幕边缘收起。
     /// </summary>
-    private double SlideOffset(double anchorTop) =>
-        anchorTop + Height / 2 < SystemParameters.PrimaryScreenHeight / 2 ? -20 : 20;
+    private (double Dx, double Dy) SlideOffset(double left, double top) =>
+        OsdPlacement.SlideOffset(left, top, Width, Height);
 
     private void AnimateIn()
     {
         int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
         Root.BeginAnimation(UIElement.OpacityProperty, null);
-        double target = Top;
+        double targetLeft = Left, targetTop = Top;
         if (ms <= 0)
         {
             Root.Opacity = 1;
@@ -546,18 +550,31 @@ public partial class OsdWindow : Window
         };
         Root.BeginAnimation(UIElement.OpacityProperty, fade);
 
-        var slide = new DoubleAnimation(target + SlideOffset(target), target, TimeSpan.FromMilliseconds(ms))
+        var (dx, dy) = SlideOffset(targetLeft, targetTop);
+        var span = TimeSpan.FromMilliseconds(ms);
+
+        if (dx != 0)
         {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-        };
-        BeginAnimation(TopProperty, slide);
+            BeginAnimation(LeftProperty, new DoubleAnimation(targetLeft + dx, targetLeft, span)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            });
+        }
+        if (dy != 0)
+        {
+            BeginAnimation(TopProperty, new DoubleAnimation(targetTop + dy, targetTop, span)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            });
+        }
     }
 
     private void HideAnimated()
     {
         if (!_visible) return;
         int gen = _generation;
-        double target = _lastTop;
+        double targetLeft = _lastLeft;
+        double targetTop = _lastTop;
         int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
 
         void FinishHide()
@@ -566,9 +583,11 @@ public partial class OsdWindow : Window
             _visible = false;
             _clipCount = 0; // 浮窗收起后连续计数归零
             Root.BeginAnimation(UIElement.OpacityProperty, null);
+            BeginAnimation(LeftProperty, null);
             BeginAnimation(TopProperty, null);
             Root.Opacity = 1;
-            Top = target;
+            Left = targetLeft;
+            Top = targetTop;
         }
 
         if (ms <= 0)
@@ -585,11 +604,23 @@ public partial class OsdWindow : Window
         };
         Root.BeginAnimation(UIElement.OpacityProperty, fade);
 
-        var slide = new DoubleAnimation(target + SlideOffset(target), TimeSpan.FromMilliseconds(ms))
+        var (dx, dy) = SlideOffset(targetLeft, targetTop);
+        var span = TimeSpan.FromMilliseconds(ms);
+
+        if (dx != 0)
         {
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
-        };
-        BeginAnimation(TopProperty, slide);
+            BeginAnimation(LeftProperty, new DoubleAnimation(targetLeft + dx, span)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            });
+        }
+        if (dy != 0)
+        {
+            BeginAnimation(TopProperty, new DoubleAnimation(targetTop + dy, span)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+            });
+        }
     }
 
     private void RestartTimer()

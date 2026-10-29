@@ -14,6 +14,9 @@
         <!-- 半透明背景：置于浮窗与拖动提示之下（最底层），形成摆放模式并挡住桌面点击 -->
         <Border x:Name="Scrim" Background="#40000000"/>
 
+        <!-- 贴边 15% 判定区虚线 + 中轴吸附辅助线 + 当前生效方向高亮带（元素由代码创建，不参与命中测试） -->
+        <Canvas x:Name="GuideLayer" IsHitTestVisible="False" Opacity="0"/>
+
         <Canvas x:Name="DragLayer">
             <!-- 1:1 复刻真实提示卡片（正常尺寸、开启态外观），按住即可拖动 -->
             <Border x:Name="TipCard" CornerRadius="8" BorderThickness="1"
@@ -40,12 +43,20 @@
 
             <!-- 拖动提示 + 操作按钮：跟随浮窗（下方优先，贴底时翻到上方） -->
             <Border x:Name="HintBar" CornerRadius="8" BorderThickness="1" Padding="14,8" Opacity="0">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="HintText" Text="{loc:Tr PickHint}" FontSize="12.5"
-                               VerticalAlignment="Center" Margin="4,0,0,0"/>
-                    <Button x:Name="CancelBtn" Content="{loc:Tr PickCancel}" Style="{StaticResource Win11Button}" Margin="16,0,0,0"/>
-                    <Button x:Name="SaveBtn" Content="{loc:Tr PickSave}" Style="{StaticResource Win11AccentButton}" Margin="8,0,0,0"/>
-                </StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="HintText" Text="{loc:Tr PickHint}" FontSize="12.5"/>
+                        <TextBlock x:Name="ZoneHint" Text="{loc:Tr PickZoneHint}" FontSize="11.5" Margin="0,3,0,0"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
+                        <Button x:Name="CancelBtn" Content="{loc:Tr PickCancel}" Style="{StaticResource Win11Button}"/>
+                        <Button x:Name="SaveBtn" Content="{loc:Tr PickSave}" Style="{StaticResource Win11AccentButton}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Grid>
             </Border>
         </Canvas>
     </Grid>

@@ -89,7 +89,10 @@ public static class Loc
 
         // —— 自定义位置模式 ——
         Add("PickTitle", "自定义提示位置", "Custom tip position");
-        Add("PickHint", "按住浮窗拖到目标位置", "Drag the tip where you want it");
+        Add("PickHint", "按住浮窗拖动，或用方向键逐像素微调（Shift 每次 10 像素）",
+            "Drag the tip, or nudge it with the arrow keys (Shift = 10 px)");
+        Add("PickZoneHint", "虚线内为贴边弹出区（左右优先于上下），靠近中轴自动吸附对齐",
+            "Dashed bands set the slide-in edge (Left/Right outrank Top/Bottom); snaps to the center axes");
         Add("PickCancel", "取消", "Cancel");
         Add("PickSave", "保存位置", "Save position");
 

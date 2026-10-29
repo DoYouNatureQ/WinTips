@@ -4,10 +4,16 @@ using WinTips.Native;
 
 namespace WinTips.UI;
 
-/// <summary>浮窗位置计算：预设（顶部/底部 × 左/中/右）、自定义位置与主屏范围钳制。</summary>
+/// <summary>浮窗位置计算：预设（顶部/底部 × 左/中/右）、自定义位置、贴边判定与主屏范围钳制。</summary>
 internal static class OsdPlacement
 {
     public const double Gap = 16;
+
+    /// <summary>贴边弹出判定区：屏幕四边各占 15%，浮窗中心落入其中即从该边滑入/滑出（左右优先）。</summary>
+    public const double ZoneRatio = 0.15;
+
+    /// <summary>贴边弹出方向。</summary>
+    public enum PopSide { Top, Bottom, Left, Right }
 
     /// <summary>主显示器有效 DPI 缩放（物理像素 → DIP）。查询失败返回 1.0。</summary>
     public static double PrimaryScale()
@@ -64,4 +70,54 @@ internal static class OsdPlacement
     public static (double Left, double Top) ClampToPrimary(double left, double top, double width, double height) =>
         (Math.Clamp(left, 0, Math.Max(0, SystemParameters.PrimaryScreenWidth - width)),
          Math.Clamp(top, 0, Math.Max(0, SystemParameters.PrimaryScreenHeight - height)));
+
+    /// <summary>浮窗中心落在左/右 15% 区内则返回该侧，否则返回 null（屏幕中部）。</summary>
+    public static PopSide? HorizontalSide(double left, double width)
+    {
+        double screen = Math.Max(1, SystemParameters.PrimaryScreenWidth);
+        double zone = screen * ZoneRatio;
+        double center = left + width / 2;
+        if (center < zone) return PopSide.Left;
+        if (center > screen - zone) return PopSide.Right;
+        return null;
+    }
+
+    /// <summary>浮窗中心落在上/下 15% 区内则返回该侧，否则返回 null（屏幕中部）。</summary>
+    public static PopSide? VerticalSide(double top, double height)
+    {
+        double screen = Math.Max(1, SystemParameters.PrimaryScreenHeight);
+        double zone = screen * ZoneRatio;
+        double center = top + height / 2;
+        if (center < zone) return PopSide.Top;
+        if (center > screen - zone) return PopSide.Bottom;
+        return null;
+    }
+
+    /// <summary>
+    /// 生效的弹出方向：横向优先——浮窗中心落在左/右 15% 区内就只从该侧弹出，纵向不再参与
+    /// （四角也只横向滑动）；不在左右区内才看上下 15% 区；都不在则返回 null（屏幕中部）。
+    /// 保证任一时刻只有一个轴生效，不会出现斜向滑动或左右位置却上下弹的情况。
+    /// </summary>
+    public static PopSide? ActiveSide(double left, double top, double width, double height) =>
+        HorizontalSide(left, width) ?? VerticalSide(top, height);
+
+    /// <summary>
+    /// 入场/退场滑动偏移（DIP）：只沿生效方向单轴滑动——贴左边从左侧滑入、贴右边从右侧滑入，
+    /// 上下同理（左右优先于上下）。浮窗在屏幕中部时按上下半屏回落到竖向，保持旧版手感。
+    /// </summary>
+    public static (double Dx, double Dy) SlideOffset(double left, double top, double width, double height)
+    {
+        const double Distance = 20;
+        switch (ActiveSide(left, top, width, height))
+        {
+            case PopSide.Left: return (-Distance, 0);
+            case PopSide.Right: return (Distance, 0);
+            case PopSide.Top: return (0, -Distance);
+            case PopSide.Bottom: return (0, Distance);
+            default:
+                return top + height / 2 < SystemParameters.PrimaryScreenHeight / 2
+                    ? (0, -Distance)
+                    : (0, Distance);
+        }
+    }
 }
