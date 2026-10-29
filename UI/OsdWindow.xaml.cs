@@ -13,7 +13,7 @@ namespace WinTips.UI;
 /// 左侧挂锁图标（锁扣随开/关旋转+回弹）、中间“大写锁定 开启/关闭”、
 /// 底部强调色指示条（开=60px 全不透明，关=36px 20% 不透明）。
 /// 锁扣与指示条共用同一时长与缓动，且在窗口可见后才同帧启动，保证同步起落。
-/// 显示于主显示器任务栏上方，水平位置可设为左侧/居中/右侧（默认居中）；点击穿透、不抢焦点。
+/// 显示于主显示器：垂直可贴屏幕顶部或任务栏上方，水平可设为左侧/居中/右侧（默认居中、任务栏上方）；点击穿透、不抢焦点。
 /// 预热分两步：EnsureHandle() 只建句柄不显示窗口（原地 Show() 会带出一帧
 /// DWM 背景）；随后把窗口移到屏幕外真实渲染一帧再隐藏，暖起冷启动的
 /// 渲染管线。句柄与管线就绪后首次 ShowTip 无创建迟滞，也不会看到内容
@@ -244,7 +244,7 @@ public partial class OsdWindow : Window
 
         UpdateSize();
 
-        _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(seconds, 1, 10));
+        _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(seconds, 0.5, 10));
 
         if (_visible)
         {
@@ -516,9 +516,17 @@ public partial class OsdWindow : Window
         var s = AppSettings.Instance;
         (Left, Top) = s.HasCustomPosition
             ? OsdPlacement.ClampToPrimary(s.CustomLeft!.Value, s.CustomTop!.Value, Width, Height)
-            : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement), Width, Height, scale);
+            : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement),
+                AppSettings.NormalizeVertical(s.TipVertical), Width, Height, scale);
         _lastTop = Top;
     }
+
+    /// <summary>
+    /// 入场/退场滑动偏移（DIP）：浮窗落在屏幕上半区（顶部预设）时自上方滑入/滑出，
+    /// 落在下半区（底部预设或自定义低位置）时自下方滑入/滑出，始终朝贴边方向收起。
+    /// </summary>
+    private double SlideOffset(double anchorTop) =>
+        anchorTop + Height / 2 < SystemParameters.PrimaryScreenHeight / 2 ? -20 : 20;
 
     private void AnimateIn()
     {
@@ -538,7 +546,7 @@ public partial class OsdWindow : Window
         };
         Root.BeginAnimation(UIElement.OpacityProperty, fade);
 
-        var slide = new DoubleAnimation(target + 20, target, TimeSpan.FromMilliseconds(ms))
+        var slide = new DoubleAnimation(target + SlideOffset(target), target, TimeSpan.FromMilliseconds(ms))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
         };
@@ -577,7 +585,7 @@ public partial class OsdWindow : Window
         };
         Root.BeginAnimation(UIElement.OpacityProperty, fade);
 
-        var slide = new DoubleAnimation(target + 20, TimeSpan.FromMilliseconds(ms))
+        var slide = new DoubleAnimation(target + SlideOffset(target), TimeSpan.FromMilliseconds(ms))
         {
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
         };

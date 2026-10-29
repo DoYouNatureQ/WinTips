@@ -30,14 +30,24 @@ public sealed class AppSettings
     public const string PlacementCenter = "Center";
     public const string PlacementRight = "Right";
 
+    public const string PlacementTop = "Top";
+    public const string PlacementBottom = "Bottom";
+
     /// <summary>浮窗水平位置：Left / Center / Right（默认居中）。</summary>
     public string TipPlacement { get; set; } = PlacementCenter;
+
+    /// <summary>浮窗垂直位置：Top（贴屏幕顶部）/ Bottom（贴任务栏上方，默认）。</summary>
+    public string TipVertical { get; set; } = PlacementBottom;
 
     /// <summary>容错归一化：非法值一律回落为居中。</summary>
     public static string NormalizePlacement(string? value) =>
         value == PlacementLeft || value == PlacementRight ? value : PlacementCenter;
 
-    /// <summary>自定义位置的浮窗左上角（DIP，主屏坐标系）。两项都有值才生效并覆盖 TipPlacement。</summary>
+    /// <summary>容错归一化：非法值一律回落为底部（任务栏上方，与旧版本行为一致）。</summary>
+    public static string NormalizeVertical(string? value) =>
+        value == PlacementTop ? PlacementTop : PlacementBottom;
+
+    /// <summary>自定义位置的浮窗左上角（DIP，主屏坐标系）。两项都有值才生效并覆盖 TipPlacement / TipVertical。</summary>
     public double? CustomLeft { get; set; }
     public double? CustomTop { get; set; }
 
@@ -88,6 +98,7 @@ public sealed class AppSettings
                 if (s != null)
                 {
                     s.TipPlacement = NormalizePlacement(s.TipPlacement);
+                    s.TipVertical = NormalizeVertical(s.TipVertical);
                     NormalizeCustomPosition(s);
                     if (MigrateFromV1(s, text)) s.Save();
                     Instance = s;

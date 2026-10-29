@@ -67,6 +67,7 @@ public partial class PlacementPickerWindow : Window
         (double left, double top) = s.HasCustomPosition
             ? (s.CustomLeft!.Value, s.CustomTop!.Value)
             : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement),
+                AppSettings.NormalizeVertical(s.TipVertical),
                 TipCard.ActualWidth, TipCard.ActualHeight, OsdPlacement.PrimaryScale());
         (left, top) = OsdPlacement.ClampToPrimary(left, top, TipCard.ActualWidth, TipCard.ActualHeight);
         Canvas.SetLeft(TipCard, left);

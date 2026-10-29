@@ -14,11 +14,11 @@ A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scro
 
 ## Features
 
-- **Lock-key hints**: Caps / Num / Scroll Lock and Insert — a padlock icon spins and springs back on each toggle, with an accent bar at the bottom and a slide-up fade-in / slide-down fade-out.
+- **Lock-key hints**: Caps / Num / Scroll Lock and Insert — a padlock icon spins and springs back on each toggle, with an accent bar at the bottom and a fade plus slide toward the nearest screen edge.
 - **Clipboard hints**: Ctrl+C / V / X shows a checkmark or scissors icon, with an "×N" badge counting consecutive actions; the flyout only appears when the clipboard actually changes. "Notify on any copy method" is on by default — non-keyboard copies (context menu, an app's own Copy button, etc.) trigger it too, while clearing the clipboard does not.
 - **Native materials**: DWM acrylic, system rounded corners, light/dark theme and accent color follow the system, high-DPI aware.
 - **Unobtrusive**: click-through, never steals focus, hidden from the taskbar and Alt+Tab, auto-dismisses after 1–5 seconds (adjustable).
-- **Settings window**: Win11 Settings styling, applied and saved instantly. Flyout position can be left / center / right, or choose "Custom position" and drag the flyout anywhere, then save (one click restores the default).
+- **Settings window**: Win11 Settings styling, applied and saved instantly. Flyout position is two independent axes — Top/Bottom plus Left/Center/Right (Top + Center, Top + Right, Bottom + Center, …) — or choose "Custom position" and drag the flyout anywhere, then save (one click restores the default).
 - **Bilingual UI**: built-in Simplified Chinese and English. Follows the system language by default; switch anytime under "Interface language" in Settings — effective immediately, no restart.
 - Lives in the tray, single instance, no third-party dependencies (WPF + WinForms, .NET 10).
 

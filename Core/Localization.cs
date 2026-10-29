@@ -28,8 +28,8 @@ public static class Loc
         // —— 设置窗口 ——
         Add("SettingsTitle", "WinTips 设置", "WinTips Settings");
         Add("SettingsHeader", "键盘状态提示", "Keyboard status tips");
-        Add("SettingsSubtitle", "按下对应按键时，在任务栏上方显示系统风格提示",
-            "A system-style tip above the taskbar on each key press");
+        Add("SettingsSubtitle", "按下对应按键时，在屏幕顶部或任务栏上方显示系统风格提示",
+            "A system-style tip at the top or above the taskbar on each key press");
 
         Add("SectionKeys", "提示键位", "Keys");
         Add("KeyCapsLockLong", "大写锁定（Caps Lock）", "Caps Lock");
@@ -47,6 +47,8 @@ public static class Loc
         Add("RowDuration", "提示停留时长", "Display duration");
         Add("RowAnimSpeed", "浮现动画速度", "Animation speed");
         Add("RowPosition", "提示位置", "Tip position");
+        Add("PositionTop", "顶部", "Top");
+        Add("PositionBottom", "底部", "Bottom");
         Add("PositionLeft", "左侧", "Left");
         Add("PositionCenter", "居中", "Center");
         Add("PositionRight", "右侧", "Right");

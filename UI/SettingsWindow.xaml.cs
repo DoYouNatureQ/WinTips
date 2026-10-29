@@ -70,11 +70,11 @@ public partial class SettingsWindow : Window
         PasteToggle.IsChecked = s.ShowPaste;
         CutToggle.IsChecked = s.ShowCut;
         AnyCopyToggle.IsChecked = s.ShowAnyCopy;
-        DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 1, 5);
-        UpdateDurationText(s.DisplaySeconds);
+        DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 0.5, 5);
+        UpdateDurationText(DurationSlider.Value);
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
-        LoadPlacement(s.TipPlacement);
+        LoadPlacement();
         StartupToggle.IsChecked = AppSettings.IsStartupSet();
         LangSystem.IsChecked = Loc.Language == AppLanguage.System;
         LangZh.IsChecked = Loc.Language == AppLanguage.Chinese;
@@ -88,6 +88,8 @@ public partial class SettingsWindow : Window
         bool custom = AppSettings.Instance.HasCustomPosition;
         ResetPosBtn.IsEnabled = custom;
         bool presetEnabled = !custom;
+        PosTop.IsEnabled = presetEnabled;
+        PosBottom.IsEnabled = presetEnabled;
         PosLeft.IsEnabled = presetEnabled;
         PosCenter.IsEnabled = presetEnabled;
         PosRight.IsEnabled = presetEnabled;
@@ -106,11 +108,41 @@ public partial class SettingsWindow : Window
         RefreshPlacementUi();
     }
 
-    private void LoadPlacement(string placement)
+    /// <summary>程序化回填单选态时置位，避免触发 Checked 里的保存与预览提示。</summary>
+    private bool _syncingPlacement;
+
+    /// <summary>回填预设位置：垂直（顶部/底部）与水平（左/中/右）两组单选各自独立。</summary>
+    private void LoadPlacement()
     {
-        PosLeft.IsChecked = placement == AppSettings.PlacementLeft;
-        PosCenter.IsChecked = placement != AppSettings.PlacementLeft && placement != AppSettings.PlacementRight;
-        PosRight.IsChecked = placement == AppSettings.PlacementRight;
+        var s = AppSettings.Instance;
+        string h = AppSettings.NormalizePlacement(s.TipPlacement);
+        string v = AppSettings.NormalizeVertical(s.TipVertical);
+
+        _syncingPlacement = true;
+        try
+        {
+            PosTop.IsChecked = v == AppSettings.PlacementTop;
+            PosBottom.IsChecked = v == AppSettings.PlacementBottom;
+            PosLeft.IsChecked = h == AppSettings.PlacementLeft;
+            PosCenter.IsChecked = h == AppSettings.PlacementCenter;
+            PosRight.IsChecked = h == AppSettings.PlacementRight;
+        }
+        finally { _syncingPlacement = false; }
+    }
+
+    /// <summary>
+    /// 预设位置变更（顶部/底部与左/中/右可自由组合）：写入设置后弹一次真实提示，
+    /// 让用户直观看到落点。只传需要改动的那个轴，另一轴保持当前值。
+    /// </summary>
+    private void OnPresetChecked(string? horizontal, string? vertical)
+    {
+        if (_syncingPlacement) return;
+        Save(v =>
+        {
+            if (horizontal != null) v.TipPlacement = horizontal;
+            if (vertical != null) v.TipVertical = vertical;
+        });
+        _showTest?.Invoke(TipKind.CapsLock, true);
     }
 
     private static string AnimSpeedLabel(double speed)
@@ -162,15 +194,17 @@ public partial class SettingsWindow : Window
         LangEn.Checked += (_, _) => SetLanguage(AppLanguage.English);
 
         // 切换预设位置后弹一次真实提示，让用户直观看到落点
-        PosLeft.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementLeft); _showTest?.Invoke(TipKind.CapsLock, true); };
-        PosCenter.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementCenter); _showTest?.Invoke(TipKind.CapsLock, true); };
-        PosRight.Checked += (_, _) => { Save(v => v.TipPlacement = AppSettings.PlacementRight); _showTest?.Invoke(TipKind.CapsLock, true); };
+        PosTop.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementTop);
+        PosBottom.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementBottom);
+        PosLeft.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementLeft, null);
+        PosCenter.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementCenter, null);
+        PosRight.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementRight, null);
 
         CustomPosBtn.Click += (_, _) => OpenPlacementPicker();
         ResetPosBtn.Click += (_, _) =>
         {
             Save(v => { v.CustomLeft = null; v.CustomTop = null; });
-            LoadPlacement(AppSettings.Instance.TipPlacement);
+            LoadPlacement();
             RefreshPlacementUi();
             _showTest?.Invoke(TipKind.CapsLock, true);
         };
