@@ -15,6 +15,9 @@
     <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WFO0003：WinForms 分析器要求 DPI 走 Application.SetHighDpiMode，本项目是 WPF 主程序
+         （只用 WinForms 的 NotifyIcon），DPI 只能由清单声明，故静音该提示 -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

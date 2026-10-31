@@ -12,7 +12,7 @@
     <!-- 自定义位置模式：全屏半透明遮罩压暗桌面，浮窗与拖动提示浮于其上 -->
     <Grid x:Name="Root">
         <!-- 半透明背景：置于浮窗与拖动提示之下（最底层），形成摆放模式并挡住桌面点击 -->
-        <Border x:Name="Scrim" Background="#40000000"/>
+        <Border x:Name="Scrim" Background="{DynamicResource ScrimBrush}"/>
 
         <!-- 贴边 15% 判定区虚线 + 中轴吸附辅助线 + 当前生效方向高亮带（元素由代码创建，不参与命中测试） -->
         <Canvas x:Name="GuideLayer" IsHitTestVisible="False" Opacity="0"/>

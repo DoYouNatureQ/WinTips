@@ -20,6 +20,7 @@
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                    <Setter Property="TextElement.Foreground" Value="{DynamicResource HoverTextBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>

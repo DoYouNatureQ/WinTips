@@ -9,7 +9,7 @@
         <Style x:Key="AccentButton" TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Height" Value="32"/>
             <Setter Property="MinWidth" Value="120"/>
@@ -36,25 +36,47 @@
         </Style>
     </Window.Resources>
 
-    <Grid x:Name="Panel" Margin="26,20,26,22" MouseLeftButtonDown="Panel_MouseLeftButtonDown">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal">
+        <!-- Win10 兜底标题栏：Win11 上用系统自带的 Mica 标题栏，这里整行折叠 -->
+        <Grid x:Name="LegacyCaption" Grid.Row="0" Height="36" Visibility="Collapsed"
+              MouseLeftButtonDown="LegacyCaption_MouseLeftButtonDown">
+            <TextBlock x:Name="CaptionTitleText" FontSize="12" Margin="16,0,56,0"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <Button Style="{StaticResource CaptionCloseButton}" HorizontalAlignment="Right"
+                    Click="LegacyClose_Click" AutomationProperties.Name="Close"/>
+        </Grid>
+
+        <Grid x:Name="Panel" Grid.Row="1" Margin="26,20,26,22" MouseLeftButtonDown="Panel_MouseLeftButtonDown">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
             <Image x:Name="AppIcon" Width="32" Height="32" VerticalAlignment="Top"
                    RenderOptions.BitmapScalingMode="HighQuality"/>
-            <StackPanel Margin="14,0,0,0">
+            <!-- 用 Grid 而不是横向 StackPanel：横向 StackPanel 按无限宽度测量子元素，
+                 MessageText 的 TextWrapping 永远不会生效，长文案会被窗口右边裁掉 -->
+            <StackPanel Grid.Column="1" Margin="14,0,0,0">
                 <TextBlock x:Name="TitleText" Text="WinTips 已在运行" FontSize="20" FontWeight="SemiBold"
                            FontFamily="Segoe UI Variable Display, Segoe UI"/>
                 <TextBlock x:Name="MessageText" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
             </StackPanel>
-        </StackPanel>
+        </Grid>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
             <Button x:Name="OkButton" Content="{loc:Tr NoticeOk}" Style="{StaticResource AccentButton}"
                     IsDefault="True" IsCancel="True" Click="Ok_Click"/>
         </StackPanel>
+        </Grid>
     </Grid>
 </Window>

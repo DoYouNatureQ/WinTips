@@ -51,8 +51,8 @@ public partial class TrayMenuWindow : Window
     private void ApplyTheme()
     {
         bool dark = ThemeHelper.IsDarkTheme;
+        ThemeHelper.ApplyTemplateResources(this, dark);
         Foreground = new SolidColorBrush(ThemeHelper.TextPrimary(dark));
-        Resources["HoverBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0x00, 0x00, 0x00));
 
         var hwnd = new WindowInteropHelper(this).EnsureHandle();
         var src = HwndSource.FromHwnd(hwnd)!;
@@ -62,17 +62,19 @@ public partial class TrayMenuWindow : Window
         NativeMethods.SetWindowLong32(hwnd, NativeMethods.GWL_EXSTYLE,
             ex | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_TOPMOST);
 
-        var m = new NativeMethods.MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
-        NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref m);
+        var solid = new SolidColorBrush(ThemeHelper.MenuSurface(dark));
 
-        int darkFlag = dark ? 1 : 0;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkFlag, sizeof(int));
-        int corner = NativeMethods.DWMWCP_ROUND;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
-        int backdrop = NativeMethods.DWMSBT_TRANSIENTWINDOW;
-        int hr = NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
-        if (hr != 0)
-            Root.Background = new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Color.FromRgb(0xF9, 0xF9, 0xF9));
+        // 扩展边框是 AllowsTransparency=false 下保留硬件加速 + 逐像素透明的前提，两条路径都要
+        DwmChrome.SetFrameExtended(hwnd, true);
+        DwmChrome.TrySetDarkTitleBar(hwnd, dark);
+        DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
+
+        if (ThemeHelper.GlassAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW))
+            return;
+
+        // 没有亚克力（Win10 / 高对比度）：不透明直角卡片，圆角缺口与玻璃色带都不会出现
+        Root.CornerRadius = new CornerRadius(0);
+        Root.Background = solid;
     }
 
     private Border AddItem(string label, string? glyph, Action onClick, bool? isChecked = null,
@@ -155,9 +157,7 @@ public partial class TrayMenuWindow : Window
         {
             Height = 1,
             Margin = new Thickness(6, 5, 6, 5),
-            Background = new SolidColorBrush(ThemeHelper.IsDarkTheme
-                ? Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)
-                : Color.FromArgb(0x1F, 0x00, 0x00, 0x00)),
+            Background = new SolidColorBrush(ThemeHelper.Divider(ThemeHelper.IsDarkTheme)),
         });
     }
 

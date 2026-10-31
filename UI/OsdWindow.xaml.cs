@@ -57,8 +57,9 @@ public partial class OsdWindow : Window
             ex | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE |
             NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOPMOST);
 
-        var m = new NativeMethods.MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
-        NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref m);
+        // 扩展边框在两条路径上都要保留：这是 AllowsTransparency=false 时拿到逐像素透明的
+        // 唯一办法。Win10 上没有 Mica，下面这层“玻璃”会被 ApplyChrome 铺的不透明卡片完全盖住
+        DwmChrome.SetFrameExtended(hwnd, true);
 
         src.AddHook(WndProc);
         NativeMethods.AddClipboardFormatListener(hwnd);
@@ -140,23 +141,22 @@ public partial class OsdWindow : Window
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         bool dark = ThemeHelper.IsDarkTheme;
+        var solid = new SolidColorBrush(ThemeHelper.OsdSurface(dark));
 
-        int darkFlag = dark ? 1 : 0;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkFlag, sizeof(int));
-        int corner = NativeMethods.DWMWCP_ROUND;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
-        int backdrop = NativeMethods.DWMSBT_TRANSIENTWINDOW;
-        int hr = NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+        DwmChrome.TrySetDarkTitleBar(hwnd, dark);
+        DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
-        //系统不支持系统亚克力时退回纯色卡片
-        Root.Background = hr == 0
+        // 系统不支持 Mica/Acrylic 时退回纯色卡片（Win10 与高对比度都必须走这条分支，
+        // 否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）
+        Root.Background = ThemeHelper.GlassAllowed &&
+                          DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW)
             ? Brushes.Transparent
-            : new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Color.FromRgb(0xFB, 0xFB, 0xFB));
+            : solid;
 
         Foreground = new SolidColorBrush(ThemeHelper.TextPrimary(dark));
         LockIndicator.Fill = new SolidColorBrush(ThemeHelper.AccentColor);
         CountBadge.Background = new SolidColorBrush(ThemeHelper.AccentColor);
-        CountText.Foreground = Brushes.White;
+        CountText.Foreground = new SolidColorBrush(ThemeHelper.OnAccent(dark));
     }
 
     public void PreWarm()

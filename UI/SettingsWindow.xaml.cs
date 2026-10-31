@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Navigation;
 using System.Windows.Media;
@@ -18,6 +19,7 @@ public partial class SettingsWindow : Window
     {
         _showTest = showTest;
         InitializeComponent();
+        ApplyPlatformChrome();
         ApplyTheme();
         LoadValues();
         WireEvents();
@@ -25,8 +27,40 @@ public partial class SettingsWindow : Window
 
         // 语言切换后 XAML 文案由绑定自动刷新，代码里拼好的数值标签需手动重算
         Loc.Changed += RefreshValueLabels;
-        Closed += (_, _) => Loc.Changed -= RefreshValueLabels;
+        ThemeHelper.Changed += OnSystemThemeChanged;
+        Closed += (_, _) =>
+        {
+            Loc.Changed -= RefreshValueLabels;
+            ThemeHelper.Changed -= OnSystemThemeChanged;
+        };
     }
+
+    /// <summary>系统深浅色 / 高对比度切换后重刷配色与窗口材质。</summary>
+    private void OnSystemThemeChanged()
+    {
+        ApplyTheme();
+        ApplyChrome();
+    }
+
+    /// <summary>
+    /// Win11 保留系统标题栏（自带 Mica 与圆角，和系统设置页一致）；
+    /// Win10 拿不到 Mica/圆角，系统标题栏会露出 Aero 时代的方形边框，
+    /// 因此改为无边框 + 自绘标题栏，杜绝“Win7 样式窗口”。
+    /// </summary>
+    private void ApplyPlatformChrome()
+    {
+        if (DwmChrome.SupportsFluent) return;
+        WindowStyle = WindowStyle.None;
+        LegacyCaption.Visibility = Visibility.Visible;
+    }
+
+    private void LegacyCaption_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ButtonState != MouseButtonState.Pressed) return;
+        try { DragMove(); } catch (InvalidOperationException) { /* 鼠标已抬起，忽略 */ }
+    }
+
+    private void LegacyClose_Click(object sender, RoutedEventArgs e) => Close();
 
     private void RefreshValueLabels()
     {
@@ -37,6 +71,8 @@ public partial class SettingsWindow : Window
     private void ApplyTheme()
     {
         bool dark = ThemeHelper.IsDarkTheme;
+        ThemeHelper.ApplyTemplateResources(this, dark);
+
         Foreground = new SolidColorBrush(ThemeHelper.TextPrimary(dark));
         var secondary = new SolidColorBrush(ThemeHelper.TextSecondary(dark));
         SubText.Foreground = secondary;
@@ -47,13 +83,7 @@ public partial class SettingsWindow : Window
         FooterText.Foreground = secondary;
         LblKeys.Foreground = secondary;
         LblBehavior.Foreground = secondary;
-        Resources["AccentBrush"] = new SolidColorBrush(ThemeHelper.AccentColor);
 
-        Resources["CardBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xA8, 0xFF, 0xFF, 0xFF));
-        Resources["CardStrokeBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00));
-        Resources["SliderRestBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x3D, 0x00, 0x00, 0x00));
-        Resources["ThumbRingBrush"] = new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White);
-        Resources["SegHoverBrush"] = new SolidColorBrush(dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0F, 0x00, 0x00, 0x00));
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
         foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepB1, SepB2, SepB3, SepB4, SepB5 })
             sep.Background = divider;
@@ -242,20 +272,40 @@ public partial class SettingsWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        var hwnd = new WindowInteropHelper(this).Handle;
-        var src = HwndSource.FromHwnd(hwnd)!;
-        src.CompositionTarget!.BackgroundColor = Colors.Transparent;
+        ApplyChrome();
+    }
 
-        var m = new NativeMethods.MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
-        NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref m);
+    /// <summary>
+    /// 窗口材质：只有真正拿到 Mica 才让客户区透明。Win10 / 高对比度 / 合成关闭时，
+    /// -1 扩展边框会让客户区变成 DWM 的实心填充色，在面板四周留一圈 Win7 Aero 式色带，
+    /// 因此必须退回“整窗不透明纯色”。可重复调用，用于运行时切换主题。
+    /// </summary>
+    private void ApplyChrome()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        var src = HwndSource.FromHwnd(hwnd);
+        if (src?.CompositionTarget == null) return;
 
         bool dark = ThemeHelper.IsDarkTheme;
-        int darkFlag = dark ? 1 : 0;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkFlag, sizeof(int));
-        int backdrop = NativeMethods.DWMSBT_MAINWINDOW;
-        int hr = NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
-        if (hr != 0)
-            Panel.Background = new SolidColorBrush(dark ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xF3, 0xF3, 0xF3));
+        var surface = new SolidColorBrush(ThemeHelper.WindowSurface(dark));
+
+        DwmChrome.TrySetDarkTitleBar(hwnd, dark);
+
+        bool mica = ThemeHelper.GlassAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_MAINWINDOW);
+        if (mica)
+        {
+            src.CompositionTarget.BackgroundColor = Colors.Transparent;
+            DwmChrome.SetFrameExtended(hwnd, true);
+            Background = Brushes.Transparent;
+            Panel.Background = Brushes.Transparent;
+            return;
+        }
+
+        DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_NONE);
+        DwmChrome.SetFrameExtended(hwnd, false);
+        Background = surface;
+        Panel.Background = surface;
     }
 
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)

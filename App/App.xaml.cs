@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using WinTips.Core;
 using WinTips.UI;
 
@@ -65,6 +66,9 @@ public partial class App : Application
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));
 
+        // 跟随系统主题 / 高对比度：切换后让已打开的窗口重刷配色与材质
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
         {
             _osd?.PreWarm();
@@ -74,6 +78,21 @@ public partial class App : Application
             else if (e.Args.Contains("--settings"))
                 ShowSettings();
         }));
+    }
+
+    /// <summary>
+    /// 系统主题 / 对比度变化回调。SystemEvents 在独立的系统线程触发，
+    /// 必须切回 UI 线程再广播，否则会在非创建线程操作控件资源。
+    /// </summary>
+    private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category is not (UserPreferenceCategory.General
+            or UserPreferenceCategory.Color
+            or UserPreferenceCategory.VisualStyle))
+            return;
+
+        try { Current?.Dispatcher.BeginInvoke(new Action(ThemeHelper.RaiseChanged)); }
+        catch { /* 退出过程中可能已无 Dispatcher */ }
     }
 
     private void RunTest(string[] args)
@@ -99,6 +118,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         _hook?.Dispose();
         _tray?.Dispose();
         if (_ownsMutex)

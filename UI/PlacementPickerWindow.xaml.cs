@@ -95,23 +95,28 @@ public partial class PlacementPickerWindow : Window
     private void ApplyTheme()
     {
         bool dark = ThemeHelper.IsDarkTheme;
+        ThemeHelper.ApplyTemplateResources(this, dark);
         Foreground = new SolidColorBrush(ThemeHelper.TextPrimary(dark));
         var secondary = new SolidColorBrush(ThemeHelper.TextSecondary(dark));
         HintText.Foreground = secondary;
         ZoneHint.Foreground = secondary;
 
-        // 遮罩上的卡片无法用 DWM 亚克力，改用高不透明度纯色模拟同款质感
-        var card = dark ? Color.FromArgb(0xD9, 0x2B, 0x2B, 0x2B) : Color.FromArgb(0xD9, 0xFB, 0xFB, 0xFB);
-        var stroke = dark ? Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00);
-        TipCard.Background = new SolidColorBrush(card);
-        TipCard.BorderBrush = new SolidColorBrush(stroke);
-        HintBar.Background = new SolidColorBrush(card);
-        HintBar.BorderBrush = new SolidColorBrush(stroke);
+        // 遮罩上的卡片无法用 DWM 亚克力，改用高不透明度纯色模拟同款质感；
+        // 高对比度下改为完全不透明的系统窗口色，避免半透明把对比度拉低
+        var card = new SolidColorBrush(ThemeHelper.PickerSurface(dark));
+        var stroke = new SolidColorBrush(ThemeHelper.PickerStroke(dark));
+        TipCard.Background = card;
+        TipCard.BorderBrush = stroke;
+        HintBar.Background = card;
+        HintBar.BorderBrush = stroke;
+
+        Resources["ScrimBrush"] = new SolidColorBrush(ThemeHelper.PickerScrim());
 
         var accent = ThemeHelper.AccentColor;
         _guideBrush = secondary;
         _accentBrush = new SolidColorBrush(accent);
-        _bandBrush = new SolidColorBrush(Color.FromArgb(0x1F, accent.R, accent.G, accent.B));
+        _bandBrush = new SolidColorBrush(
+            ThemeHelper.Tint(accent, ThemeHelper.HighContrast ? (byte)0x40 : (byte)0x1F));
         ApplyGuideBrushes();
     }
 

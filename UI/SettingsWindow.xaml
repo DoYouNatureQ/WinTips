@@ -6,7 +6,22 @@
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="Transparent" ShowInTaskbar="False">
     <!-- Win11 设置风格：Mica 底 + 圆角半透明卡片分组；两大板块左右并排，避免窄高比例 -->
-    <Grid x:Name="Panel" Margin="26,20,26,22">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Win10 兜底标题栏：Win11 上系统自带 Mica 标题栏，这一行整行折叠（高度 0 不占位） -->
+        <Grid x:Name="LegacyCaption" Grid.Row="0" Height="36" Visibility="Collapsed"
+              MouseLeftButtonDown="LegacyCaption_MouseLeftButtonDown">
+            <TextBlock Text="{loc:Tr SettingsTitle}" FontSize="12" Margin="16,0,56,0"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <Button Style="{StaticResource CaptionCloseButton}" HorizontalAlignment="Right"
+                    Click="LegacyClose_Click" AutomationProperties.Name="Close"/>
+        </Grid>
+
+        <Grid x:Name="Panel" Grid.Row="1" Margin="26,20,26,22">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -152,5 +167,6 @@
                    TextWrapping="Wrap" TextAlignment="Center">
             <Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
         </TextBlock>
+        </Grid>
     </Grid>
 </Window>

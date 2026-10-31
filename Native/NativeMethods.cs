@@ -83,9 +83,11 @@ internal static partial class NativeMethods
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
     // ---- DWM 系统材质 ----
+    // 深色标题栏的属性号随版本变化：1809–1903 为 19，2004(19041)+ 才是 20
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    public const int DWMWA_USE_IMMERSIVE_DARK_MODE_LEGACY = 19;
+    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;   // Win11 22000+
+    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;        // Win11 22621+
 
     public const int DWMWCP_DONOTROUND = 1;
     public const int DWMWCP_ROUND = 2;
@@ -109,6 +111,10 @@ internal static partial class NativeMethods
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
+
+    /// <summary>桌面合成是否开启：关闭时（安全模式/无 DWM/远程会话）所有玻璃效果都会退化成经典样式。</summary>
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmIsCompositionEnabled(out bool enabled);
 
     // ---- 鼠标钩子（菜单外点击关闭） ----
     public const int WH_MOUSE_LL = 14;
