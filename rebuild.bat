@@ -48,7 +48,7 @@ rem ----------------------------------------
 rem 3. Stop running WinTips
 rem ----------------------------------------
 
-echo [1/5] Stopping running WinTips...
+echo [1/7] Stopping running WinTips...
 
 taskkill /f /im WinTips.exe >nul 2>nul
 
@@ -58,7 +58,8 @@ tasklist /fi "imagename eq WinTips.exe" 2>nul | find /i "WinTips.exe" >nul
 
 if not errorlevel 1 (
     echo        Waiting for WinTips.exe to exit...
-    timeout /t 1 /nobreak >nul
+    rem ping as sleep: timeout.exe fails when stdin is redirected
+    ping -n 2 127.0.0.1 >nul 2>nul
     goto WAIT_FOR_EXIT
 )
 
@@ -69,7 +70,7 @@ rem ----------------------------------------
 rem 4. Clean all build output (bin, obj, publish)
 rem ----------------------------------------
 
-echo [2/5] Cleaning build output (bin, obj, publish)...
+echo [2/7] Cleaning build output (bin, obj, publish)...
 
 for %%D in (bin obj publish) do (
     if exist "%~dp0%%D" (
@@ -96,7 +97,7 @@ rem    every build unpacks native libs into TEMP\.net\WinTips\hash.
 rem    Old hash folders are never reused, so they must be cleaned here.
 rem ----------------------------------------
 
-echo [3/5] Cleaning stale self-extract cache...
+echo [3/7] Cleaning stale self-extract cache...
 
 set "CACHE_LEFT="
 
@@ -123,7 +124,7 @@ rem ----------------------------------------
 rem 6. Publish
 rem ----------------------------------------
 
-echo [4/5] Publishing WinTips...
+echo [4/7] Publishing WinTips...
 echo.
 
 dotnet publish ^
@@ -161,10 +162,70 @@ if not exist "%~dp0publish\WinTips.exe" (
 )
 
 rem ----------------------------------------
-rem 8. Start WinTips
+rem 8. Clean publish residue
+rem    dotnet publish always drops WinTips.pdb next to the exe.
+rem    The csproj already sets DebugType=none for single-file
+rem    publish; this pass removes it anyway, so a manual
+rem    `dotnet publish` (or a stale file) can never leak through.
 rem ----------------------------------------
 
-echo [5/5] Starting WinTips...
+echo [5/7] Cleaning publish residue...
+
+set "PUBLISH_REMOVED=0"
+set "PUBLISH_LEFT=0"
+
+for %%F in ("%~dp0publish\*.pdb") do (
+    if exist "%%~F" (
+        del /f /q "%%~F" >nul 2>nul
+
+        if exist "%%~F" (
+            echo        [WARN] Could not delete %%~nxF ^(file in use^).
+            set "PUBLISH_LEFT=1"
+        ) else (
+            echo        Removed %%~nxF
+            set "PUBLISH_REMOVED=1"
+        )
+    )
+)
+
+rem "00" = nothing matched and nothing failed
+if "%PUBLISH_REMOVED%%PUBLISH_LEFT%"=="00" echo        Nothing to clean, publish is already tidy.
+
+echo.
+
+rem ----------------------------------------
+rem 9. Remove bin and obj again
+rem    dotnet publish recreates bin/ and obj/ even though step 2
+rem    deleted them, so wipe them once more to leave a clean tree.
+rem    Nothing is needed at runtime: publish\WinTips.exe is
+rem    self-contained. VBCSCompiler may still hold obj/ handles,
+rem    hence the build-server shutdown + retry below.
+rem ----------------------------------------
+
+echo [6/7] Cleaning bin and obj...
+
+dotnet build-server shutdown >nul 2>nul
+
+set "CLEAN_FAIL="
+
+call :RemoveBuildDir "%~dp0bin" bin
+if errorlevel 1 set "CLEAN_FAIL=1"
+
+call :RemoveBuildDir "%~dp0obj" obj
+if errorlevel 1 set "CLEAN_FAIL=1"
+
+if defined CLEAN_FAIL (
+    echo        [WARN] Some folders are still locked and were kept.
+    echo        Close Visual Studio / dotnet watch, then rerun this script.
+)
+
+echo.
+
+rem ----------------------------------------
+rem 10. Start WinTips
+rem ----------------------------------------
+
+echo [7/7] Starting WinTips...
 
 start "" "%~dp0publish\WinTips.exe"
 
@@ -185,3 +246,42 @@ echo.
 
 endlocal
 exit /b 0
+
+rem ========================================
+rem Subroutines
+rem    Placed after exit /b so the main flow can never fall into them.
+rem ========================================
+
+:RemoveBuildDir
+rem %1 = full path to remove, %2 = short name for the log line
+setlocal EnableExtensions
+
+if not exist "%~1" (
+    echo        %~2: already gone.
+    endlocal & exit /b 0
+)
+
+set "TRY=0"
+
+:RemoveBuildDir_Retry
+set /a TRY+=1
+rmdir /s /q "%~1" 2>nul
+
+if not exist "%~1" (
+    echo        %~2: removed.
+    endlocal & exit /b 0
+)
+
+rem A file handle from the MSBuild / Roslyn server can outlive the
+rem publish process for a moment, so retry with a short backoff.
+rem "ping -n 2" is used as the sleep: unlike timeout.exe it needs no
+rem console stdin and cannot be shadowed by a GNU timeout on PATH.
+if %TRY% lss 5 (
+    ping -n 2 127.0.0.1 >nul 2>nul
+    goto RemoveBuildDir_Retry
+)
+
+echo        [WARN] Could not fully remove %~2.
+echo        Path: %~1
+
+endlocal & exit /b 1

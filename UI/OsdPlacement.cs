@@ -4,7 +4,11 @@ using WinTips.Native;
 
 namespace WinTips.UI;
 
-/// <summary>浮窗位置计算：预设（顶部/底部 × 左/中/右）、自定义位置、贴边判定与主屏范围钳制。</summary>
+/// <summary>
+/// 浮窗位置计算：预设（顶部/底部 × 左/中/右）、自定义位置、贴边判定与主屏范围钳制。
+/// 所有预设位置都以任务栏为锚点，且跟随任务栏“此刻”的形态：任务栏收起（自动隐藏）时
+/// 屏内只剩一条 2px 唤出条，浮窗就跟着贴到屏幕边缘；任务栏滑出后浮窗自动让到它上方。
+/// </summary>
 internal static class OsdPlacement
 {
     public const double Gap = 16;
@@ -30,39 +34,45 @@ internal static class OsdPlacement
         return 1.0;
     }
 
-    /// <summary>内容底边锚点（DIP）：任务栏上方 16px（任务栏在底部且未自动隐藏时），否则工作区底边上方 16px。</summary>
-    public static double BottomAnchor(double scale)
+    /// <summary>
+    /// 主显示器可用区域（DIP，主屏坐标系）：屏幕矩形扣掉任务栏此刻实际占用的那条边
+    /// （见 <see cref="TaskbarInfo.PrimaryUsableRect"/>）。任务栏收起时几乎等于整块屏幕，
+    /// 滑出后自动让位。拿不到显示器/任务栏信息时退回系统工作区，即旧版行为。
+    /// </summary>
+    public static (double Left, double Top, double Right, double Bottom) UsableArea(double scale)
     {
-        var tb = TaskbarInfo.GetPrimaryTaskbar();
-        if (tb.HasValue && tb.Value.Edge == NativeMethods.ABE_BOTTOM && !tb.Value.AutoHide)
-            return tb.Value.Rect.Top / scale - Gap;
-        return SystemParameters.WorkArea.Bottom - Gap;
+        if (scale <= 0) scale = 1.0;
+
+        if (TaskbarInfo.PrimaryUsableRect() is { } r)
+            return (r.Left / scale, r.Top / scale, r.Right / scale, r.Bottom / scale);
+
+        var wa = SystemParameters.WorkArea;
+        return (wa.Left, wa.Top, wa.Right, wa.Bottom);
     }
 
-    /// <summary>内容顶边锚点（DIP）：任务栏下方 16px（任务栏在顶部且未自动隐藏时），否则工作区顶边下方 16px。</summary>
-    public static double TopAnchor(double scale)
-    {
-        var tb = TaskbarInfo.GetPrimaryTaskbar();
-        if (tb.HasValue && tb.Value.Edge == NativeMethods.ABE_TOP && !tb.Value.AutoHide)
-            return tb.Value.Rect.Bottom / scale + Gap;
-        return SystemParameters.WorkArea.Top + Gap;
-    }
+    /// <summary>内容底边锚点（DIP）：任务栏当前上沿再往上 16px——任务栏收起时就是屏幕底边上方 16px。</summary>
+    public static double BottomAnchor(double scale) => UsableArea(scale).Bottom - Gap;
+
+    /// <summary>内容顶边锚点（DIP）：任务栏当前下沿再往下 16px——任务栏收起时就是屏幕顶边下方 16px。</summary>
+    public static double TopAnchor(double scale) => UsableArea(scale).Top + Gap;
 
     /// <summary>
-    /// 按预设计算浮窗左上角（DIP，主屏坐标系）：垂直贴屏幕顶部或任务栏上方，
-    /// 水平按 Left/Center/Right 摆放（左右贴工作区边缘，居中为屏幕几何中心）。
+    /// 按预设计算浮窗左上角（DIP，主屏坐标系）：垂直贴任务栏的相反一侧，
+    /// 水平按 Left/Center/Right 摆放（左右贴可用区域边缘，居中为屏幕几何中心）。
+    /// 可用区域已按任务栏当前形态扣除那条边。
     /// </summary>
     public static (double Left, double Top) DefaultFor(string placement, string vertical, double width, double height, double scale)
     {
+        var area = UsableArea(scale);
         double left = placement switch
         {
-            AppSettings.PlacementLeft => SystemParameters.WorkArea.Left + Gap,
-            AppSettings.PlacementRight => SystemParameters.WorkArea.Right - Gap - width,
+            AppSettings.PlacementLeft => area.Left + Gap,
+            AppSettings.PlacementRight => area.Right - Gap - width,
             _ => SystemParameters.PrimaryScreenWidth / 2 - width / 2,
         };
         double top = vertical == AppSettings.PlacementTop
-            ? TopAnchor(scale)
-            : BottomAnchor(scale) - height;
+            ? area.Top + Gap
+            : area.Bottom - Gap - height;
         return (left, top);
     }
 

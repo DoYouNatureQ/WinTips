@@ -14,10 +14,10 @@ A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scro
 
 ## Features
 
-- **Lock-key hints**: Caps / Num / Scroll Lock and Insert — a padlock icon spins and springs back on each toggle, with an accent bar at the bottom and a fade plus slide toward the nearest screen edge.
+- **Lock-key hints**: Caps / Num / Scroll Lock and Insert — a padlock icon spins and springs back on each toggle, with an accent bar (mirrored above the label when the flyout hugs the top edge) and a fade plus slide toward the nearest screen edge.
 - **Edge-aware slide**: inside the 15% zone along any screen edge the flyout slides in from (and back toward) that edge — Left/Right outrank Top/Bottom, so corners slide horizontally too — and falls back to a vertical slide when it sits mid-screen.
 - **Clipboard hints**: Ctrl+C / V / X shows a checkmark or scissors icon, with an "×N" badge counting consecutive actions; the flyout only appears when the clipboard actually changes. "Notify on any copy method" is on by default — non-keyboard copies (context menu, an app's own Copy button, etc.) trigger it too, while clearing the clipboard does not.
-- **Native materials**: DWM acrylic, system rounded corners, light/dark theme and accent color follow the system, high-DPI aware.
+- **Native materials**: DWM acrylic, system rounded corners, light/dark theme and accent color follow the system, high-DPI aware. On Windows 10, in high contrast, with composition disabled, when system "Transparency effects" is off, or while Battery Saver is active, the app falls back to the opaque colors from the design spec instead of overlaying translucent cards on DWM's solid fallback (Mica ignores Battery Saver, so the settings window keeps its material).
 - **Unobtrusive**: click-through, never steals focus, hidden from the taskbar and Alt+Tab, auto-dismisses after 1–5 seconds (adjustable).
 - **Settings window**: Win11 Settings styling, applied and saved instantly. Flyout position is two independent axes — Top/Bottom plus Left/Center/Right (Top + Center, Top + Right, Bottom + Center, …) — or choose "Custom position" and drag the flyout anywhere, then save (one click restores the default).
 - **Visual placement**: in custom-position mode dashed guides mark the 15% edge zones and the zone the flyout center falls into is highlighted (that is the side it will slide from); the flyout snaps to the screen's center axes, and the arrow keys nudge it pixel by pixel (tap = 1 px, hold to repeat, Shift = 10 px).

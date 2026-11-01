@@ -48,6 +48,15 @@ public partial class TrayMenuWindow : Window
     private bool InputAllowed() =>
         Environment.TickCount64 - _openedAt >= 300 && _seenDown;
 
+    /// <summary>
+    /// 主屏可用区域底边（DIP）：任务栏此刻的上沿。以任务栏为锚点，跟随它的当前形态——
+    /// 收起时菜单跟到屏幕底边，滑出时自动让到任务栏上方，不会被压住。
+    /// </summary>
+    private static double UsableBottom(double scale) =>
+        TaskbarInfo.PrimaryUsableRect() is { } usable
+            ? usable.Bottom / (scale > 0 ? scale : 1.0)
+            : SystemParameters.WorkArea.Bottom;
+
     private void ApplyTheme()
     {
         bool dark = ThemeHelper.IsDarkTheme;
@@ -69,10 +78,11 @@ public partial class TrayMenuWindow : Window
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
-        if (ThemeHelper.GlassAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW))
+        if (ThemeHelper.AcrylicAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW))
             return;
 
-        // 没有亚克力（Win10 / 高对比度）：不透明直角卡片，圆角缺口与玻璃色带都不会出现
+        // 没有亚克力（Win10 / 高对比度 / 系统关掉透明效果 / 节电模式）：
+        // 不透明直角卡片，圆角缺口与玻璃色带都不会出现
         Root.CornerRadius = new CornerRadius(0);
         Root.Background = solid;
     }
@@ -228,10 +238,7 @@ public partial class TrayMenuWindow : Window
                 double m = source.CompositionTarget.TransformToDevice.M11;
                 if (m > 0) scale = m;
             }
-            var tb = TaskbarInfo.GetPrimaryTaskbar();
-            double bottomLimit = tb.HasValue && tb.Value.Edge == NativeMethods.ABE_BOTTOM && !tb.Value.AutoHide
-                ? tb.Value.Rect.Top / scale
-                : SystemParameters.WorkArea.Bottom;
+            double bottomLimit = UsableBottom(scale);
             Top = Math.Max(8, Math.Min(Top, bottomLimit - ActualHeight - 8));
         }
     }
@@ -273,12 +280,12 @@ public partial class TrayMenuWindow : Window
     private void InstallOutsideClickHook()
     {
         _hwnd = new WindowInteropHelper(this).Handle;
-        var tb = TaskbarInfo.GetPrimaryTaskbar();
-        if (tb.HasValue && tb.Value.Edge == NativeMethods.ABE_BOTTOM && !tb.Value.AutoHide)
-            _taskbarTopPx = tb.Value.Rect.Top;
-        else
-            _taskbarTopPx = SystemParameters.WorkArea.Bottom *
-                (HwndSource.FromHwnd(_hwnd)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0);
+        // 任务栏当前那条带内的点击一律放过（收起时只剩 2px 唤出条，不影响点菜单），
+        // 否则点托盘图标/任务栏就会把菜单当“外部点击”关掉
+        _taskbarTopPx = TaskbarInfo.PrimaryUsableRect() is { } usable
+            ? usable.Bottom
+            : SystemParameters.WorkArea.Bottom *
+              (HwndSource.FromHwnd(_hwnd)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0);
 
         if (_active != null && !ReferenceEquals(_active, this))
         {
@@ -315,10 +322,7 @@ public partial class TrayMenuWindow : Window
 
         double menuW = ActualWidth, menuH = ActualHeight;
 
-        var tb = TaskbarInfo.GetPrimaryTaskbar();
-        double bottomLimit = tb.HasValue && tb.Value.Edge == NativeMethods.ABE_BOTTOM && !tb.Value.AutoHide
-            ? tb.Value.Rect.Top / scale
-            : SystemParameters.WorkArea.Bottom;
+        double bottomLimit = UsableBottom(scale);
 
         Left = Math.Clamp(cx - menuW, 8, SystemParameters.PrimaryScreenWidth - menuW - 8);
         Top = Math.Max(8, bottomLimit - menuH - 8);

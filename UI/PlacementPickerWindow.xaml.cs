@@ -203,8 +203,21 @@ public partial class PlacementPickerWindow : Window
 
         Canvas.SetLeft(TipCard, left);
         Canvas.SetTop(TipCard, top);
+        MirrorPreviewBar(top, h);
         PlaceHintBar(left, top);
         UpdateGuides(left, top, w, h);
+    }
+
+    /// <summary>
+    /// 预览卡片跟随真实浮窗：挂靠屏幕顶部区域（中心在上半屏）时，把强调色指示条从卡片下缘
+    /// 镜像到文字上方，并同步把内容区的上下留白对调，保证“拖到哪就看到什么”。
+    /// </summary>
+    private void MirrorPreviewBar(double top, double h)
+    {
+        bool onTop = top + h / 2 < ScreenH / 2;
+        TipContent.Margin = onTop ? new Thickness(16, 8, 12, 4) : new Thickness(16, 4, 12, 8);
+        TipBar.VerticalAlignment = onTop ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        TipBar.Margin = onTop ? new Thickness(0, 6, 0, 0) : new Thickness(0, 0, 0, 6);
     }
 
     /// <summary>中轴吸附：浮窗中心与屏幕水平/垂直中轴的距离在 SnapDistance 内时对齐到正中心。</summary>

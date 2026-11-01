@@ -22,8 +22,62 @@ internal static class ThemeHelper
     /// <summary>系统是否处于高对比度模式。</summary>
     public static bool HighContrast => SystemParameters.HighContrast;
 
-    /// <summary>是否允许使用 Mica/Acrylic：仅 Win11 且非高对比度时成立。</summary>
-    public static bool GlassAllowed => !HighContrast && DwmChrome.CanUseGlass;
+    /// <summary>个性化（深浅色、透明效果）注册表位置。</summary>
+    private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+
+    /// <summary>
+    /// 系统“透明效果”开关（设置 → 个性化 → 颜色 / 辅助功能 → 视觉效果）。
+    ///
+    /// 关掉它并不等于“材质消失”：DWM 会把 Mica·亚克力整体替换成**不透明纯色兜底**
+    /// （见 Materials overview：Transparency effects disabled → all SystemBackdrop
+    /// materials fall back to their solid-color alternatives）。而本程序的卡片是按
+    /// “壁纸着色的 Mica 底”调出来的半透明叠加（白 0xA8 / 白 0x24 / 黑 0x1F…），
+    /// 一旦底从“壁纸取样色”变成平铺的 #F3F3F3 / #202020，叠出来的色相与层次就跟
+    /// 开着透明效果时明显对不上——这就是“颜色很奇怪”的根因。
+    /// 读不到时按“开启”处理，保持既有行为。
+    /// </summary>
+    public static bool TransparencyEnabled
+    {
+        get
+        {
+            try
+            {
+                using var k = Registry.CurrentUser.OpenSubKey(PersonalizeKey);
+                return k?.GetValue("EnableTransparency") is not int v || v != 0;
+            }
+            catch { return true; }
+        }
+    }
+
+    /// <summary>
+    /// 是否处于节电模式（设置 → 系统 → 电源和电池 → 节电模式，低电量时也会自动进入）。
+    ///
+    /// 它和“透明效果”开关的杀伤范围不一样：节电模式**只关亚克力**，Mica 不受影响
+    /// （Materials overview：Battery Saver active → Windows disables acrylic，
+    /// Mica is not affected）。所以浮窗与托盘菜单会退回纯色，而设置/提示窗口的 Mica 照常。
+    /// </summary>
+    public static bool BatterySaver
+    {
+        get
+        {
+            try { return NativeMethods.GetSystemPowerStatus(out var s) && s.SystemStatusFlag == 1; }
+            catch { return false; }
+        }
+    }
+
+    /// <summary>
+    /// 是否允许使用系统材质（Mica / 亚克力）：Win11 + 合成正常 + 非高对比度 + 系统开着透明效果。
+    ///
+    /// 透明效果关闭时必须和 Win10、高对比度走同一条“不透明纯色”路径：只有在玻璃真的
+    /// 存在时才让客户区透明，否则半透明卡片会露出 DWM 的纯色兜底，颜色整体偏掉。
+    /// </summary>
+    public static bool MicaAllowed => !HighContrast && TransparencyEnabled && DwmChrome.CanUseGlass;
+
+    /// <summary>
+    /// 亚克力是否可用：在 Mica 的基础上再排除节电模式。浮窗与托盘菜单（DWMSBT_TRANSIENTWINDOW）
+    /// 走这条判定——节电模式会把它们换成纯色兜底，却不会通知任何窗口，只能每次铺材质时现查。
+    /// </summary>
+    public static bool AcrylicAllowed => MicaAllowed && !BatterySaver;
 
     public static bool IsDarkTheme
     {
@@ -32,7 +86,7 @@ internal static class ThemeHelper
             if (HighContrast) return false; // HC 主题自带配色，深浅色无意义
             try
             {
-                using var k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                using var k = Registry.CurrentUser.OpenSubKey(PersonalizeKey);
                 return k?.GetValue("AppsUseLightTheme") is int light ? light == 0 : false;
             }
             catch { return false; }

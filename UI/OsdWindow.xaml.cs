@@ -11,7 +11,8 @@ namespace WinTips.UI;
 
 /// <summary>
 /// 左侧挂锁图标（锁扣随开/关旋转+回弹）、中间“大写锁定 开启/关闭”、
-/// 底部强调色指示条（开=60px 全不透明，关=36px 20% 不透明）。
+/// 强调色指示条（开=60px 全不透明，关=36px 20% 不透明）；指示条默认在卡片下缘，
+/// 浮窗挂在屏幕顶部区域时镜像到文字上方，始终贴近它所挂靠的那条屏幕边。
 /// 锁扣与指示条共用同一时长与缓动，且在窗口可见后才同帧启动，保证同步起落。
 /// 显示于主显示器：垂直可贴屏幕顶部或任务栏上方，水平可设为左侧/居中/右侧（默认居中、任务栏上方）；点击穿透、不抢焦点。
 /// 预热分两步：EnsureHandle() 只建句柄不显示窗口（原地 Show() 会带出一帧
@@ -21,7 +22,17 @@ namespace WinTips.UI;
 /// </summary>
 public partial class OsdWindow : Window
 {
+    /// <summary>跟随轮询间隔（ms）。任务栏滑出动画约 200ms，60ms 一次足够跟手。</summary>
+    private const int FollowIntervalMs = 60;
+
+    /// <summary>跟随挪动的缓动时长（ms）：比弹出动画短，避免慢吞吞地追。</summary>
+    private const int FollowMs = 140;
+
     private readonly DispatcherTimer _hideTimer = new();
+
+    /// <summary>可见期间跟随任务栏滑出/收起；只在需要时运行（见 StartFollow）。</summary>
+    private readonly DispatcherTimer _followTimer = new();
+
     private bool _visible;
     private bool _shownOnce;
     private int _generation;
@@ -30,6 +41,9 @@ public partial class OsdWindow : Window
     private TipKind _currentKind;
     private double _lastLeft;
     private double _lastTop;
+    private double _followLeft;
+    private double _followTop;
+    private int _moveGen;
 
     /// <summary>系统剪贴板更新（WM_CLIPBOARDUPDATE），由 OsdController 订阅。</summary>
     public event Action? ClipboardUpdated;
@@ -37,12 +51,17 @@ public partial class OsdWindow : Window
     private int _clipCount;
     private bool _countIncreased;
 
+    /// <summary>指示条贴在文字上方（浮窗挂靠屏幕顶边）而非下方。</summary>
+    private bool _barOnTop;
+
     private static bool IsClip(TipKind k) => TipInfo.IsClipboard(k);
 
     public OsdWindow()
     {
         InitializeComponent();
         _hideTimer.Tick += (_, _) => HideAnimated();
+        _followTimer.Interval = TimeSpan.FromMilliseconds(FollowIntervalMs);
+        _followTimer.Tick += (_, _) => FollowTaskbar();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -146,9 +165,9 @@ public partial class OsdWindow : Window
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
-        // 系统不支持 Mica/Acrylic 时退回纯色卡片（Win10 与高对比度都必须走这条分支，
-        // 否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）
-        Root.Background = ThemeHelper.GlassAllowed &&
+        // 系统不支持亚克力时退回纯色卡片（Win10、高对比度、系统关掉透明效果、
+        // 节电模式都必须走这条分支，否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）
+        Root.Background = ThemeHelper.AcrylicAllowed &&
                           DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW)
             ? Brushes.Transparent
             : solid;
@@ -255,6 +274,7 @@ public partial class OsdWindow : Window
             Reposition();
             AnimateStatus(on);
             RestartTimer();
+            StartFollow();
             return;
         }
 
@@ -291,6 +311,7 @@ public partial class OsdWindow : Window
         // 表现为锁扣先动完、指示条才“开始动”；显示后再启动才同步。
         if (ms > 0) AnimateStatus(on);
         RestartTimer();
+        StartFollow();
     }
 
     public void UpdateState(TipKind kind, bool on)
@@ -322,9 +343,41 @@ public partial class OsdWindow : Window
         CheckMark.Visibility = cut ? Visibility.Collapsed : Visibility.Visible;
         CutGlyph.Visibility = cut ? Visibility.Visible : Visibility.Collapsed;
 
-        // 锁键模式：内容区上 6 / 下 10（底部给指示条留空间）、左 16 / 右 12（原设计）；
+        ApplyBarSide();
+    }
+
+    /// <summary>
+    /// 按指示条的贴边侧摆放内容区与指示条本体：指示条在卡片下缘时内容区上 6 / 下 10
+    /// （底部给指示条留空间），镜像到上缘时上下对调成上 10 / 下 6；剪贴板模式没有指示条，
+    /// 上下对称留 8。
+    /// </summary>
+    private void ApplyBarSide()
+    {
         // 剪贴板模式：右侧只留 8px，让 ×N 徽章贴近卡片右缘，避免挤占文字空间。
-        ContentGrid.Margin = clip ? new Thickness(16, 8, 8, 8) : new Thickness(16, 6, 12, 10);
+        if (IsClip(_currentKind))
+        {
+            ContentGrid.Margin = new Thickness(16, 8, 8, 8);
+            return;
+        }
+
+        // 锁键模式：左 16 / 右 12（原设计）
+        ContentGrid.Margin = _barOnTop ? new Thickness(16, 10, 12, 6) : new Thickness(16, 6, 12, 10);
+        LockIndicator.VerticalAlignment = _barOnTop ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        LockIndicator.Margin = _barOnTop ? new Thickness(0, 7, 0, 0) : new Thickness(0, 0, 0, 7);
+    }
+
+    /// <summary>
+    /// 浮窗挂在屏幕顶部区域时，把指示条从底部镜像到文字上方，让它始终贴近浮窗所挂靠的
+    /// 那条屏幕边（与滑入方向同侧），而不是夹在文字与屏幕内容之间。判据与滑入方向的
+    /// 中部回落一致：浮窗中心在上半屏即视为“顶部区域”，自定义位置同样适用。
+    /// 用落点 _lastTop 而非 Top：滑入/滑出动画期间 Top 是中间值，靠中轴时会被判反。
+    /// </summary>
+    private void UpdateBarSide()
+    {
+        bool onTop = _lastTop + Height / 2 < SystemParameters.PrimaryScreenHeight / 2;
+        if (onTop == _barOnTop) return;
+        _barOnTop = onTop;
+        ApplyBarSide();
     }
 
     /// <summary>
@@ -503,26 +556,113 @@ public partial class OsdWindow : Window
         return ft.Width;
     }
 
-    private void Reposition()
+    /// <summary>当前 DPI 缩放（物理像素 → DIP），取浮窗自身的渲染变换。</summary>
+    private double CurrentScale()
     {
-        double scale = 1.0;
         var src = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         if (src?.CompositionTarget != null)
         {
             double m = src.CompositionTarget.TransformToDevice.M11;
-            if (m > 0) scale = m;
+            if (m > 0) return m;
         }
+        return 1.0;
+    }
 
-        BeginAnimation(LeftProperty, null);
-        BeginAnimation(TopProperty, null);
-
+    /// <summary>浮窗该落在哪（DIP）：有自定义位置用自定义值，否则按预设（跟随任务栏当前形态）。</summary>
+    private (double Left, double Top) TargetPosition(double scale)
+    {
         var s = AppSettings.Instance;
-        (Left, Top) = s.HasCustomPosition
+        return s.HasCustomPosition
             ? OsdPlacement.ClampToPrimary(s.CustomLeft!.Value, s.CustomTop!.Value, Width, Height)
             : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement),
                 AppSettings.NormalizeVertical(s.TipVertical), Width, Height, scale);
-        _lastLeft = Left;
-        _lastTop = Top;
+    }
+
+    private void Reposition()
+    {
+        BeginAnimation(LeftProperty, null);
+        BeginAnimation(TopProperty, null);
+
+        (Left, Top) = TargetPosition(CurrentScale());
+        _lastLeft = _followLeft = Left;
+        _lastTop = _followTop = Top;
+        UpdateBarSide();
+    }
+
+    /// <summary>
+    /// 实时跟随任务栏：浮窗可见期间按 60ms 轮询任务栏的真实窗口矩形——单次约 7µs
+    /// （只走 MonitorFromPoint / FindWindow / GetWindowRect，刻意不碰约 365µs 的 ABM 查询），
+    /// 位置没变立刻返回；变了才用 140ms 缓动挪过去。
+    /// 任务栏收起时浮窗跟到屏幕边缘，滑出时自动让到它上方，不会再有“被滑出的任务栏压住”的窗口。
+    /// </summary>
+    private void FollowTaskbar()
+    {
+        if (!_visible) return;
+
+        var (left, top) = TargetPosition(CurrentScale());
+        if (Math.Abs(left - _followLeft) < 0.5 && Math.Abs(top - _followTop) < 0.5) return;
+
+        _followLeft = left;
+        _followTop = top;
+        _lastLeft = left;
+        _lastTop = top;
+        UpdateBarSide(); // 跟随可能跨过半屏，指示条该不该镜像要跟着变
+
+        bool animated = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed) > 0;
+        MoveContentTo(left, top, animated ? FollowMs : 0);
+    }
+
+    /// <summary>
+    /// 启动跟随轮询：只在“开了自动隐藏 + 用的是预设位置”时才需要——任务栏不会滑出/收起，
+    /// 或者位置被用户钉死了，都没有可跟的东西，那就一次也不跑。
+    /// </summary>
+    private void StartFollow()
+    {
+        _followTimer.Stop();
+        if (AppSettings.Instance.HasCustomPosition) return;
+        if (!TaskbarInfo.IsAutoHide()) return;
+        _followLeft = _lastLeft;
+        _followTop = _lastTop;
+        _followTimer.Start();
+    }
+
+    private void StopFollow()
+    {
+        _followTimer.Stop();
+        _moveGen++; // 让在途跟随动画的收尾回调失效，别去抢收起动画对 Left/Top 的控制
+    }
+
+    /// <summary>把浮窗平滑挪到目标位置（跟随任务栏时用）。</summary>
+    private void MoveContentTo(double left, double top, int ms)
+    {
+        if (ms <= 0)
+        {
+            BeginAnimation(LeftProperty, null);
+            BeginAnimation(TopProperty, null);
+            Left = left;
+            Top = top;
+            return;
+        }
+
+        double fromLeft = Left, fromTop = Top;
+        int gen = ++_moveGen;
+        var span = TimeSpan.FromMilliseconds(ms);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+        var animTop = new DoubleAnimation(fromTop, top, span) { EasingFunction = ease };
+        // 动画结束后把基值落到目标：否则之后任何一次 BeginAnimation(Left/Top, null)
+        // 都会把窗口弹回动画前的旧基值
+        animTop.Completed += (_, _) =>
+        {
+            if (gen != _moveGen || !_visible) return;
+            BeginAnimation(LeftProperty, null);
+            BeginAnimation(TopProperty, null);
+            Left = left;
+            Top = top;
+        };
+
+        BeginAnimation(LeftProperty, new DoubleAnimation(fromLeft, left, span) { EasingFunction = ease });
+        BeginAnimation(TopProperty, animTop);
     }
 
     /// <summary>
@@ -572,6 +712,7 @@ public partial class OsdWindow : Window
     private void HideAnimated()
     {
         if (!_visible) return;
+        StopFollow(); // 收起动画期间不再跟随，免得跟随动画和滑出动画抢 Left/Top
         int gen = _generation;
         double targetLeft = _lastLeft;
         double targetTop = _lastTop;

@@ -77,8 +77,8 @@ public partial class NoticeWindow : Window
 
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
 
-        // 拿不到 Mica（Win10 / 高对比度）就不做“整窗玻璃”：扩展边框只会变成实心色带
-        bool mica = ThemeHelper.GlassAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_MAINWINDOW);
+        // 拿不到 Mica（Win10 / 高对比度 / 系统关掉透明效果）就不做“整窗玻璃”：扩展边框只会变成实心色带
+        bool mica = ThemeHelper.MicaAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_MAINWINDOW);
         if (mica)
         {
             src.CompositionTarget!.BackgroundColor = Colors.Transparent;

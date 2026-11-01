@@ -15,6 +15,9 @@ public partial class SettingsWindow : Window
     /// <summary>测试提示回调（由 App 注入），保存自定义位置后预览真实效果。</summary>
     private readonly Action<TipKind, bool?>? _showTest;
 
+    /// <summary>上一次实际生效的玻璃状态，用于 WM_SETTINGCHANGE 时判断是否真的需要重铺材质。</summary>
+    private bool _glassApplied;
+
     public SettingsWindow(Action<TipKind, bool?>? showTest = null)
     {
         _showTest = showTest;
@@ -273,12 +276,27 @@ public partial class SettingsWindow : Window
     {
         base.OnSourceInitialized(e);
         ApplyChrome();
+        // 系统“透明效果”开关会改变玻璃可用性（见 ThemeHelper.TransparencyEnabled），
+        // 切换时 Windows 只广播 WM_SETTINGCHANGE，SystemEvents 不一定能及时送到，
+        // 这里直接挂消息钩子：用户一边开着本窗口一边拨系统开关也能立刻重铺材质。
+        var hwnd = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(hwnd)?.AddHook(ChromeWndProc);
+    }
+
+    private IntPtr ChromeWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == NativeMethods.WM_SETTINGCHANGE && ThemeHelper.MicaAllowed != _glassApplied)
+        {
+            ApplyTheme();
+            ApplyChrome();
+        }
+        return IntPtr.Zero;
     }
 
     /// <summary>
-    /// 窗口材质：只有真正拿到 Mica 才让客户区透明。Win10 / 高对比度 / 合成关闭时，
-    /// -1 扩展边框会让客户区变成 DWM 的实心填充色，在面板四周留一圈 Win7 Aero 式色带，
-    /// 因此必须退回“整窗不透明纯色”。可重复调用，用于运行时切换主题。
+    /// 窗口材质：只有真正拿到 Mica 才让客户区透明。Win10 / 高对比度 / 合成关闭 /
+    /// 系统关掉透明效果时，半透明卡片会露出 DWM 的实心填充色（Win7 Aero 式色带、
+    /// 整窗偏灰或偏黑），因此必须退回“整窗不透明纯色”。可重复调用，用于运行时切换。
     /// </summary>
     private void ApplyChrome()
     {
@@ -292,7 +310,8 @@ public partial class SettingsWindow : Window
 
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
 
-        bool mica = ThemeHelper.GlassAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_MAINWINDOW);
+        bool mica = ThemeHelper.MicaAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_MAINWINDOW);
+        _glassApplied = mica;
         if (mica)
         {
             src.CompositionTarget.BackgroundColor = Colors.Transparent;
@@ -304,6 +323,9 @@ public partial class SettingsWindow : Window
 
         DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_NONE);
         DwmChrome.SetFrameExtended(hwnd, false);
+        // 合成目标也要跟着落回实色：从玻璃态切过来时它还是 Transparent，
+        // 首帧会在面板与标题栏之间闪一下旧底色
+        src.CompositionTarget.BackgroundColor = surface.Color;
         Background = surface;
         Panel.Background = surface;
     }

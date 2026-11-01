@@ -20,6 +20,13 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
+  <!-- 单文件发布产物只要 WinTips.exe：不要 PDB（否则 publish 目录会多出 WinTips.pdb）。
+       仅当 PublishSingleFile=true 时生效，Debug/普通构建仍生成符号可调试。 -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
   <ItemGroup>
     <Resource Include="Resources\app.ico" />
   </ItemGroup>

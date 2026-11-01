@@ -116,6 +116,22 @@ internal static partial class NativeMethods
     [DllImport("dwmapi.dll")]
     public static extern int DwmIsCompositionEnabled(out bool enabled);
 
+    // ---- 电源状态（节电模式会关掉亚克力） ----
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        /// <summary>1 = 节电模式开启（Win10 起）。其余位保留，不要按布尔直接用。</summary>
+        public byte SystemStatusFlag;
+        public int BatteryLifeTime;
+        public int BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll")]
+    public static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
+
     // ---- 鼠标钩子（菜单外点击关闭） ----
     public const int WH_MOUSE_LL = 14;
     public const uint WM_LBUTTONDOWN = 0x0201;
@@ -153,6 +169,9 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowTextW(IntPtr hWnd, [MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder sb, int max);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowW(string? lpClassName, string? lpWindowName);
+
     // ---- 任务栏 ----
     public const uint ABM_GETSTATE = 0x0004;
     public const uint ABM_GETTASKBARPOS = 0x0005;
@@ -161,6 +180,9 @@ internal static partial class NativeMethods
     public const uint ABE_RIGHT = 2;
     public const uint ABE_BOTTOM = 3;
     public const uint ABS_AUTOHIDE = 0x1;
+
+    /// <summary>主任务栏窗口类名（副屏任务栏是 Shell_SecondaryTrayWnd）。</summary>
+    public const string TaskbarClassName = "Shell_TrayWnd";
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
@@ -217,6 +239,18 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO lpmi);
 
     [DllImport("shcore.dll")]
     public static extern int GetDpiForMonitor(IntPtr hMonitor, int dpiType, out uint dpiX, out uint dpiY);

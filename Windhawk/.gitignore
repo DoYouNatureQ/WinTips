@@ -1,0 +1,6 @@
+obj/
+*.exe
+*.obj
+*.pdb
+*.ilk
+preview/
