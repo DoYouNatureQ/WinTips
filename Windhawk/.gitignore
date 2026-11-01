@@ -3,4 +3,8 @@ obj/
 *.obj
 *.pdb
 *.ilk
-preview/
+
+# 调试用的抽帧/对比图不入库，只保留模组页 readme 引用的那几张
+preview/*
+!preview/osd-*.png
+!preview/osd-*.gif
