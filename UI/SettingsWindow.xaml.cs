@@ -23,6 +23,7 @@ public partial class SettingsWindow : Window
         _showTest = showTest;
         InitializeComponent();
         ApplyPlatformChrome();
+        ApplyVersionText();
         ApplyTheme();
         LoadValues();
         WireEvents();
@@ -64,6 +65,12 @@ public partial class SettingsWindow : Window
     }
 
     private void LegacyClose_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>
+    /// 底部版本号：与托盘悬停提示同源（<see cref="AppInfo"/> 读 csproj 的 &lt;Version&gt;），
+    /// 发版只改 csproj，两处自动同步。
+    /// </summary>
+    private void ApplyVersionText() => VersionRun.Text = $"WinTips {AppInfo.DisplayVersion}";
 
     private void RefreshValueLabels()
     {

@@ -85,7 +85,7 @@ public static class Loc
         Add("MenuSettings", "设置", "Settings");
         Add("MenuTest", "测试提示", "Test tips");
         Add("MenuExit", "退出", "Exit");
-        Add("TrayTooltip", "WinTips 键盘状态提示", "WinTips keyboard status tips");
+        // 托盘悬停提示不再走本地化：只显示「WinTips V<版本号>」（版本见 csproj）
 
         // —— 自定义位置模式 ——
         Add("PickTitle", "自定义提示位置", "Custom tip position");

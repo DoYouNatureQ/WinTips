@@ -163,9 +163,10 @@
             </Border>
         </Grid>
 
+        <!-- 底部一行：版本号 · 作者链接（版本号取自 csproj 的 <Version>，见 AppInfo） -->
         <TextBlock x:Name="FooterText" Grid.Row="2" FontSize="11.5" Margin="1,20,0,0"
                    TextWrapping="Wrap" TextAlignment="Center">
-            <Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
+            <Run x:Name="VersionRun" Text="V0.0"/><Run Text="&#160;·&#160;"/><Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
         </TextBlock>
         </Grid>
     </Grid>

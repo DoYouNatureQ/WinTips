@@ -18,7 +18,8 @@ internal sealed class TrayService : IDisposable
         _showTest = showTest;
 
         _notify.Icon = LoadIcon();
-        _notify.Text = Loc.T("TrayTooltip");
+        // 悬停提示只报版本号（与设置页底部一致），不再拼构建时间等易过期信息
+        _notify.Text = TooltipText;
         _notify.Visible = true;
         _notify.DoubleClick += (_, _) => _openSettings();
         _notify.MouseDown += (_, e) =>
@@ -26,12 +27,17 @@ internal sealed class TrayService : IDisposable
             if (e.Button == MouseButtons.Left) _openSettings();
             else if (e.Button == MouseButtons.Right) ShowMenu();
         };
-
-        Loc.Changed += RefreshText;
     }
 
-    /// <summary>界面语言切换后刷新托盘悬停提示。</summary>
-    private void RefreshText() => _notify.Text = Loc.T("TrayTooltip");
+    /// <summary>托盘悬停提示：应用名 + 版本号。NotifyIcon.Text 上限 63 字符，超长会被截断保护。</summary>
+    private static string TooltipText
+    {
+        get
+        {
+            string text = $"WinTips {AppInfo.DisplayVersion}";
+            return text.Length <= 63 ? text : text[..63];
+        }
+    }
 
     private void ShowMenu()
     {
@@ -76,7 +82,6 @@ internal sealed class TrayService : IDisposable
 
     public void Dispose()
     {
-        Loc.Changed -= RefreshText;
         _notify.Visible = false;
         _notify.Dispose();
     }
