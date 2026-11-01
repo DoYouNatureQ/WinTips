@@ -86,6 +86,25 @@ counts consecutive actions.
   solid for that tip instead of showing a black box.
 - Placement is preset based; fine positioning uses the offset settings.
 
+## Compared to Lock Keys Notifier
+
+[Lock Keys Notifier](https://windhawk.net/mods/lock-keys-notifier) reports the
+same lock keys, so the overlap is worth spelling out. The two aim at different
+things:
+
+- **Look.** This mod reproduces the Windows 11 OSD: the card blurs the desktop
+  behind it, slides in from the nearest edge and animates a padlock. Lock Keys
+  Notifier draws a configurable toast on a solid background.
+- **Scope.** Clipboard tips have no equivalent there.
+- **Configuration.** Here the size, theme and material follow Windows on
+  purpose. Lock Keys Notifier is built around being configurable — layouts,
+  fonts, shadows, sounds, per-key accents — so it isn't trying to match the
+  native OSD.
+
+If you want lock keys only, and want to tune every pixel of the card,
+Lock Keys Notifier is the better fit. If you want the native Windows 11 look, or
+clipboard tips, this mod is.
+
 ## Links
 
 - Standalone version, source and issue tracker:

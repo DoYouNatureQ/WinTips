@@ -24,6 +24,7 @@ if errorlevel 1 exit /b 1
 if not exist obj mkdir obj
 
 cl /nologo /std:c++20 /EHsc /W3 /DWINTIPS_STANDALONE /DUNICODE /D_UNICODE /utf-8 ^
+   /D"WH_MOD_ID=L\"wintips-osd\"" ^
    /Fo:obj\ /Fe:wintips-osd-test.exe wintips-osd.wh.cpp ^
    /link /SUBSYSTEM:CONSOLE
 if errorlevel 1 exit /b 1

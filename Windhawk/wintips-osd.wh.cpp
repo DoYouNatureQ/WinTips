@@ -10,7 +10,7 @@
 // @homepage        https://github.com/DoYouNatureQ/WinTips
 // @license         MIT
 // @include         windhawk.exe
-// @compilerOptions -lgdiplus -ladvapi32 -lshell32 -lshcore -ldwmapi
+// @compilerOptions -lgdiplus -lgdi32 -ladvapi32 -lshell32 -lshcore -ldwmapi
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -88,6 +88,25 @@ counts consecutive actions.
   an elevated window that copy can come back black, and the card falls back to
   solid for that tip instead of showing a black box.
 - Placement is preset based; fine positioning uses the offset settings.
+
+## Compared to Lock Keys Notifier
+
+[Lock Keys Notifier](https://windhawk.net/mods/lock-keys-notifier) reports the
+same lock keys, so the overlap is worth spelling out. The two aim at different
+things:
+
+- **Look.** This mod reproduces the Windows 11 OSD: the card blurs the desktop
+  behind it, slides in from the nearest edge and animates a padlock. Lock Keys
+  Notifier draws a configurable toast on a solid background.
+- **Scope.** Clipboard tips have no equivalent there.
+- **Configuration.** Here the size, theme and material follow Windows on
+  purpose. Lock Keys Notifier is built around being configurable — layouts,
+  fonts, shadows, sounds, per-key accents — so it isn't trying to match the
+  native OSD.
+
+If you want lock keys only, and want to tune every pixel of the card,
+Lock Keys Notifier is the better fit. If you want the native Windows 11 look, or
+clipboard tips, this mod is.
 
 ## Links
 
@@ -288,13 +307,13 @@ using namespace Gdiplus;
 // a plain Win32 program that can be run and screenshotted without Windhawk.
 // Only the Wh_* API surface and the mod entry points are shimmed; everything
 // else is the exact code that runs inside Windhawk.
+//
+// WH_MOD_ID is a constant Windhawk passes to the compiler, so the mod build
+// gets it for free. The standalone build has to be given one: build-test.bat
+// passes /DWH_MOD_ID=L"wintips-osd".
 // =============================================================================
 
 #ifdef WINTIPS_STANDALONE
-
-#ifndef WH_MOD_ID
-#define WH_MOD_ID L"wintips-osd"
-#endif
 
 static std::wstring StandaloneIniPath() {
     WCHAR path[MAX_PATH];
