@@ -76,6 +76,8 @@ public partial class SettingsWindow : Window
     {
         UpdateDurationText(DurationSlider.Value);
         UpdateAnimSpeedText(AnimSpeedSlider.Value);
+        // 提示文案是代码里按结果拼的，语言切换后需要重刷（XAML 绑定管不到）
+        if (StartupHint.Visibility == Visibility.Visible) ShowStartupHint(_lastStartupResult);
     }
 
     private void ApplyTheme()
@@ -90,6 +92,7 @@ public partial class SettingsWindow : Window
         AnimSpeedText.Foreground = secondary;
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
+        StartupHint.Foreground = secondary;
         FooterText.Foreground = secondary;
         LblKeys.Foreground = secondary;
         LblBehavior.Foreground = secondary;
@@ -115,7 +118,7 @@ public partial class SettingsWindow : Window
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
         LoadPlacement();
-        StartupToggle.IsChecked = AppSettings.IsStartupSet();
+        StartupToggle.IsChecked = StartupManager.IsEnabled();
         LangSystem.IsChecked = Loc.Language == AppLanguage.System;
         LangZh.IsChecked = Loc.Language == AppLanguage.Chinese;
         LangEn.IsChecked = Loc.Language == AppLanguage.English;
@@ -226,8 +229,8 @@ public partial class SettingsWindow : Window
             Save(v => v.AnimationSpeed = speed);
         };
 
-        StartupToggle.Checked += (_, _) => { AppSettings.SetStartup(true); Save(_ => { }); };
-        StartupToggle.Unchecked += (_, _) => { AppSettings.SetStartup(false); Save(_ => { }); };
+        StartupToggle.Checked += (_, _) => ApplyStartup(true);
+        StartupToggle.Unchecked += (_, _) => ApplyStartup(false);
 
         LangSystem.Checked += (_, _) => SetLanguage(AppLanguage.System);
         LangZh.Checked += (_, _) => SetLanguage(AppLanguage.Chinese);
@@ -248,6 +251,54 @@ public partial class SettingsWindow : Window
             RefreshPlacementUi();
             _showTest?.Invoke(TipKind.CapsLock, true);
         };
+    }
+
+    /// <summary>程序化回填开关时置位，避免再触发一次写入。</summary>
+    private bool _syncingStartup;
+
+    /// <summary>最近一次开关操作的结果，供切换语言后重刷提示文案。</summary>
+    private StartupChangeResult _lastStartupResult = StartupChangeResult.Ok;
+
+    /// <summary>
+    /// 开机自启开关。写入后一律回读系统真实状态再回填 UI：
+    /// 被任务管理器关过（DisabledByUser）或被组策略拦下时，开启会失败，
+    /// 开关必须弹回原位并说明原因 —— 挂个假开关比没有开关更糟。
+    /// </summary>
+    private void ApplyStartup(bool enable)
+    {
+        if (_syncingStartup) return;
+
+        var result = StartupManager.SetEnabled(enable);
+        bool actual = StartupManager.IsEnabled();
+
+        _syncingStartup = true;
+        try { StartupToggle.IsChecked = actual; }
+        finally { _syncingStartup = false; }
+
+        Save(v => v.LaunchAtStartup = actual);
+        ShowStartupHint(result);
+    }
+
+    private void ShowStartupHint(StartupChangeResult result)
+    {
+        _lastStartupResult = result;
+
+        string? key = result switch
+        {
+            StartupChangeResult.BlockedByUser => "StartupHintBlockedByUser",
+            StartupChangeResult.BlockedByPolicy => "StartupHintBlockedByPolicy",
+            StartupChangeResult.Failed => "StartupHintFailed",
+            _ => null,
+        };
+
+        if (key is null)
+        {
+            StartupHint.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        StartupHint.Text = Loc.T(key);
+        StartupHint.Visibility = Visibility.Visible;
     }
 
     /// <summary>切换界面语言：写入设置并立即生效（XAML 文案由绑定自动刷新，无需重启）。</summary>

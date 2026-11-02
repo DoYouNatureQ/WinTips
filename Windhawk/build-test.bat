@@ -1,8 +1,7 @@
 @echo off
-rem Builds the standalone harness from wintips-osd.wh.cpp.
-rem The same file is the Windhawk mod; WINTIPS_STANDALONE swaps the engine
-rem callbacks for local stubs so the overlay can be run and screenshot without
-rem installing Windhawk.
+rem Builds the standalone harness (standalone\wintips-osd-test.cpp), which
+rem includes the mod source and provides the Windhawk API shims, so the overlay
+rem can be run and screenshotted without installing Windhawk.
 setlocal
 cd /d "%~dp0"
 
@@ -23,10 +22,12 @@ if errorlevel 1 exit /b 1
 
 if not exist obj mkdir obj
 
-cl /nologo /std:c++20 /EHsc /W3 /DWINTIPS_STANDALONE /DUNICODE /D_UNICODE /utf-8 ^
-   /D"WH_MOD_ID=L\"wintips-osd\"" ^
-   /Fo:obj\ /Fe:wintips-osd-test.exe wintips-osd.wh.cpp ^
-   /link /SUBSYSTEM:CONSOLE
+rem The import libraries are listed explicitly because the mod no longer carries
+rem MSVC-only #pragma comment(lib) lines.
+cl /nologo /std:c++20 /EHsc /W3 /DUNICODE /D_UNICODE /utf-8 ^
+   /Fo:obj\ /Fe:wintips-osd-test.exe standalone\wintips-osd-test.cpp ^
+   /link /SUBSYSTEM:CONSOLE gdiplus.lib gdi32.lib dwmapi.lib shcore.lib ^
+   shell32.lib advapi32.lib user32.lib
 if errorlevel 1 exit /b 1
 
 echo.

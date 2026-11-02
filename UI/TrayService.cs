@@ -46,13 +46,35 @@ internal sealed class TrayService : IDisposable
             _exit,
             enable =>
             {
-                AppSettings.SetStartup(enable);
-                AppSettings.Instance.LaunchAtStartup = enable;
+                var result = StartupManager.SetEnabled(enable);
+                AppSettings.Instance.LaunchAtStartup = StartupManager.IsEnabled();
                 AppSettings.Instance.Save();
+
+                // 菜单已经关掉了，看不出开关有没有真的生效，必须明确告知
+                if (result != StartupChangeResult.Ok) ShowStartupFailure(result);
             },
-            AppSettings.IsStartupSet(),
+            StartupManager.IsEnabled(),
             _showTest);
         menu.ShowMenuAtCursor();
+    }
+
+    /// <summary>
+    /// 托盘菜单里切换自启失败时的提示。菜单点完即关，开关状态看不见了，
+    /// 必须给一句明确的话；用户手动关过的情况下再多走一步，直接把他送到系统设置页。
+    /// </summary>
+    private static void ShowStartupFailure(StartupChangeResult result)
+    {
+        string key = result switch
+        {
+            StartupChangeResult.BlockedByUser => "StartupHintBlockedByUser",
+            StartupChangeResult.BlockedByPolicy => "StartupHintBlockedByPolicy",
+            _ => "StartupHintFailed",
+        };
+
+        try { new NoticeWindow(Loc.T("RowStartup"), Loc.T(key)).ShowDialog(); }
+        catch { }
+
+        if (result == StartupChangeResult.BlockedByUser) StartupManager.OpenSystemStartupSettings();
     }
 
     private static Icon LoadIcon()

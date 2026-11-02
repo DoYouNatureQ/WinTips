@@ -3,10 +3,20 @@ setlocal EnableExtensions
 
 rem ========================================
 rem WinTips One-Click Rebuild
-rem stop -> clean -> publish -> start
+rem stop -> clean -> publish -> package -> start
+rem
+rem usage: rebuild.bat           full rebuild + Build\dist\ (msix + setup)
+rem        rebuild.bat /nopack   skip packaging (fast restart only)
+rem
+rem This script sits in the project root, next to the .csproj and publish\.
+rem Everything packaging-related (msix\, installer\, dist\) lives in Build\.
 rem ========================================
 
-cd /d "%~dp0"
+rem Project root = this script's directory (normalised, no trailing backslash)
+for %%I in ("%~dp0.") do set "PROJECT_ROOT=%%~fI"
+set "BUILD_DIR=%PROJECT_ROOT%\Build"
+
+cd /d "%PROJECT_ROOT%"
 
 echo.
 echo ========================================
@@ -35,10 +45,10 @@ rem ----------------------------------------
 rem 2. Check project file
 rem ----------------------------------------
 
-if not exist "%~dp0*.csproj" (
+if not exist "%PROJECT_ROOT%\*.csproj" (
     echo [ERROR] No .csproj file was found.
     echo Project directory:
-    echo %~dp0
+    echo %PROJECT_ROOT%
     echo.
     pause
     exit /b 1
@@ -48,7 +58,7 @@ rem ----------------------------------------
 rem 3. Stop running WinTips
 rem ----------------------------------------
 
-echo [1/7] Stopping running WinTips...
+echo [1/9] Stopping running WinTips...
 
 taskkill /f /im WinTips.exe >nul 2>nul
 
@@ -68,18 +78,20 @@ echo.
 
 rem ----------------------------------------
 rem 4. Clean all build output (bin, obj, publish)
+rem    dist\ is deliberately kept: it holds the versioned store
+rem    artefacts (msix / setup) that were already uploaded.
 rem ----------------------------------------
 
-echo [2/7] Cleaning build output (bin, obj, publish)...
+echo [2/9] Cleaning build output (bin, obj, publish)...
 
 for %%D in (bin obj publish) do (
-    if exist "%~dp0%%D" (
-        rmdir /s /q "%~dp0%%D"
+    if exist "%PROJECT_ROOT%\%%D" (
+        rmdir /s /q "%PROJECT_ROOT%\%%D"
 
-        if exist "%~dp0%%D" (
+        if exist "%PROJECT_ROOT%\%%D" (
             echo [ERROR] Failed to remove %%D directory.
             echo Please make sure no program is using files inside:
-            echo %~dp0%%D
+            echo %PROJECT_ROOT%\%%D
             echo.
             pause
             exit /b 1
@@ -97,7 +109,7 @@ rem    every build unpacks native libs into TEMP\.net\WinTips\hash.
 rem    Old hash folders are never reused, so they must be cleaned here.
 rem ----------------------------------------
 
-echo [3/7] Cleaning stale self-extract cache...
+echo [3/9] Cleaning stale self-extract cache...
 
 set "CACHE_LEFT="
 
@@ -124,7 +136,7 @@ rem ----------------------------------------
 rem 6. Publish
 rem ----------------------------------------
 
-echo [4/7] Publishing WinTips...
+echo [4/9] Publishing WinTips...
 echo.
 
 dotnet publish ^
@@ -134,7 +146,7 @@ dotnet publish ^
     -p:PublishSingleFile=true ^
     -p:IncludeNativeLibrariesForSelfExtract=true ^
     -p:EnableCompressionInSingleFile=true ^
-    -o "%~dp0publish"
+    -o "%PROJECT_ROOT%\publish"
 
 if errorlevel 1 (
     echo.
@@ -152,10 +164,10 @@ rem ----------------------------------------
 rem 7. Check output
 rem ----------------------------------------
 
-if not exist "%~dp0publish\WinTips.exe" (
+if not exist "%PROJECT_ROOT%\publish\WinTips.exe" (
     echo [ERROR] WinTips.exe was not found after publishing.
     echo Expected:
-    echo %~dp0publish\WinTips.exe
+    echo %PROJECT_ROOT%\publish\WinTips.exe
     echo.
     pause
     exit /b 1
@@ -169,12 +181,12 @@ rem    publish; this pass removes it anyway, so a manual
 rem    `dotnet publish` (or a stale file) can never leak through.
 rem ----------------------------------------
 
-echo [5/7] Cleaning publish residue...
+echo [5/9] Cleaning publish residue...
 
 set "PUBLISH_REMOVED=0"
 set "PUBLISH_LEFT=0"
 
-for %%F in ("%~dp0publish\*.pdb") do (
+for %%F in ("%PROJECT_ROOT%\publish\*.pdb") do (
     if exist "%%~F" (
         del /f /q "%%~F" >nul 2>nul
 
@@ -202,16 +214,16 @@ rem    self-contained. VBCSCompiler may still hold obj/ handles,
 rem    hence the build-server shutdown + retry below.
 rem ----------------------------------------
 
-echo [6/7] Cleaning bin and obj...
+echo [6/9] Cleaning bin and obj...
 
 dotnet build-server shutdown >nul 2>nul
 
 set "CLEAN_FAIL="
 
-call :RemoveBuildDir "%~dp0bin" bin
+call :RemoveBuildDir "%PROJECT_ROOT%\bin" bin
 if errorlevel 1 set "CLEAN_FAIL=1"
 
-call :RemoveBuildDir "%~dp0obj" obj
+call :RemoveBuildDir "%PROJECT_ROOT%\obj" obj
 if errorlevel 1 set "CLEAN_FAIL=1"
 
 if defined CLEAN_FAIL (
@@ -222,12 +234,99 @@ if defined CLEAN_FAIL (
 echo.
 
 rem ----------------------------------------
-rem 10. Start WinTips
+rem 10. Build distributables
+rem     Both artefacts are cut from the freshly published exe, so a
+rem     version bump in the csproj is all it takes - neither packager
+rem     keeps its own copy of the version number:
+rem       dist\WinTips_<ver>_x64.msix        Microsoft Store MSIX upload
+rem       dist\WinTips_<ver>_x64_local.msix  same, placeholder identity (local only)
+rem       dist\WinTipsSetup-<ver>.exe        Microsoft Store EXE installer
+rem
+rem     Before each step the matching packer is asked, via -CheckOnly,
+rem     whether its tool exists (Windows SDK / Inno Setup). When it does
+rem     not, the step is skipped outright: nothing is attempted, nothing
+rem     is written, and the rebuild still succeeds. /nopack skips both.
 rem ----------------------------------------
 
-echo [7/7] Starting WinTips...
+set "PACK_FAIL="
 
-start "" "%~dp0publish\WinTips.exe"
+if /i "%~1"=="/nopack" (
+    echo [7/9] Skipping MSIX package ^(/nopack^).
+    echo [8/9] Skipping setup package ^(/nopack^).
+    echo.
+    goto START_APP
+)
+
+rem No Windows SDK -> no makeappx.exe -> no MSIX. Probe first so the step
+rem is skipped cleanly instead of failing halfway through.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BUILD_DIR%\msix\build-msix.ps1" -CheckOnly
+if errorlevel 1 goto SKIP_MSIX
+
+echo [7/9] Building MSIX package...
+echo.
+
+rem -AllowPlaceholder: when Build\msix\identity.json is absent (fresh clone),
+rem produce a *_local.msix from the placeholder identity instead of failing the
+rem whole rebuild. With identity.json present it is a no-op and the real
+rem upload-ready package is built as usual.
+rem
+rem NOTE: keep this file pure ASCII with CRLF line endings. cmd.exe seeks in
+rem batch files by byte offset, so any multi-byte character (e.g. CJK text in
+rem a rem line) desyncs the reader and later commands get executed from the
+rem middle of a line ("'k' is not recognized...", stray "at", wrong labels).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BUILD_DIR%\msix\build-msix.ps1" -AllowPlaceholder
+set "PACK_RC=%ERRORLEVEL%"
+call :CheckPackResult "MSIX" %PACK_RC%
+if errorlevel 1 set "PACK_FAIL=1"
+goto MSIX_DONE
+
+:SKIP_MSIX
+echo [7/9] Skipping MSIX package: makeappx.exe not found ^(Windows SDK absent^).
+echo        No .msix was produced.
+echo.
+
+:MSIX_DONE
+
+rem Same idea for the installer: no Inno Setup -> skip, do not compile.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BUILD_DIR%\installer\build-setup.ps1" -CheckOnly
+if errorlevel 1 goto SKIP_SETUP
+
+echo [8/9] Building setup package...
+echo.
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%BUILD_DIR%\installer\build-setup.ps1"
+set "PACK_RC=%ERRORLEVEL%"
+call :CheckPackResult "Setup" %PACK_RC%
+if errorlevel 1 set "PACK_FAIL=1"
+goto SETUP_DONE
+
+:SKIP_SETUP
+echo [8/9] Skipping setup package: Inno Setup is not installed.
+echo        No setup exe was produced.
+echo.
+
+:SETUP_DONE
+
+echo.
+
+if defined PACK_FAIL (
+    echo [ERROR] Packaging failed.
+    echo The app was published, but dist is incomplete.
+    echo Fix the error above and rerun this script ^(or use /nopack to skip packaging^).
+    echo.
+    pause
+    exit /b 1
+)
+
+:START_APP
+
+rem ----------------------------------------
+rem 11. Start WinTips
+rem ----------------------------------------
+
+echo [9/9] Starting WinTips...
+
+start "" "%PROJECT_ROOT%\publish\WinTips.exe"
 
 if errorlevel 1 (
     echo [ERROR] Failed to start WinTips.
@@ -244,6 +343,14 @@ echo.
 echo WinTips has been restarted.
 echo.
 
+if exist "%BUILD_DIR%\dist" (
+    echo Distributables in Build\dist:
+    for %%P in ("%BUILD_DIR%\dist\WinTips_*_x64.msix" "%BUILD_DIR%\dist\WinTips_*_x64_local.msix" "%BUILD_DIR%\dist\WinTipsSetup-*.exe") do (
+        echo    %%~nxP  ^(%%~zP bytes^)
+    )
+    echo.
+)
+
 endlocal
 exit /b 0
 
@@ -251,6 +358,23 @@ rem ========================================
 rem Subroutines
 rem    Placed after exit /b so the main flow can never fall into them.
 rem ========================================
+
+:CheckPackResult
+rem %1 = step name, %2 = exit code of the packaging script
+rem 0 = ok, 2 = tool missing (warning only), anything else = failure
+if "%~2"=="0" (
+    echo        %~1 package created.
+    exit /b 0
+)
+
+if "%~2"=="2" (
+    echo        [WARN] %~1 skipped: build tool not found ^(see message above^).
+    echo        Install it, then rerun rebuild.bat to produce this package.
+    exit /b 0
+)
+
+echo        [ERROR] %~1 packaging failed ^(exit code %~2^).
+exit /b 1
 
 :RemoveBuildDir
 rem %1 = full path to remove, %2 = short name for the log line

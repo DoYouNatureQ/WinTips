@@ -146,10 +146,14 @@
                         <TextBlock x:Name="CustomPosDesc" Text="{loc:Tr RowCustomPosDesc}" FontSize="11.5" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                     <Border x:Name="SepB4" Height="1" Margin="0,3" Opacity="0.5"/>
-                    <Grid Margin="0,8">
-                        <ToggleButton x:Name="StartupToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
-                        <TextBlock Text="{loc:Tr RowStartup}" FontSize="14" Margin="58,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                    </Grid>
+                    <StackPanel Margin="0,8">
+                        <Grid>
+                            <ToggleButton x:Name="StartupToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
+                            <TextBlock Text="{loc:Tr RowStartup}" FontSize="14" Margin="58,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </Grid>
+                        <!-- 被任务管理器或组策略拦下时的说明；正常开关时不占位 -->
+                        <TextBlock x:Name="StartupHint" FontSize="11.5" Margin="58,3,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
+                    </StackPanel>
                     <Border x:Name="SepB5" Height="1" Margin="0,3" Opacity="0.5"/>
                     <Grid Margin="0,6,0,8">
                         <TextBlock Text="{loc:Tr RowLanguage}" FontSize="14" VerticalAlignment="Center"/>

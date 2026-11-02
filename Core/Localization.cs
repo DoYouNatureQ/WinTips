@@ -57,6 +57,15 @@ public static class Loc
         Add("BtnAdjustPos", "调整位置", "Adjust");
         Add("BtnResetPos", "还原默认", "Reset");
         Add("RowStartup", "开机自动运行", "Run at startup");
+        Add("StartupHintBlockedByUser",
+            "Windows 记住了你之前在任务管理器里的关闭操作，只能由你手动重新打开：设置 > 应用 > 启动。",
+            "Windows remembers that you turned this off in Task Manager. Only you can turn it back on: Settings > Apps > Startup.");
+        Add("StartupHintBlockedByPolicy",
+            "此设备的组策略禁止应用自行开启开机自启。",
+            "Group policy on this device blocks apps from enabling startup.");
+        Add("StartupHintFailed",
+            "无法修改开机自启状态，请稍后重试。",
+            "Could not change the startup setting. Please try again.");
 
         Add("RowLanguage", "语言", "Language");
         Add("LangSystem", "跟随系统", "System");

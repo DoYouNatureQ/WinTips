@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Windows 脚本必须保持 CRLF：cmd.exe 按字节偏移读取批处理文件，
+# 换行被规范化成 LF 后 goto/标签/多行块都可能错位执行。
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+*.iss  text eol=crlf
+*.isl  text eol=crlf

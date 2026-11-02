@@ -55,7 +55,8 @@ public partial class App : Application
             return;
         }
 
-        settings.LaunchAtStartup = AppSettings.IsStartupSet();
+        // 只作为镜像写回设置文件；真实状态每次由 StartupManager 现查（注册表或 WinRT 启动任务）
+        settings.LaunchAtStartup = StartupManager.IsEnabled();
 
         _osd = new OsdController();
         _hook = new KeyboardHook();

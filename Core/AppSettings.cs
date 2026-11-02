@@ -1,4 +1,3 @@
-using Microsoft.Win32;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -21,6 +20,11 @@ public sealed class AppSettings
     /// </summary>
     public bool ShowAnyCopy { get; set; } = true;
     public double DisplaySeconds { get; set; } = 2.0;
+
+    /// <summary>
+    /// 开机自启的镜像值，仅供设置序列化与排查用；真实状态一律以
+    /// <see cref="StartupManager.IsEnabled"/> 为准（注册表或 WinRT 启动任务）。
+    /// </summary>
     public bool LaunchAtStartup { get; set; }
 
     /// <summary>界面语言：System（跟随系统）/ zh（简体中文）/ en（English）。</summary>
@@ -141,37 +145,6 @@ public sealed class AppSettings
         {
             Directory.CreateDirectory(Dir);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch { }
-    }
-
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValue = "WinTips";
-
-    public static bool IsStartupSet()
-    {
-        try
-        {
-            using var k = Registry.CurrentUser.OpenSubKey(RunKey);
-            return k?.GetValue(RunValue) != null;
-        }
-        catch { return false; }
-    }
-
-    public static void SetStartup(bool enable)
-    {
-        try
-        {
-            using var k = Registry.CurrentUser.CreateSubKey(RunKey);
-            if (enable)
-            {
-                var exe = Environment.ProcessPath;
-                if (!string.IsNullOrEmpty(exe)) k.SetValue(RunValue, $"\"{exe}\"");
-            }
-            else if (k.GetValue(RunValue) != null)
-            {
-                k.DeleteValue(RunValue);
-            }
         }
         catch { }
     }

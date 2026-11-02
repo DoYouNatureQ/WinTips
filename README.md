@@ -46,20 +46,41 @@ dotnet publish -c Release -r win-x64 --self-contained true `
   -p:EnableCompressionInSingleFile=true -o publish
 ```
 
-> 一键重建：双击根目录的 `rebuild.bat`（自动结束旧进程 → 清理打包产物 bin/obj/publish 与单文件解压缓存 → 重新发布 → 重新启动）。
+> 一键重建：双击根目录的 `rebuild.bat`（自动结束旧进程 → 清理打包产物 bin/obj/publish 与单文件解压缓存 → 重新发布 → 重新打包 `Build\dist\` 里的 MSIX 与安装包 → 重新启动）。
 
 ### 一键重建
 
-双击根目录的 `rebuild.bat`，它会依次：
+`rebuild.bat` 留在项目根（和 `.csproj`、`publish\` 同级），打包相关的东西集中收在 `Build\`：`installer\`、`msix\`、`dist\`。
+
+双击 `rebuild.bat`，它会依次：
 
 1. 校验 `dotnet` 与 `.csproj` 是否就位（缺失则报错退出）；
 2. 结束正在运行的 `WinTips.exe`，并等到进程真正退出（避免文件占用）；
 3. 删除 `bin` / `obj` / `publish`（删除失败会提示被谁占用）；
 4. 清理 `%TEMP%\.net\WinTips\` 下的单文件解压缓存（每次发布 hash 都会变，旧目录不会复用，否则会一直累积，每份约 8 MB）；
 5. 以「单文件 + 自包含 + 压缩」参数重新发布到 `publish\`；
-6. 校验产物存在后启动新的 exe。
+6. 校验产物存在，并清掉可能残留的 `WinTips.pdb`；
+7. 再次删除 `bin` / `obj`，留下干净的源码树；
+8. 用 `publish\WinTips.exe` 重新打两种发行产物（详见下一节）；
+9. 启动新的 exe。
 
 任何一步失败都会 `pause` 并保留现场，便于排查。
+
+### 发行产物（Build\dist\）
+
+`rebuild.bat` 会顺手把商店需要的两种产物一起做出来，版本号统一取自 `csproj` 的 `<Version>`，不存在第二处需要改的地方：
+
+| 产物 | 打包脚本 | 用途 |
+| --- | --- | --- |
+| `Build\dist\WinTipsSetup-<版本>.exe` | `Build\installer\build-setup.ps1`（Inno Setup） | 商店「EXE 或 MSI 应用」提交 |
+| `Build\dist\WinTips_<版本>_x64.msix` | `Build\msix\build-msix.ps1`（MakeAppx） | 商店 MSIX 提交 |
+
+- 需要 Inno Setup 6.3+ 与 Windows SDK（提供 `makeappx.exe`）。两个脚本会自己找安装位置（含注册表，装在 `D:\Inno\...` 这类自定义目录也能找到）；
+- 没装对应工具（Windows SDK 提供 `makeappx`，安装包需要 Inno Setup）时，那一样产物直接跳过：`rebuild.bat` 会先探测，缺工具就连打包脚本都不触发，也不会报错；只有工具在但编译失败才算失败；
+- MSIX 的 Identity 写在 `Build\msix\identity.json`（Partner Center → 产品管理 → 应用标识），重建时自动读取；文件不存在时产出 `WinTips_<版本>_x64_local.msix` 供本地验证，不会覆盖正式的商店包；
+- 只想快速重启看效果：`rebuild.bat /nopack`；
+- `Build\dist\` 不会被重建清空，历史版本的产物会保留（商店要求提交的二进制不可变）。
+
 
 ## 已知限制
 
