@@ -46,43 +46,22 @@ dotnet publish -c Release -r win-x64 --self-contained true `
   -p:EnableCompressionInSingleFile=true -o publish
 ```
 
-> One-click rebuild: double-click `rebuild.bat` in the repo root (kills the old process → cleans bin/obj/publish and the single-file extraction cache → republishes → rebuilds the MSIX and setup packages in `Build\dist\` → relaunches).
+> One-click rebuild: double-click `rebuild.bat` in the repo root (kills the old process → cleans old output → republishes the single-file exe → relaunches).
 
 ### One-click rebuild
 
-Everything packaging-related lives in `Build\`: `rebuild.bat`, `installer\`, `msix\`, `dist\`. The source tree, `bin` / `obj` and `publish\` stay at the repo root — the scripts walk one level up on their own.
-
-`rebuild.bat` stays in the repo root (next to the `.csproj` and `publish\`); everything packaging-related is collected under `Build\`: `installer\`, `msix\`, `dist\`.
-
-Double-click `rebuild.bat`. It will:
+Double-click `rebuild.bat` in the repo root. It will:
 
 1. Verify that `dotnet` and a `.csproj` are present (abort with an error if not);
 2. Kill any running `WinTips.exe` and wait until the process has fully exited (so no file locks remain);
 3. Delete `bin` / `obj` / `publish` (and tell you if a directory is still in use);
 4. Clean the single-file extraction cache under `%TEMP%\.net\WinTips\` (every publish changes the hash, so old folders are never reused — they pile up at roughly 8 MB each);
 5. Republish to `publish\` as a single-file, self-contained, compressed build;
-6. Confirm the output exists and drop any leftover `WinTips.pdb`;
+6. Confirm `publish\WinTips.exe` is there and drop any leftover `WinTips.pdb`;
 7. Delete `bin` / `obj` again to leave a clean source tree;
-8. Cut both store artefacts from the freshly published exe (see below);
-9. Launch the new exe.
+8. Launch the new `publish\WinTips.exe`.
 
 Any failing step `pause`s and leaves the state intact for inspection.
-
-### Store artefacts (Build\dist\)
-
-`rebuild.bat` also produces both packages the Store needs. The version always comes from `<Version>` in the csproj — there is no second place to bump:
-
-| Artefact | Packager | Purpose |
-| --- | --- | --- |
-| `Build\dist\WinTipsSetup-<version>.exe` | `Build\installer\build-setup.ps1` (Inno Setup) | Store "EXE or MSI app" submission |
-| `Build\dist\WinTips_<version>_x64.msix` | `Build\msix\build-msix.ps1` (MakeAppx) | Store MSIX submission |
-
-- Requires Inno Setup 6.3+ and the Windows SDK (for `makeappx.exe`). Both scripts locate their tool on their own, including via the uninstall registry, so custom install paths such as `D:\Inno\...` work;
-- If a tool is missing (Windows SDK for `makeappx`, Inno Setup for the installer), that artefact is skipped outright: `rebuild.bat` probes first, so the packager is never invoked and nothing errors out. Only a real compile error fails the run;
-- The MSIX identity lives in `Build\msix\identity.json` (Partner Center → Product management → App identity) and is picked up automatically on every rebuild. Without that file you get `WinTips_<version>_x64_local.msix` for local verification, and any previously built store package is left untouched;
-- `rebuild.bat /nopack` skips packaging when you only want a fast restart;
-- `Build\dist\` is never wiped by the rebuild, so artefacts of earlier versions stay around (the Store requires submitted binaries to be immutable).
-
 
 ## Known Limitations
 
