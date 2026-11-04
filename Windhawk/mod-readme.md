@@ -48,8 +48,19 @@ counts consecutive actions.
   administrator window has focus, which a low-level keyboard hook can't see.
 - **Follows Windows.** Per-monitor DPI, light/dark theme and the system accent
   color.
+- **Follows the focused display.** The card lands on the display with the
+  window you are working in, positioned with that display's own DPI, work area
+  and taskbar state, so a mixed-DPI setup still lines up. *Show on* can follow
+  the mouse pointer or pin the card to the primary display instead.
+- **Adjustable size.** *Card size* scales the whole card — text, icon, accent
+  bar and the `×N` badge — from 60 to 200 percent of the Windows 11 size, while
+  the margin to the screen edge stays put.
 - **Doesn't get in the way.** Click-through, no focus stealing, not in the
   taskbar or Alt+Tab, fades out on its own.
+- **Light on resources.** Nothing runs while the card is hidden except the
+  optional 250 ms elevated-app poll: idling costs no measurable CPU. A card
+  frame takes about 0.5 ms at 100% (0.9 ms at 200%) and the backdrop is captured
+  once per tip, roughly 7 ms.
 
 ![Paste tip with an ×3 badge](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-paste-en.png)
 
@@ -62,11 +73,14 @@ counts consecutive actions.
 - **Display duration** — how long the card stays, 500 to 10000 ms.
 - **Animation speed** — 100 is normal (300 ms), 50 is twice as fast, 0 disables
   the animation.
+- **Card size** — 60 to 200 percent; text, icon, accent bar and badge scale
+  together. 100 is the Windows 11 size. The gap to the screen edge does not
+  scale, so a bigger card still sits where a small one did.
 - **Vertical / horizontal position** — above the taskbar (tracked live, so a bar
   that auto-hides never covers the card) or below the top edge; left, center or
   right.
-- **Show on** — the monitor that holds the mouse cursor, or always the primary
-  display.
+- **Show on** — the display with the active window (the default), the display
+  that holds the mouse cursor, or always the primary display.
 - **Horizontal / vertical offset** — pixel-level fine tuning.
 - **Theme** — follow Windows, dark or light.
 - **Card material** — acrylic (blurred backdrop) or solid.
@@ -101,10 +115,11 @@ things:
   behind it, slides in from the nearest edge and animates a padlock. Lock Keys
   Notifier draws a configurable toast on a solid background.
 - **Scope.** Clipboard tips have no equivalent there.
-- **Configuration.** Here the size, theme and material follow Windows on
-  purpose. Lock Keys Notifier is built around being configurable — layouts,
-  fonts, shadows, sounds, per-key accents — so it isn't trying to match the
-  native OSD.
+- **Configuration.** The look starts at the Windows 11 defaults and stays close
+  to them: the card can be scaled, and the theme and material switched, but there
+  are no layouts or fonts to design. Lock Keys Notifier is built around being
+  configurable — layouts, fonts, shadows, sounds, per-key accents — so it isn't
+  trying to match the native OSD.
 
 If you want lock keys only, and want to tune every pixel of the card,
 Lock Keys Notifier is the better fit. If you want the native Windows 11 look, or

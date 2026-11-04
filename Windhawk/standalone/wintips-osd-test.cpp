@@ -5,14 +5,19 @@
 // one copy of the drawing code, and supplies the Windhawk API shims plus a
 // wmain(). Build it with build-test.bat.
 //
-//   --shot <kind> <on|off> <scale> <out.png> [light|dark] [zh|en] [bg.png] [top|bottom]
+//   --shot <kind> <on|off> <scale> <out.png> [light|dark] [zh|en] [bg.png] [top|bottom] [pct]
 //   --selftest                 exercise hook -> window -> animation
+//   --bench [frames]           time one card frame and report the footprint
 //   --live [seconds]           run the overlay for real
 //   --grab <out.png>           capture the whole virtual desktop
 //   --crop / --bounds / --pick image helpers
 //   --tap                      toggle Caps Lock once
 
 #include "wh-shims.h"
+
+// Process footprint for --bench. Only the harness reports numbers; the mod
+// itself never reads them, so this stays out of the .wh.cpp file.
+#include <psapi.h>
 
 // Windhawk passes WH_MOD_ID to the compiler for every mod; this file stands in
 // for the engine, so it supplies the value here.
@@ -144,6 +149,13 @@ int RunShot(int argc, wchar_t** argv) {
     }
 
     g_scale = scale;
+    // Optional 11th argument: the card size setting, in percent. The DPI scale
+    // and the size setting multiply the same way they do in the mod, so a
+    // preview at 150% + 80% matches what the card really looks like.
+    if (argc > 10) {
+        g_settings.tipScalePercent = _wtoi(argv[10]);
+    }
+    g_cardScale = g_scale * g_settings.TipScale();
     g_chinese = _wcsicmp(argc > 7 ? argv[7] : L"zh", L"en") != 0;
 
     g_frame.kind = kind;
@@ -156,7 +168,7 @@ int RunShot(int argc, wchar_t** argv) {
     g_frame.count = IsClipKind(kind) ? 3 : 0;
 
     g_theme = CurrentTheme();
-    MeasureCard(g_scale, g_frame, g_cardWidth, g_cardHeight);
+    MeasureCard(g_cardScale, g_frame, g_cardWidth, g_cardHeight);
     if (!g_surface.Ensure(g_cardWidth, g_cardHeight)) {
         wprintf(L"surface allocation failed\n");
         return 1;
@@ -193,8 +205,8 @@ int RunShot(int argc, wchar_t** argv) {
         // 10th argument mirrors the accent bar for previewing a card that hangs
         // off the top edge, without having to reconfigure the placement.
         bool barOnTop = argc > 9 && _wcsicmp(argv[9], L"top") == 0;
-        RenderCard(g, g_scale, (float)g_cardWidth, (float)g_cardHeight, g_frame,
-                   g_theme, barOnTop);
+        RenderCard(g, g_cardScale, (float)g_cardWidth, (float)g_cardHeight,
+                   g_frame, g_theme, barOnTop);
     }
 
     if (!SavePreviewPng(path)) {
@@ -455,7 +467,7 @@ int MonitorLayoutChecks() {
         float dy;
     };
 
-    Case cases[5] = {
+    Case cases[6] = {
         {L"bottom-centre on left display",
          ComputePlacement(left, 1, 1, 0, 0, 160.0f, 50.0f, 1.5f), -1360, 1326,
          0.0f, 30.0f},
@@ -465,6 +477,12 @@ int MonitorLayoutChecks() {
         {L"left edge slides left",
          ComputePlacement(left, 1, 0, 0, 0, 160.0f, 50.0f, 1.0f), -2544, 1334,
          -20.0f, 0.0f},
+        // A 200% card (320x100 at 1.0 DPI) on the 150% display: the card grows,
+        // the 16 DIP margin does not, so it stays 24 physical pixels off the
+        // taskbar instead of 48.
+        {L"doubled card keeps the gap",
+         ComputePlacement(left, 1, 1, 0, 0, 320.0f, 100.0f, 1.5f), -1440, 1276,
+         0.0f, 30.0f},
         {L"vertical offset clamps",
          ComputePlacement(primary, 1, 1, 0, 5000, 160.0f, 50.0f, 1.0f), 880,
          1030, 0.0f, 20.0f},
@@ -591,7 +609,9 @@ int RunSelfTest() {
             OtherInstanceRunning() ? L"yes -> tips suppressed, close it first"
                                    : L"no");
     wprintf(L"monitor mode               : %s\n",
-            g_settings.monitor == kMonitorPrimary ? L"primary" : L"cursor");
+            g_settings.monitor == kMonitorPrimary   ? L"primary"
+            : g_settings.monitor == kMonitorCursor  ? L"cursor"
+                                                    : L"focus");
     if (ResolveTargetMonitor()) {
         POINT cursor{};
         GetCursorPos(&cursor);
@@ -613,12 +633,15 @@ int RunSelfTest() {
     } else {
         wprintf(L"target monitor             : unavailable\n");
     }
+    UpdateScales();
     Theme theme = CurrentTheme();
     wprintf(L"theme                      : %s, accent #%02X%02X%02X\n",
             theme.dark ? L"dark" : L"light", theme.accent.GetR(),
             theme.accent.GetG(), theme.accent.GetB());
     wprintf(L"animation / display        : %d ms / %d ms\n",
             g_settings.AnimationMs(), g_settings.displayMs);
+    wprintf(L"card size                  : %d%% (card scale %.2f)\n",
+            g_settings.tipScalePercent, g_cardScale);
 
     wprintf(L"\n--- placement (two-monitor layout) ---\n");
     int layoutFailures = MonitorLayoutChecks();
@@ -695,6 +718,132 @@ int RunSelfTest() {
 
 }  // namespace
 
+// Renders a card exactly the way a tip does (clear -> draw -> premultiply) and
+// reports what it costs, plus what the process costs while nothing is on
+// screen. The performance numbers quoted in Windhawk/README.md come from here.
+int RunBench(int argc, wchar_t** argv) {
+    int frames = argc > 2 ? _wtoi(argv[2]) : 300;
+    if (frames < 1) {
+        frames = 1;
+    }
+
+    DetectLanguage();
+    LoadSettings();
+    if (!ResolveTargetMonitor()) {
+        LoadMonitor(PrimaryMonitor(), g_monitor);
+    }
+    UpdateScales();
+
+    g_frame.kind = kCapsLock;
+    g_frame.on = true;
+    g_frame.prevOn = true;
+    g_frame.statusT = 1.0f;
+    g_frame.clipT = 1.0f;
+    g_frame.badgeScale = 1.0f;
+    g_frame.badgeAlpha = 1.0f;
+    g_theme = CurrentTheme();
+    MeasureCard(g_cardScale, g_frame, g_cardWidth, g_cardHeight);
+    if (!g_surface.Ensure(g_cardWidth, g_cardHeight)) {
+        wprintf(L"surface allocation failed\n");
+        return 1;
+    }
+    Placement place =
+        ComputePlacement((float)g_cardWidth, (float)g_cardHeight, g_scale);
+
+    LARGE_INTEGER freq;
+    QueryPerformanceFrequency(&freq);
+    LARGE_INTEGER t0, t1;
+
+    // A tip grabs and blurs the pixels behind the card once, before it fades
+    // in. That is the single most expensive step of a tip, so it is timed on
+    // its own and then kept out of the per-frame number.
+    int radius = (int)std::lround((float)g_settings.blurRadius * g_scale);
+    QueryPerformanceCounter(&t0);
+    {
+        HDC screen = GetDC(nullptr);
+        CaptureBackdrop(screen, place.x, place.y, g_cardWidth, g_cardHeight,
+                        radius);
+        ReleaseDC(nullptr, screen);
+    }
+    QueryPerformanceCounter(&t1);
+    double captureMs =
+        (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)freq.QuadPart;
+
+    QueryPerformanceCounter(&t0);
+    for (int i = 0; i < frames; i++) {
+        g_surface.Clear();
+        {
+            Graphics g(g_surface.dc);
+            RenderCard(g, g_cardScale, (float)g_cardWidth, (float)g_cardHeight,
+                       g_frame, g_theme, false);
+        }
+        g_surface.Premultiply();
+    }
+    QueryPerformanceCounter(&t1);
+    double frameMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
+                     (double)freq.QuadPart / frames;
+
+    // Split the frame into its two halves so a regression points at the right
+    // one: GDI+ drawing, and the per-pixel premultiply pass.
+    QueryPerformanceCounter(&t0);
+    for (int i = 0; i < frames; i++) {
+        g_surface.Clear();
+        Graphics g(g_surface.dc);
+        RenderCard(g, g_cardScale, (float)g_cardWidth, (float)g_cardHeight,
+                   g_frame, g_theme, false);
+    }
+    QueryPerformanceCounter(&t1);
+    double drawMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
+                    (double)freq.QuadPart / frames;
+
+    QueryPerformanceCounter(&t0);
+    for (int i = 0; i < frames; i++) {
+        g_surface.Clear();
+        g_surface.Premultiply();
+    }
+    QueryPerformanceCounter(&t1);
+    double blendMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
+                     (double)freq.QuadPart / frames;
+
+    // Nothing on screen: the only timer left is the optional 250 ms poll, so a
+    // second of idling should cost no measurable CPU.
+    FILETIME created{}, exited{}, kernel{}, user{};
+    GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
+    ULARGE_INTEGER before;
+    before.LowPart = kernel.dwLowDateTime;
+    before.HighPart = kernel.dwHighDateTime;
+    Sleep(1000);
+    GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
+    ULARGE_INTEGER after;
+    after.LowPart = kernel.dwLowDateTime;
+    after.HighPart = kernel.dwHighDateTime;
+    double idleMs = (double)(after.QuadPart - before.QuadPart) / 10000.0;
+
+    PROCESS_MEMORY_COUNTERS mem{};
+    mem.cb = sizeof(mem);
+    K32GetProcessMemoryInfo(GetCurrentProcess(), &mem, sizeof(mem));
+
+    int animMs = g_settings.AnimationMs();
+    int animFrames = animMs > 0 ? animMs / 16 : 0;
+
+    wprintf(L"card                    : %dx%d px (dpi %.2f, size %d%%)\n",
+            g_cardWidth, g_cardHeight, g_scale, g_settings.tipScalePercent);
+    wprintf(L"backdrop capture + blur : %.2f ms   once per tip\n", captureMs);
+    wprintf(L"card frame (draw+blend) : %.3f ms   over %d frames\n", frameMs,
+            frames);
+    wprintf(L"  of which drawing      : %.3f ms\n", drawMs);
+    wprintf(L"  of which premultiply  : %.3f ms\n", blendMs);
+    wprintf(L"entrance animation      : %d ms     %d frames at 60 Hz\n", animMs,
+            animFrames);
+    wprintf(L"a full tip costs about  : %.1f ms CPU\n",
+            captureMs + frameMs * animFrames);
+    wprintf(L"idle CPU over 1 s       : %.0f ms\n", idleMs);
+    wprintf(L"working set             : %.1f MB (card surface %.2f MB)\n",
+            (double)mem.WorkingSetSize / 1048576.0,
+            (double)(g_surface.width * g_surface.height * 4) / 1048576.0);
+    return 0;
+}
+
 int wmain(int argc, wchar_t** argv) {
     GdiplusStartupInput input;
     if (GdiplusStartup(&g_gdiplusToken, &input, nullptr) != Ok) {
@@ -707,6 +856,8 @@ int wmain(int argc, wchar_t** argv) {
         result = RunShot(argc, argv);
     } else if (argc > 1 && _wcsicmp(argv[1], L"--selftest") == 0) {
         result = RunSelfTest();
+    } else if (argc > 1 && _wcsicmp(argv[1], L"--bench") == 0) {
+        result = RunBench(argc, argv);
     } else if (argc > 1 && _wcsicmp(argv[1], L"--grab") == 0 && argc > 2) {
         result = RunGrab(argv[2]);
     } else if (argc > 1 && _wcsicmp(argv[1], L"--crop") == 0) {

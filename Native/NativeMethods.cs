@@ -172,6 +172,9 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindowW(string? lpClassName, string? lpWindowName);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr FindWindowExW(IntPtr hWndParent, IntPtr hWndChildAfter, string? lpszClass, string? lpszWindow);
+
     // ---- 任务栏 ----
     public const uint ABM_GETSTATE = 0x0004;
     public const uint ABM_GETTASKBARPOS = 0x0005;
@@ -183,6 +186,9 @@ internal static partial class NativeMethods
 
     /// <summary>主任务栏窗口类名（副屏任务栏是 Shell_SecondaryTrayWnd）。</summary>
     public const string TaskbarClassName = "Shell_TrayWnd";
+
+    /// <summary>副屏任务栏窗口类名：每台额外显示器各有一个，用来算该屏的可用区域。</summary>
+    public const string SecondaryTaskbarClassName = "Shell_SecondaryTrayWnd";
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
@@ -220,10 +226,10 @@ internal static partial class NativeMethods
     public static extern IntPtr SHAppBarMessage(uint dwMessage, ref APPBARDATA pData);
 
     // ---- Per-Monitor DPI（跨显示器自适应）----
-    // 隐藏窗口收不到系统的 WM_DPICHANGED：切换显示器/主屏或改缩放时浮窗正隐藏，
-    // WPF 的 TransformToDevice 停留在旧 DPI，下次弹出按旧缩放渲染导致变形。
-    // 这里提供 MonitorFromPoint + GetDpiForMonitor 供浮窗主动查询目标显示器
-    // 的有效 DPI，并手工补发 WM_DPICHANGED 让 WPF 同步。
+    // 浮窗会在多台显示器之间来回弹（「跟随焦点显示器」），各屏缩放可能不同。窗口真被搬到
+    // 另一块屏上时系统会主动投递 WM_DPICHANGED（隐藏窗口也一样，实测），WPF 自己会跟进；
+    // 这里额外提供 MonitorFromPoint / GetDpiForMonitor 供浮窗主动查询目标屏 DPI、
+    // 必要时补发 WM_DPICHANGED 兜底。
     public const uint WM_DPICHANGED = 0x02E0;
     public const uint WM_DISPLAYCHANGE = 0x007E;
     public const uint WM_SETTINGCHANGE = 0x001A;
@@ -257,6 +263,20 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
+
+    /// <summary>窗口当前所在显示器的有效 DPI（由系统维护，与 WPF 内部缩放可能不同步）。</summary>
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hWnd);
+
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOZORDER = 0x0004;
+    public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_NOSENDCHANGING = 0x0400;
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+        int X, int Y, int cx, int cy, uint uFlags);
 
     // ---- 托盘图标（Shell_NotifyIcon）----
     // 用原生托盘替代 WinForms 的 NotifyIcon：后者会把 System.Windows.Forms（13.1MB）、

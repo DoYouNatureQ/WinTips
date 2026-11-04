@@ -91,6 +91,7 @@ static int Wh_GetIntSetting(const wchar_t* name, ...) {
         {L"notifyCopy", 1},      {L"notifyPaste", 1},
         {L"notifyCut", 1},       {L"notifyAnyCopy", 1},
         {L"displayMs", 2000},    {L"animationPercent", 100},
+        {L"tipScale", 100},
         {L"offsetX", 0},         {L"offsetY", 0},
         {L"pollElevated", 1},    {L"suppressFullscreen", 0},
     };
@@ -117,6 +118,8 @@ static const wchar_t* Wh_GetStringSetting(const wchar_t* name, ...) {
             v = L"center";
         } else if (_wcsicmp(name, L"theme") == 0) {
             v = L"system";
+        } else if (_wcsicmp(name, L"monitor") == 0) {
+            v = L"focus";
         }
     }
     size_t size = (v.size() + 1) * sizeof(wchar_t);

@@ -97,6 +97,16 @@
                                        Text="{loc:Tr RowAnyCopyDesc}"/>
                         </StackPanel>
                     </Grid>
+                    <Border x:Name="SepK8" Height="1" Margin="0,3" Opacity="0.5"/>
+                    <!-- 多显示器：默认固定主屏，开启后提示跟着焦点窗口走到它所在的那块屏 -->
+                    <Grid Margin="0,8">
+                        <ToggleButton x:Name="FocusMonitorToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
+                        <StackPanel Margin="58,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Tr RowFocusMonitor}" FontSize="14" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="FocusMonitorDesc" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"
+                                       Text="{loc:Tr RowFocusMonitorDesc}"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
             </Border>
 
@@ -122,6 +132,21 @@
                                 IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,12,0,4"/>
                     </StackPanel>
                     <Border x:Name="SepB2" Height="1" Margin="0,3" Opacity="0.5"/>
+                    <StackPanel Margin="0,10">
+                        <Grid>
+                            <TextBlock Text="{loc:Tr RowTipScale}" FontSize="14" VerticalAlignment="Center"/>
+                            <!-- 右侧：当前百分比 + 还原默认（100% 时禁用，与「自定义位置」那行同款按钮） -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock x:Name="TipScaleText" FontSize="14" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <Button x:Name="ResetScaleBtn" Content="{loc:Tr BtnResetSize}" Style="{StaticResource Win11Button}"/>
+                            </StackPanel>
+                        </Grid>
+                        <Slider x:Name="TipScaleSlider" Style="{StaticResource Win11Slider}" Minimum="0.6" Maximum="2" TickFrequency="0.1"
+                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,12,0,4"
+                                Thumb.DragStarted="TipScaleSlider_DragStarted" Thumb.DragCompleted="TipScaleSlider_DragCompleted"/>
+                        <TextBlock x:Name="TipScaleDesc" Text="{loc:Tr RowTipScaleDesc}" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Border x:Name="SepB2b" Height="1" Margin="0,3" Opacity="0.5"/>
                     <!-- 位置：与上面两条滑杆同节奏——标题占一行，控件独占一行铺满，避免挤在标题右侧 -->
                     <StackPanel Margin="0,10">
                         <TextBlock Text="{loc:Tr RowPosition}" FontSize="14"/>

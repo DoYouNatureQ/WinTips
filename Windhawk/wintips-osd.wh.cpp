@@ -4,7 +4,7 @@
 // @name:zh-CN      WinTips 键盘状态提示
 // @description     Shows a Win11-style floating OSD for Caps/Num/Scroll Lock, Insert and copy/paste/cut
 // @description:zh-CN 按下大写/数字/滚动锁定、Insert 或复制/粘贴/剪切时弹出 Win11 质感的浮窗提示
-// @version         1.3.0
+// @version         1.4.0
 // @author          DoYouNatureQ
 // @github          https://github.com/DoYouNatureQ
 // @homepage        https://github.com/DoYouNatureQ/WinTips
@@ -51,8 +51,19 @@ counts consecutive actions.
   administrator window has focus, which a low-level keyboard hook can't see.
 - **Follows Windows.** Per-monitor DPI, light/dark theme and the system accent
   color.
+- **Follows the focused display.** The card lands on the display with the
+  window you are working in, positioned with that display's own DPI, work area
+  and taskbar state, so a mixed-DPI setup still lines up. *Show on* can follow
+  the mouse pointer or pin the card to the primary display instead.
+- **Adjustable size.** *Card size* scales the whole card — text, icon, accent
+  bar and the `×N` badge — from 60 to 200 percent of the Windows 11 size, while
+  the margin to the screen edge stays put.
 - **Doesn't get in the way.** Click-through, no focus stealing, not in the
   taskbar or Alt+Tab, fades out on its own.
+- **Light on resources.** Nothing runs while the card is hidden except the
+  optional 250 ms elevated-app poll: idling costs no measurable CPU. A card
+  frame takes about 0.5 ms at 100% (0.9 ms at 200%) and the backdrop is captured
+  once per tip, roughly 7 ms.
 
 ![Paste tip with an ×3 badge](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-paste-en.png)
 
@@ -65,11 +76,14 @@ counts consecutive actions.
 - **Display duration** — how long the card stays, 500 to 10000 ms.
 - **Animation speed** — 100 is normal (300 ms), 50 is twice as fast, 0 disables
   the animation.
+- **Card size** — 60 to 200 percent; text, icon, accent bar and badge scale
+  together. 100 is the Windows 11 size. The gap to the screen edge does not
+  scale, so a bigger card still sits where a small one did.
 - **Vertical / horizontal position** — above the taskbar (tracked live, so a bar
   that auto-hides never covers the card) or below the top edge; left, center or
   right.
-- **Show on** — the monitor that holds the mouse cursor, or always the primary
-  display.
+- **Show on** — the display with the active window (the default), the display
+  that holds the mouse cursor, or always the primary display.
 - **Horizontal / vertical offset** — pixel-level fine tuning.
 - **Theme** — follow Windows, dark or light.
 - **Card material** — acrylic (blurred backdrop) or solid.
@@ -104,10 +118,11 @@ things:
   behind it, slides in from the nearest edge and animates a padlock. Lock Keys
   Notifier draws a configurable toast on a solid background.
 - **Scope.** Clipboard tips have no equivalent there.
-- **Configuration.** Here the size, theme and material follow Windows on
-  purpose. Lock Keys Notifier is built around being configurable — layouts,
-  fonts, shadows, sounds, per-key accents — so it isn't trying to match the
-  native OSD.
+- **Configuration.** The look starts at the Windows 11 defaults and stays close
+  to them: the card can be scaled, and the theme and material switched, but there
+  are no layouts or fonts to design. Lock Keys Notifier is built around being
+  configurable — layouts, fonts, shadows, sounds, per-key accents — so it isn't
+  trying to match the native OSD.
 
 If you want lock keys only, and want to tune every pixel of the card,
 Lock Keys Notifier is the better fit. If you want the native Windows 11 look, or
@@ -182,6 +197,15 @@ clipboard tips, this mod is.
     twice as fast and 200 is twice as slow. Set to 0 to disable animation.
   $description:zh-CN: >-
     100 为正常速度，动画时长 = 300 毫秒 × 百分比，50 快一倍、200 慢一倍。设为 0 关闭动画。
+- tipScale: 100
+  $name: Card size (percent)
+  $name:zh-CN: 浮窗大小（百分比）
+  $description: >-
+    Scales the whole card: text, icon, accent bar and the ×N badge grow
+    together. 60 to 200, 100 is the Windows 11 size. Applied the next time a
+    tip appears; the margin to the screen edge stays the same.
+  $description:zh-CN: >-
+    整个浮窗等比缩放：文字、图标、指示条与 ×N 徽章一起跟着变大变小。60 至 200，100 为 Win11 原生大小。下次弹出时生效，与屏幕边缘的间距保持不变。
 - vertical: bottom
   $name: Vertical position
   $name:zh-CN: 垂直位置
@@ -195,16 +219,18 @@ clipboard tips, this mod is.
   - left: Left
   - center: Center
   - right: Right
-- monitor: cursor
+- monitor: focus
   $name: Show on
   $name:zh-CN: 显示在
   $description: >-
-    Cursor puts the card on the monitor that holds the mouse pointer, which is
-    where you are looking in a multi-monitor setup. Primary always uses the main
-    display.
+    Focus puts the card on the display of the window you are working in, which
+    is where you are looking in a multi-monitor setup; it falls back to the
+    pointer's display when nothing is in front. Cursor follows the mouse
+    pointer, Primary always uses the main display.
   $description:zh-CN: >-
-    跟随鼠标：卡片出现在鼠标指针所在的显示器。主显示器：始终显示在主屏。
+    跟随焦点：卡片出现在当前活动窗口所在的那块显示器，多屏时就落在你正在操作的那一块（没有前台窗口时退回鼠标所在屏）。跟随鼠标：按指针位置。主显示器：始终显示在主屏。
   $options:
+  - focus: The display with the active window
   - cursor: The monitor with the mouse cursor
   - primary: The primary monitor
 - offsetX: 0
@@ -305,6 +331,8 @@ namespace {
 // the DPI of the monitor the card is about to appear on.
 constexpr float kBaseWidth = 160.0f;
 constexpr float kBaseHeight = 50.0f;
+constexpr float kMinTipScale = 0.6f;  // card size setting, as a multiplier
+constexpr float kMaxTipScale = 2.0f;
 constexpr float kGap = 16.0f;         // distance to the taskbar / work area
 constexpr float kSlideDistance = 20.0f;
 constexpr float kZoneRatio = 0.15f;   // edge zone that picks the slide direction
@@ -345,8 +373,9 @@ enum Material {
 };
 
 enum MonitorMode {
-    kMonitorCursor = 0,  // the display the pointer is on
-    kMonitorPrimary = 1, // always the main display
+    kMonitorFocus = 0,   // the display with the active window
+    kMonitorCursor = 1,  // the display the pointer is on
+    kMonitorPrimary = 2, // always the main display
 };
 
 struct Settings {
@@ -354,11 +383,12 @@ struct Settings {
     bool notifyAnyCopy = true;
     int displayMs = 2000;
     int animationPercent = 100;
+    int tipScalePercent = 100;
     int vertical = 1;   // 0 = top, 1 = bottom
     int horizontal = 1; // 0 = left, 1 = center, 2 = right
     int offsetX = 0;
     int offsetY = 0;
-    int monitor = kMonitorCursor;
+    int monitor = kMonitorFocus;
     int theme = 0;      // 0 = system, 1 = dark, 2 = light
     int material = kMaterialAcrylic;
     int blurRadius = 12;
@@ -371,6 +401,18 @@ struct Settings {
             return 0;
         }
         return kBaseAnimationMs * animationPercent / 100;
+    }
+
+    // The card size setting as a multiplier. Clamped here rather than at load
+    // time so a hand-edited registry value can never produce a 0x0 card.
+    float TipScale() const {
+        int pct = tipScalePercent;
+        if (pct < (int)(kMinTipScale * 100)) {
+            pct = (int)(kMinTipScale * 100);
+        } else if (pct > (int)(kMaxTipScale * 100)) {
+            pct = (int)(kMaxTipScale * 100);
+        }
+        return (float)pct / 100.0f;
     }
 };
 
@@ -398,6 +440,7 @@ void LoadSettings() {
 
     s.displayMs = Clamp(Wh_GetIntSetting(L"displayMs"), 500, 10000);
     s.animationPercent = Clamp(Wh_GetIntSetting(L"animationPercent"), 0, 300);
+    s.tipScalePercent = Clamp(Wh_GetIntSetting(L"tipScale"), 60, 200);
     s.offsetX = Clamp(Wh_GetIntSetting(L"offsetX"), -4000, 4000);
     s.offsetY = Clamp(Wh_GetIntSetting(L"offsetY"), -4000, 4000);
     s.pollElevated = Wh_GetIntSetting(L"pollElevated") != 0;
@@ -428,8 +471,13 @@ void LoadSettings() {
     Wh_FreeStringSetting(str);
 
     str = Wh_GetStringSetting(L"monitor");
-    s.monitor = (str && EqualsNoCase(str, L"primary")) ? kMonitorPrimary
-                                                       : kMonitorCursor;
+    if (str && EqualsNoCase(str, L"primary")) {
+        s.monitor = kMonitorPrimary;
+    } else if (str && EqualsNoCase(str, L"cursor")) {
+        s.monitor = kMonitorCursor;
+    } else {
+        s.monitor = kMonitorFocus;
+    }
     Wh_FreeStringSetting(str);
 
     str = Wh_GetStringSetting(L"accentColor");
@@ -660,20 +708,20 @@ float ScaleForMonitor(HMONITOR monitor) {
     if (!monitor) {
         return 1.0f;
     }
-    HMODULE shcore = LoadLibraryW(L"shcore.dll");
-    if (shcore) {
-        float scale = 0.0f;
-        auto getDpi = (GetDpiForMonitor_t)GetProcAddress(shcore, "GetDpiForMonitor");
-        if (getDpi) {
-            UINT dpiX = 0, dpiY = 0;
-            if (SUCCEEDED(getDpi(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)) &&
-                dpiX > 0) {
-                scale = (float)dpiX / 96.0f;
-            }
-        }
-        FreeLibrary(shcore);
-        if (scale > 0.0f) {
-            return scale;
+    // Resolved once: a tip re-reads the DPI of the display it is about to land
+    // on, and LoadLibrary/GetProcAddress on every tip is pure overhead when the
+    // module never goes away in practice.
+    static GetDpiForMonitor_t getDpi = [] {
+        HMODULE shcore = LoadLibraryW(L"shcore.dll");
+        return shcore ? (GetDpiForMonitor_t)GetProcAddress(shcore,
+                                                           "GetDpiForMonitor")
+                      : nullptr;
+    }();
+    if (getDpi) {
+        UINT dpiX = 0, dpiY = 0;
+        if (SUCCEEDED(getDpi(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)) &&
+            dpiX > 0) {
+            return (float)dpiX / 96.0f;
         }
     }
     HDC dc = GetDC(nullptr);
@@ -704,7 +752,21 @@ struct TaskbarBand {
     bool valid = false;
 };
 
-int g_bandEdge = -1; // cached docked edge, -1 while still unknown
+int g_bandEdge = -1; // cached docked edge of the primary taskbar, -1 unknown
+
+// The primary display is the one whose origin is (0,0). Cached because the
+// follow loop asks for it up to 17 times a second while a card is up.
+HMONITOR g_primaryMonitor;
+bool g_primaryMonitorKnown;
+
+HMONITOR PrimaryMonitor() {
+    if (!g_primaryMonitorKnown) {
+        g_primaryMonitor =
+            MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+        g_primaryMonitorKnown = true;
+    }
+    return g_primaryMonitor;
+}
 
 bool ClipToRect(const RECT& src, const RECT& bounds, RECT& out) {
     out.left = std::max(src.left, bounds.left);
@@ -745,43 +807,94 @@ int NearestEdge(const RECT& band, const RECT& bounds) {
                : ABE_RIGHT;
 }
 
-struct BandSearch {
-    const RECT* bounds;
-    RECT* band;
-    bool hit;
-};
+// Windows 11 gives every extra display its own taskbar window. The one that
+// belongs to a display is looked up once and then kept: the follow loop runs
+// every 60 ms, and walking every top-level window on each tick (what an
+// EnumWindows filter would do) is exactly the kind of wake-up cost that shows
+// up in Task Manager. Cached, a tick costs one GetWindowRect.
+HWND g_secondaryTray;
+RECT g_secondaryTrayFor{};
+bool g_secondaryTrayResolved;
 
-BOOL CALLBACK FindSecondaryTrayProc(HWND hwnd, LPARAM param) {
-    auto* search = (BandSearch*)param;
-    wchar_t cls[64]{};
-    if (!GetClassNameW(hwnd, cls, 64) || wcscmp(cls, kSecondaryTrayClass) != 0) {
-        return TRUE;
+// The taskbar window sitting on `bounds`, or null when that display has none.
+// A display without a taskbar is remembered too, so the follow loop does not
+// re-search for it 17 times a second.
+HWND SecondaryTrayWindow(const RECT& bounds) {
+    if (g_secondaryTrayResolved && EqualRect(&g_secondaryTrayFor, &bounds) &&
+        (!g_secondaryTray || IsWindow(g_secondaryTray))) {
+        return g_secondaryTray;
     }
-    RECT r{};
-    if (!GetWindowRect(hwnd, &r) ||
-        !ClipToRect(r, *search->bounds, *search->band)) {
-        return TRUE;
+
+    HWND best = nullptr;
+    long bestArea = 0;
+    HWND hwnd = nullptr;
+    while ((hwnd = FindWindowExW(nullptr, hwnd, kSecondaryTrayClass, nullptr)) !=
+           nullptr) {
+        RECT live{};
+        RECT clipped{};
+        if (!GetWindowRect(hwnd, &live) || !ClipToRect(live, bounds, clipped)) {
+            continue;
+        }
+        // The largest overlap is this display's bar; a neighbouring display's
+        // bar can graze the edge but never covers the middle of the screen.
+        long area =
+            (clipped.right - clipped.left) * (clipped.bottom - clipped.top);
+        if (area > bestArea) {
+            bestArea = area;
+            best = hwnd;
+        }
     }
-    search->hit = true;
-    return FALSE;
+
+    g_secondaryTray = best;
+    g_secondaryTrayFor = bounds;
+    g_secondaryTrayResolved = true;
+    return best;
+}
+
+// Drops everything cached about the display topology.
+void InvalidateTaskbarCache() {
+    g_bandEdge = -1;
+    g_secondaryTray = nullptr;
+    g_secondaryTrayFor = RECT{};
+    g_secondaryTrayResolved = false;
+    g_primaryMonitorKnown = false;
 }
 
 // The band this display's taskbar occupies right now, in screen pixels.
-bool QueryTaskbarBand(const RECT& bounds, TaskbarBand& out) {
-    RECT band{};
-    HWND tray = FindWindowW(kTrayClass, nullptr);
-    bool found =
-        tray && GetWindowRect(tray, &band) && ClipToRect(band, bounds, out.rect);
+bool QueryTaskbarBand(HMONITOR monitor, const RECT& bounds, TaskbarBand& out) {
+    bool primary = !monitor || monitor == PrimaryMonitor();
+    RECT live{};
 
+    bool found = false;
+    if (primary) {
+        HWND tray = FindWindowW(kTrayClass, nullptr);
+        found =
+            tray && GetWindowRect(tray, &live) && ClipToRect(live, bounds, out.rect);
+    }
     if (!found) {
-        // Windows 11 gives every extra display its own taskbar window.
-        BandSearch search{&bounds, &out.rect, false};
-        EnumWindows(FindSecondaryTrayProc, (LPARAM)&search);
-        found = search.hit;
+        HWND tray = SecondaryTrayWindow(bounds);
+        found =
+            tray && GetWindowRect(tray, &live) && ClipToRect(live, bounds, out.rect);
+    }
+
+    if (!found && !primary && g_secondaryTrayResolved && g_secondaryTray) {
+        // The cached bar is no longer on this display (it was dragged to
+        // another screen): look once more, then keep whatever comes back -
+        // including "this display has no taskbar" - so the follow loop stays
+        // at one GetWindowRect per tick either way.
+        g_secondaryTrayResolved = false;
+        HWND tray = SecondaryTrayWindow(bounds);
+        found =
+            tray && GetWindowRect(tray, &live) && ClipToRect(live, bounds, out.rect);
     }
 
     if (!found) {
-        // No taskbar window on this display: fall back to the docked rect.
+        // No taskbar window on this display. Only the primary taskbar has an
+        // ABM target, so a display without its own bar keeps the work area the
+        // system reported instead of borrowing the primary's rect.
+        if (!primary) {
+            return false;
+        }
         APPBARDATA pos{};
         pos.cbSize = sizeof(pos);
         if (!SHAppBarMessage(ABM_GETTASKBARPOS, &pos) ||
@@ -794,15 +907,21 @@ bool QueryTaskbarBand(const RECT& bounds, TaskbarBand& out) {
         return true;
     }
 
-    int edge = g_bandEdge;
+    // A secondary taskbar has no ABM target of its own, but it always hugs one
+    // edge of the display it sits on, so the geometry alone is enough there.
+    int edge = primary ? g_bandEdge : -1;
     if (edge < 0 || !BandHugsEdge(out.rect, bounds, edge)) {
-        APPBARDATA pos{};
-        pos.cbSize = sizeof(pos);
-        edge = SHAppBarMessage(ABM_GETTASKBARPOS, &pos) ? (int)pos.uEdge : -1;
-        if (edge < 0 || !BandHugsEdge(out.rect, bounds, edge)) {
+        if (primary) {
+            APPBARDATA pos{};
+            pos.cbSize = sizeof(pos);
+            edge = SHAppBarMessage(ABM_GETTASKBARPOS, &pos) ? (int)pos.uEdge : -1;
+            if (edge < 0 || !BandHugsEdge(out.rect, bounds, edge)) {
+                edge = NearestEdge(out.rect, bounds);
+            }
+            g_bandEdge = edge;
+        } else {
             edge = NearestEdge(out.rect, bounds);
         }
-        g_bandEdge = edge;
     }
     out.edge = edge;
     out.valid = true;
@@ -876,7 +995,7 @@ bool LoadMonitor(HMONITOR handle, MonitorTarget& out) {
     out.bounds = info.rcMonitor;
     out.work = info.rcWork;
     out.band = TaskbarBand{};
-    if (QueryTaskbarBand(out.bounds, out.band)) {
+    if (QueryTaskbarBand(handle, out.bounds, out.band)) {
         out.work = UsableRect(out.bounds, out.band);
     }
     out.scale = ScaleForMonitor(handle);
@@ -884,7 +1003,21 @@ bool LoadMonitor(HMONITOR handle, MonitorTarget& out) {
     return true;
 }
 
+// Where the card goes. Focus (the default) is the display of the active window
+// - the one the user is working in - with the pointer's display and then the
+// primary one as fallbacks; the same chain as the standalone build's
+// MonitorArea.Focused(), so both editions land in the same place.
 HMONITOR PickMonitor(int mode) {
+    if (mode == kMonitorFocus) {
+        HWND foreground = GetForegroundWindow();
+        if (foreground) {
+            HMONITOR monitor =
+                MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST);
+            if (monitor) {
+                return monitor;
+            }
+        }
+    }
     if (mode != kMonitorPrimary) {
         POINT cursor{};
         if (GetCursorPos(&cursor)) {
@@ -895,7 +1028,7 @@ HMONITOR PickMonitor(int mode) {
             }
         }
     }
-    return MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    return PrimaryMonitor();
 }
 
 bool ResolveTargetMonitor() {
@@ -1715,7 +1848,8 @@ HANDLE g_readyEvent;
 ULONG_PTR g_gdiplusToken;
 
 Surface g_surface;
-float g_scale = 1.0f;
+float g_scale = 1.0f;     // the target display's DPI scale
+float g_cardScale = 1.0f; // g_scale times the card size setting
 Theme g_theme;
 FrameState g_frame;
 Placement g_placement; // where the card belongs with the taskbar as it is now
@@ -1867,17 +2001,23 @@ bool ClipboardHasContent() {
 // Presentation
 // =============================================================================
 
+// Two scales: the display's DPI decides how many physical pixels a DIP is, the
+// card size setting scales the card itself. Everything inside the card uses
+// their product; margins, the slide distance and the blur radius stay on the
+// DPI scale, so a bigger card still keeps the same 16 DIP gap to the edge.
+void UpdateScales() {
+    g_scale = g_monitor.valid ? g_monitor.scale : 1.0f;
+    g_cardScale = g_scale * g_settings.TipScale();
+}
+
 void UpdateGeometry() {
-    // The pointer may have moved to another display since the last tip, so the
+    // The active window may be on another display since the last tip, so the
     // target monitor (and with it the DPI scale) is re-resolved every time.
     if (!ResolveTargetMonitor()) {
-        LoadMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY),
-                    g_monitor);
+        LoadMonitor(PrimaryMonitor(), g_monitor);
     }
-    if (g_monitor.valid) {
-        g_scale = g_monitor.scale;
-    }
-    MeasureCard(g_scale, g_frame, g_cardWidth, g_cardHeight);
+    UpdateScales();
+    MeasureCard(g_cardScale, g_frame, g_cardWidth, g_cardHeight);
     g_placement =
         ComputePlacement((float)g_cardWidth, (float)g_cardHeight, g_scale);
     // A fresh layout starts at the target; the follow ease only takes over when
@@ -1923,8 +2063,8 @@ void Present(float dx, float dy, BYTE alpha) {
     g_surface.Clear();
     {
         Graphics g(g_surface.dc);
-        RenderCard(g, g_scale, (float)g_cardWidth, (float)g_cardHeight, g_frame,
-                   g_theme,
+        RenderCard(g, g_cardScale, (float)g_cardWidth, (float)g_cardHeight,
+                   g_frame, g_theme,
                    CardHangsTop(g_monitor, g_posX, g_posY, (float)g_cardWidth,
                                 (float)g_cardHeight));
     }
@@ -2066,12 +2206,13 @@ void FollowTaskbar() {
         return;
     }
 
-    // Deliberately just the band: FindWindow plus GetWindowRect are microseconds,
-    // while a full monitor + DPI query every 60 ms would show up in the profile.
-    // Bounds and scale only change on WM_DISPLAYCHANGE / WM_DPICHANGED, which
-    // OnDisplayChanged already handles.
+    // Deliberately just the band: the tray window is already cached, so a tick
+    // costs one GetWindowRect - while a full monitor + DPI query every 60 ms
+    // would show up in the profile. Bounds and scale only change on
+    // WM_DISPLAYCHANGE / WM_DPICHANGED, which OnDisplayChanged already handles.
     TaskbarBand band;
-    if (!QueryTaskbarBand(g_monitor.bounds, band) || !band.valid) {
+    if (!QueryTaskbarBand(g_monitor.handle, g_monitor.bounds, band) ||
+        !band.valid) {
         return;
     }
 
@@ -2364,13 +2505,14 @@ void OnTimer(UINT_PTR id) {
 }
 
 void OnDisplayChanged() {
+    InvalidateTaskbarCache(); // monitors, DPI and taskbar placement may all differ
     g_theme = CurrentTheme();
     if (g_phase != kPhaseHidden) {
         UpdateGeometry();
         StartFollow(); // auto-hide may have been switched on or off
         StepAnimation();
     } else if (ResolveTargetMonitor()) {
-        g_scale = g_monitor.scale;
+        UpdateScales();
     }
 }
 
@@ -2435,7 +2577,7 @@ DWORD WINAPI UiThreadProc(LPVOID) {
     }
 
     if (ResolveTargetMonitor()) {
-        g_scale = g_monitor.scale;
+        UpdateScales();
     }
 
     WNDCLASSEXW wc{};

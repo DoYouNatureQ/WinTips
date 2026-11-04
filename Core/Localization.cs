@@ -31,7 +31,7 @@ public static class Loc
         Add("SettingsSubtitle", "按下对应按键时，在屏幕顶部或任务栏上方显示系统风格提示",
             "A system-style tip at the top or above the taskbar on each key press");
 
-        Add("SectionKeys", "提示键位", "Keys");
+        Add("SectionKeys", "提示浮窗", "Flyout");
         Add("KeyCapsLockLong", "大写锁定（Caps Lock）", "Caps Lock");
         Add("KeyNumLockLong", "数字锁定（Num Lock）", "Num Lock");
         Add("KeyScrollLockLong", "滚动锁定（Scroll Lock）", "Scroll Lock");
@@ -46,6 +46,10 @@ public static class Loc
         Add("SectionGeneral", "通用", "General");
         Add("RowDuration", "提示停留时长", "Display duration");
         Add("RowAnimSpeed", "浮现动画速度", "Animation speed");
+        Add("RowTipScale", "浮窗大小", "Tip size");
+        Add("RowTipScaleDesc", "拖动时浮窗实时预览；文字、图标与指示条一起等比缩放",
+            "Live preview while dragging; text, icon and indicator scale together");
+        Add("BtnResetSize", "还原默认", "Reset");
         Add("RowPosition", "提示位置", "Tip position");
         Add("PositionTop", "顶部", "Top");
         Add("PositionBottom", "底部", "Bottom");
@@ -53,9 +57,13 @@ public static class Loc
         Add("PositionCenter", "居中", "Center");
         Add("PositionRight", "右侧", "Right");
         Add("RowCustomPos", "自定义位置", "Custom position");
-        Add("RowCustomPosDesc", "把提示固定到屏幕任意位置", "Pin the tip anywhere on screen");
+        Add("RowCustomPosDesc", "把提示固定到屏幕任意位置（相对所在显示器的左上角）",
+            "Pin the tip anywhere on screen (relative to the top-left of its display)");
         Add("BtnAdjustPos", "调整位置", "Adjust");
         Add("BtnResetPos", "还原默认", "Reset");
+        Add("RowFocusMonitor", "跟随焦点显示器", "Follow the focused display");
+        Add("RowFocusMonitorDesc", "提示出现在当前活动窗口所在的显示器，而不是固定主显示器",
+            "Show the tip on the display with the active window instead of always the primary one");
         Add("RowStartup", "开机自动运行", "Run at startup");
         Add("StartupHintBlockedByUser",
             "Windows 记住了你之前在任务管理器里的关闭操作，只能由你手动重新打开：设置 > 应用 > 启动。",

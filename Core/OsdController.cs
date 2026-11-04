@@ -133,6 +133,9 @@ internal sealed class OsdController
     public void ShowTest(TipKind kind, bool? state, double? hold = null) =>
         Window.ShowTip(kind, state, hold ?? AppSettings.Instance.DisplaySeconds);
 
+    /// <summary>设置窗口拖动“浮窗大小”滑杆时的实时预览：滑杆每跨一格刷新一次，略作停留后自动收起。</summary>
+    public void PreviewSize(double seconds = 1.2) => Window.PreviewSize(seconds);
+
     public static bool IsEnabled(TipKind k) => k switch
     {
         TipKind.CapsLock => AppSettings.Instance.ShowCapsLock,

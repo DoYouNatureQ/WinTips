@@ -22,6 +22,19 @@ public sealed class AppSettings
     public bool ShowAnyCopy { get; set; } = true;
     public double DisplaySeconds { get; set; } = 2.0;
 
+    /// <summary>浮窗缩放范围（1.0 = 原始 160×50 基准），文字/图标/指示条一并等比缩放。</summary>
+    public const double MinTipScale = 0.6;
+    public const double MaxTipScale = 2.0;
+
+    /// <summary>浮窗大小倍率：0.6–2.0，默认 1.0。</summary>
+    public double TipScale { get; set; } = 1.0;
+
+    /// <summary>容错归一化：缺省/非法值回落 1.0，越界钳进取值范围并按 1% 取整（滑杆刻度感）。</summary>
+    public static double NormalizeScale(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(Math.Round(value, 2), MinTipScale, MaxTipScale)
+            : 1.0;
+
     /// <summary>
     /// 开机自启的镜像值，仅供设置序列化与排查用；真实状态一律以
     /// <see cref="StartupManager.IsEnabled"/> 为准（注册表或 WinRT 启动任务）。
@@ -43,6 +56,13 @@ public sealed class AppSettings
 
     /// <summary>浮窗垂直位置：Top（贴屏幕顶部）/ Bottom（贴任务栏上方，默认）。</summary>
     public string TipVertical { get; set; } = PlacementBottom;
+
+    /// <summary>
+    /// 提示浮窗跟随焦点显示器（默认开启）：弹出时取当前前台窗口所在的那块屏，
+    /// 而不是固定落在主显示器。关闭后行为与旧版一致，只显示在主显示器；
+    /// 自定义位置按“相对该屏左上角”解释。
+    /// </summary>
+    public bool TipFollowFocus { get; set; } = true;
 
     /// <summary>容错归一化：非法值一律回落为居中。</summary>
     public static string NormalizePlacement(string? value) =>
@@ -104,6 +124,7 @@ public sealed class AppSettings
                 {
                     s.TipPlacement = NormalizePlacement(s.TipPlacement);
                     s.TipVertical = NormalizeVertical(s.TipVertical);
+                    s.TipScale = NormalizeScale(s.TipScale);
                     NormalizeCustomPosition(s);
                     if (MigrateFromV1(s, text)) s.Save();
                     Instance = s;

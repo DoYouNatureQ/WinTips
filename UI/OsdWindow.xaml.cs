@@ -14,7 +14,9 @@ namespace WinTips.UI;
 /// 强调色指示条（开=60px 全不透明，关=36px 20% 不透明）；指示条默认在卡片下缘，
 /// 浮窗挂在屏幕顶部区域时镜像到文字上方，始终贴近它所挂靠的那条屏幕边。
 /// 锁扣与指示条共用同一时长与缓动，且在窗口可见后才同帧启动，保证同步起落。
-/// 显示于主显示器：垂直可贴屏幕顶部或任务栏上方，水平可设为左侧/居中/右侧（默认居中、任务栏上方）；点击穿透、不抢焦点。
+/// 显示位置：默认主显示器；开启「跟随焦点显示器」后落在焦点窗口所在的那块屏，
+/// 并按该屏自己的 DPI 缩放与任务栏形态摆放。垂直可贴屏幕顶部或任务栏上方，
+/// 水平可设为左侧/居中/右侧（默认居中、任务栏上方）；点击穿透、不抢焦点。
 /// 预热分两步：EnsureHandle() 只建句柄不显示窗口（原地 Show() 会带出一帧
 /// DWM 背景）；随后把窗口移到屏幕外真实渲染一帧再隐藏，暖起冷启动的
 /// 渲染管线。句柄与管线就绪后首次 ShowTip 无创建迟滞，也不会看到内容
@@ -44,6 +46,12 @@ public partial class OsdWindow : Window
     private double _followLeft;
     private double _followTop;
     private int _moveGen;
+
+    /// <summary>
+    /// 本次显示的目标显示器（DIP 矩形 + 该屏缩放），每次 <see cref="ShowTip"/> 时按当时的焦点屏重定；
+    /// 一轮显示内的重排（改状态、跟任务栏、DPI 变化）都沿用同一个目标，不会自己乱跑。
+    /// </summary>
+    private MonitorArea _target = MonitorArea.Primary();
 
     /// <summary>系统剪贴板更新（WM_CLIPBOARDUPDATE），由 OsdController 订阅。</summary>
     public event Action? ClipboardUpdated;
@@ -133,60 +141,112 @@ public partial class OsdWindow : Window
             ClipboardUpdated?.Invoke();
         else if (msg == NativeMethods.WM_DISPLAYCHANGE || msg == NativeMethods.WM_SETTINGCHANGE)
         {
-            // 切换显示器/主屏或改缩放比例：隐藏窗口收不到系统 WM_DPICHANGED，
-            // 主动查询主屏 DPI 并补发，否则下次弹出按旧 DPI 渲染导致变形
-            SyncDpi();
+            // 切换显示器/主屏、改缩放比例：按当前目标屏重排一次，把缩放、位置、尺寸一起对齐。
+            // 隐藏窗口收不到系统 WM_DPICHANGED，不主动对齐的话下次弹出会按旧缩放渲染。
+            Reposition();
         }
         return IntPtr.Zero;
     }
 
     /// <summary>
-    /// 让 WPF 的 DPI 与弹窗目标显示器（主屏）保持一致。
-    /// 浮窗绝大多数时间处于隐藏状态，而 Windows 只对可见窗口投递 WM_DPICHANGED；
-    /// 显示拓扑或缩放变化时浮窗正隐藏，WPF 的 TransformToDevice 仍是旧值，
-    /// 弹出时就会按旧缩放渲染（变形/错位）。这里取主屏有效 DPI，与窗口当前
-    /// 缩放不一致时手工补发一条 WM_DPICHANGED（可见时系统本来就会发，值相等则跳过），
-    /// 代价只是查询一次显示器信息。
+    /// 本次提示要落在哪台显示器：开启「跟随焦点显示器」时取焦点窗口所在屏（见
+    /// <see cref="MonitorArea.Focused"/>，取不到时逐级退回鼠标所在屏、主屏），否则固定主屏。
     /// </summary>
-    private void SyncDpi()
+    private static MonitorArea ResolveTarget()
+    {
+#if DEBUG
+        // 调试用：给一个物理坐标点，把提示强制投到该点所在显示器。
+        // 跨屏验证时不必真去抢焦点，设环境变量 WINTIPS_DEBUG_MONITOR_POINT="-2000,500" 即可；
+        // 再加 WINTIPS_DEBUG_MONITOR_FILE=<文件> 可在进程运行期间改文件内容动态切换目标屏。
+        if (DebugTargetPoint() is { } xy &&
+            MonitorArea.FromHandle(NativeMethods.MonitorFromPoint(
+                xy, NativeMethods.MONITOR_DEFAULTTONEAREST)) is { } area)
+            return area;
+#endif
+        return AppSettings.Instance.TipFollowFocus ? MonitorArea.Focused() : MonitorArea.Primary();
+    }
+
+#if DEBUG
+    /// <summary>
+    /// 调试钩子：解析「强制目标显示器」的物理坐标点。文件优先于环境变量，
+    /// 这样运行中的实例也能通过改写文件切换目标屏，做跨屏/跨缩放的自动化验证。
+    /// </summary>
+    private static NativeMethods.POINT? DebugTargetPoint()
+    {
+        string? spec = Environment.GetEnvironmentVariable("WINTIPS_DEBUG_MONITOR_POINT");
+        if (Environment.GetEnvironmentVariable("WINTIPS_DEBUG_MONITOR_FILE") is { Length: > 0 } file)
+        {
+            try { if (System.IO.File.Exists(file)) spec = System.IO.File.ReadAllText(file).Trim(); }
+            catch { }
+        }
+        if (string.IsNullOrEmpty(spec)) return null;
+
+        var parts = spec.Split(',');
+        if (parts.Length != 2 || !int.TryParse(parts[0], out int x) || !int.TryParse(parts[1], out int y))
+            return null;
+        return new NativeMethods.POINT { X = x, Y = y };
+    }
+#endif
+
+    /// <summary>WPF 当前认为的窗口缩放（物理像素 → DIP），取自渲染变换。</summary>
+    private double CurrentScale()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return 1.0;
+        double m = HwndSource.FromHwnd(hwnd)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        return m > 0 ? m : 1.0;
+    }
+
+    /// <summary>
+    /// 让 WPF 的缩放对齐目标显示器，并顺手把窗口摆到 (left, top)（DIP，目标屏坐标系）。
+    /// 做法不是自己造一条 WM_DPICHANGED，而是按目标屏的物理矩形把窗口真搬过去——
+    /// 这和用户拖动窗口走同一条路径，系统会主动投递真实的 DPI 变化消息，WPF 的
+    /// TransformToDevice 随之更新（隐藏窗口同样有效，实测如此）。
+    /// 系统万一没跟上，再补发一条合成消息兜底。
+    /// </summary>
+    private void SyncDpi(double left, double top)
     {
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd == IntPtr.Zero) return;
-            var src = HwndSource.FromHwnd(hwnd);
-            if (src?.CompositionTarget == null) return;
-            double current = src.CompositionTarget.TransformToDevice.M11;
+            if (hwnd == IntPtr.Zero || _target.Handle == IntPtr.Zero) return;
 
-            // 弹窗固定出现在主显示器（原点恒为 0,0），据此取主屏有效 DPI
-            var mon = NativeMethods.MonitorFromPoint(new NativeMethods.POINT(), NativeMethods.MONITOR_DEFAULTTOPRIMARY);
-            if (mon == IntPtr.Zero) return;
-            if (NativeMethods.GetDpiForMonitor(mon, NativeMethods.MDT_EFFECTIVE_DPI, out uint dpiX, out uint dpiY) != 0 || dpiX == 0)
+            double want = _target.Scale > 0 ? _target.Scale : 1.0;
+            if (Math.Abs(CurrentScale() - want) <= 0.01) return;
+
+            PlacePhysical(left, top); // 真实移动：让系统自己发现窗口换了屏
+            if (Math.Abs(CurrentScale() - want) <= 0.01) return;
+
+            if (NativeMethods.GetDpiForMonitor(_target.Handle, NativeMethods.MDT_EFFECTIVE_DPI,
+                    out uint dpiX, out uint dpiY) != 0 || dpiX == 0)
                 return;
 
-            if (Math.Abs(dpiX / 96.0 - current) <= 0.01) return;
-
-            // 建议矩形用当前物理矩形：WPF 收到后会更新 DPI 并按矩形重设窗口，
-            // 随后 OnDpiChanged 里再按新 DPI 重算 DIP 尺寸与位置
-            if (NativeMethods.GetWindowRect(hwnd, out NativeMethods.RECT rect))
-                NativeMethods.SendMessageW(hwnd, NativeMethods.WM_DPICHANGED,
-                    (IntPtr)((uint)dpiX | ((uint)dpiY << 16)), ref rect);
+            int x = (int)Math.Round(left * want), y = (int)Math.Round(top * want);
+            int w = (int)Math.Round(Width * want), h = (int)Math.Round(Height * want);
+            var rect = new NativeMethods.RECT { Left = x, Top = y, Right = x + w, Bottom = y + h };
+            NativeMethods.SendMessageW(hwnd, NativeMethods.WM_DPICHANGED,
+                (IntPtr)(dpiX | (dpiY << 16)), ref rect);
         }
         catch { }
     }
 
     /// <summary>
-    /// 窗口可见期间 DPI 发生变化（WPF 已按“物理尺寸守恒”缩放了 Left/Top/Width/Height）。
-    /// 浮窗内容是固定 DIP 设计（160×50 基准），这里按新 DPI 重算尺寸并贴回
-    /// 任务栏上方，避免沿用缩放后的尺寸而显得忽大忽小。
+    /// 窗口的 DPI 变了（被搬到另一块缩放不同的屏上，或用户改了缩放）。
+    /// WPF 会按"物理尺寸守恒"把 Left/Top/Width/Height 一并按比例改写（实测 Width 会被乘上
+    /// 新/旧缩放比，160 → 240 或 240 → 160），沿用下去浮窗就会忽大忽小、位置也偏。
+    /// 浮窗内容是固定 DIP 设计（160×50 基准，再乘用户设定的"浮窗大小"倍率），
+    /// 所以这里按目标屏重算尺寸与位置，把窗口摆回该在的地方。
     /// </summary>
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
     {
         base.OnDpiChanged(oldDpi, newDpi);
         WidthCache.Clear(); // 字形宽度随 DPI 的舍入略有差异，换 DPI 后缓存作废
-        if (!_visible) return;
+
+        // WPF 处理 WM_DPICHANGED 时会先套用系统给的建议矩形（按物理尺寸守恒缩放），
+        // 那个矩形往往不是浮窗该在的位置/尺寸；这里紧跟着按目标屏重排一次，把窗口摆正。
+        // 隐藏时也照做：下次弹出若沿用这个错尺寸，会出现一整轮大小不对的提示。
         UpdateSize();
-        Reposition();
+        PositionOnTarget();
     }
 
     private void ApplyChrome()
@@ -229,7 +289,7 @@ public partial class OsdWindow : Window
     {
         try
         {
-            SyncDpi(); // 兜底：启动后若显示配置已变，先把 DPI 对齐再预热
+            _target = ResolveTarget();
             // 先只创建句柄、不显示窗口。原地 Show/Hide 预热会让冷启动时两者
             // 之间的帧被 DWM 合成出来：Root 全透明时系统背景（Mica）可见，
             // 表现为开机首次启动闪现一个空窗口。EnsureHandle 同样会触发
@@ -290,7 +350,24 @@ public partial class OsdWindow : Window
 
     public void ShowTip(TipKind kind, bool? state, double seconds)
     {
-        SyncDpi(); // 兜底：隐藏期间错过的 DPI 变化在此对齐（内部有阈值比较，通常零开销）
+        // 目标显示器在弹出这一刻定下：跟随焦点时就是用户此刻正在操作的那块屏。
+        // DPI 对齐与落位统一在 Reposition 里做（它知道最终落点，能借这次移动顺带换屏）。
+        var target = ResolveTarget();
+
+        // 换屏弹出：上一轮提示还没收起就换到另一块屏（尤其两块屏缩放不同）时，
+        // WPF 改 DPI 会把 Width/Height 按比例改写再被我们改回来，可见状态下会闪一帧
+        // 错尺寸的卡片。这里直接按“重新弹出”处理——内容先透明，重排完再淡入。
+        if (_visible && target.Handle != _target.Handle)
+        {
+            StopFollow();
+            BeginAnimation(LeftProperty, null);
+            BeginAnimation(TopProperty, null);
+            Root.BeginAnimation(UIElement.OpacityProperty, null);
+            Root.Opacity = 0;
+            _visible = false;
+        }
+
+        _target = target;
 
         var prevKind = _currentKind;
         _currentKind = kind;
@@ -346,6 +423,8 @@ public partial class OsdWindow : Window
         }
 
         Show();
+        // Show() 之后 WPF 可能按自己缓存的实际尺寸重设一次 HWND，再钉一次物理矩形
+        PlacePhysical(Left, Top);
         _visible = true;
         _shownOnce = true;
         if (!ready)
@@ -368,6 +447,29 @@ public partial class OsdWindow : Window
         UpdateSize();
         Reposition();
         AnimateStatus(on);
+        RestartTimer();
+    }
+
+    /// <summary>
+    /// 设置里拖动“浮窗大小”滑杆时的实时预览：没有提示在显示就按当前外观弹一次（含入/出场动画），
+    /// 已经在显示就只按新尺寸重排并延长停留——刻意不重播开/关动效，否则滑杆每跨一格刻度
+    /// 锁扣都会回弹一次，看着像在抖。
+    /// </summary>
+    public void PreviewSize(double seconds)
+    {
+        int ms = (int)Math.Clamp(seconds, 0.5, 10);
+        if (!_visible)
+        {
+            ShowTip(TipKind.CapsLock, true, seconds);
+            return;
+        }
+
+        UpdateSize();
+        Reposition();
+        // 正好在退场淡出途中时接管回来，否则尺寸变了却仍在淡出，看不见预览
+        Root.BeginAnimation(UIElement.OpacityProperty, null);
+        Root.Opacity = 1;
+        _hideTimer.Interval = TimeSpan.FromSeconds(ms);
         RestartTimer();
     }
 
@@ -421,7 +523,7 @@ public partial class OsdWindow : Window
     /// </summary>
     private void UpdateBarSide()
     {
-        bool onTop = _lastTop + Height / 2 < SystemParameters.PrimaryScreenHeight / 2;
+        bool onTop = _lastTop + Height / 2 < _target.CenterY;
         if (onTop == _barOnTop) return;
         _barOnTop = onTop;
         ApplyBarSide();
@@ -555,15 +657,24 @@ public partial class OsdWindow : Window
         ShackleBounce.Y = 0;
     }
 
+    /// <summary>
+    /// 浮窗基准高度（DIP）：内容按这套 1.0 倍基准布局，用户改大小只缩放这套基准，
+    /// 所以 UpdateSize / 徽章居中这类像素计算一律留在基准坐标系里，不掺缩放倍率。
+    /// </summary>
+    private const double BaseHeight = 50;
+
     private void UpdateSize()
     {
+        double scale = AppSettings.NormalizeScale(AppSettings.Instance.TipScale);
+        ApplyScale(scale);
+
         double textWidth = MeasureText(LockTextBlock.Text);
         bool clip = CountBadge.Visibility == Visibility.Visible;
         double extra = clip
             ? MeasureText(CountText.Text, 12.5, FontWeights.SemiBold) + 22 // 徽章宽 + 右缘留白
             : 0;
-        Width = Math.Max(160, Math.Ceiling(16 + 22 + 18 + textWidth + 12 + extra));
-        Height = 50;
+        // 基准宽度：下面所有坐标与 MeasureText 的结果都在这套基准里，最后统一乘缩放倍率
+        double baseWidth = Math.Max(160, Math.Ceiling(16 + 22 + 18 + textWidth + 12 + extra));
 
         if (clip)
         {
@@ -571,11 +682,11 @@ public partial class OsdWindow : Window
             // 视觉上不再偏向徽章；该中点与卡片中线几乎重合。
             // 注意：TextBlock 的 Margin 是相对内容区（窗口左边距 16）的坐标，
             // 而 iconEnd/badgeStart 是窗口坐标，需先减去 16 换算，否则文字整体右偏 16px。
-            // 另外必须用刚算出的新 Width（×10 时徽章变宽，中点随之后移）。
+            // 这里必须用基准宽度而非窗口 Width：内容整体挂在缩放变换下，Margin 也是基准单位。
             double pillWidth = MeasureText(CountText.Text, 12.5, FontWeights.SemiBold) + 14; // 徽章内边距 7+7
             const double gridLeft = 16;                // 内容区原点（窗口坐标）
             const double iconEnd = 22;                 // 图标右缘（内容区坐标）
-            double badgeStart = Width - gridLeft - 8 - pillWidth; // 徽章左缘（内容区坐标，距窗口右 8px）
+            double badgeStart = baseWidth - gridLeft - 8 - pillWidth; // 徽章左缘（内容区坐标，距窗口右 8px）
             double mid = (iconEnd + badgeStart) / 2;
             double left = Math.Max(iconEnd + 8, mid - textWidth / 2);
             LockTextBlock.HorizontalAlignment = HorizontalAlignment.Left;
@@ -587,6 +698,26 @@ public partial class OsdWindow : Window
             LockTextBlock.HorizontalAlignment = HorizontalAlignment.Center;
             LockTextBlock.Margin = new Thickness(18, 0, 0, 2);
         }
+
+        // 窗口尺寸 = 基准尺寸 × 倍率：变换只改渲染，窗口本身必须同步放大，
+        // 否则内容会被裁在窗口外、贴边与居中计算也全按未缩放的尺寸走。
+        Width = Math.Ceiling(baseWidth * scale);
+        Height = Math.Ceiling(BaseHeight * scale);
+    }
+
+    /// <summary>内容根节点的等比缩放变换：字形、矢量图标、指示条、圆角一起跟随，无需逐控件调字号。</summary>
+    private ScaleTransform? _rootScale;
+
+    private void ApplyScale(double scale)
+    {
+        if (_rootScale is null)
+        {
+            _rootScale = new ScaleTransform(scale, scale);
+            Root.LayoutTransform = _rootScale;
+            return;
+        }
+        if (Math.Abs(_rootScale.ScaleX - scale) < 0.001) return;
+        _rootScale.ScaleX = _rootScale.ScaleY = scale;
     }
 
     private double MeasureText(string text, double size = 14, FontWeight? weight = null)
@@ -612,26 +743,14 @@ public partial class OsdWindow : Window
         return width;
     }
 
-    /// <summary>当前 DPI 缩放（物理像素 → DIP），取浮窗自身的渲染变换。</summary>
-    private double CurrentScale()
-    {
-        var src = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-        if (src?.CompositionTarget != null)
-        {
-            double m = src.CompositionTarget.TransformToDevice.M11;
-            if (m > 0) return m;
-        }
-        return 1.0;
-    }
-
-    /// <summary>浮窗该落在哪（DIP）：有自定义位置用自定义值，否则按预设（跟随任务栏当前形态）。</summary>
-    private (double Left, double Top) TargetPosition(double scale)
+    /// <summary>浮窗该落在哪（DIP，目标显示器坐标系）：有自定义位置用自定义偏移，否则按预设（跟随任务栏当前形态）。</summary>
+    private (double Left, double Top) TargetPosition()
     {
         var s = AppSettings.Instance;
         return s.HasCustomPosition
-            ? OsdPlacement.ClampToPrimary(s.CustomLeft!.Value, s.CustomTop!.Value, Width, Height)
+            ? OsdPlacement.CustomFor(s.CustomLeft!.Value, s.CustomTop!.Value, Width, Height, _target)
             : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement),
-                AppSettings.NormalizeVertical(s.TipVertical), Width, Height, scale);
+                AppSettings.NormalizeVertical(s.TipVertical), Width, Height, _target);
     }
 
     private void Reposition()
@@ -639,10 +758,45 @@ public partial class OsdWindow : Window
         BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
 
-        (Left, Top) = TargetPosition(CurrentScale());
+        // 位置是 DIP，WPF 按窗口当前缩放换算物理像素：先算好落点，再借这次移动把
+        // 窗口搬到目标屏上让系统对齐缩放（跨屏不同缩放时，顺序反了就会整体偏出去）
+        var (left, top) = TargetPosition();
+        SyncDpi(left, top);
+
+        // 换屏时 WPF 会顺手改写 Width/Height（实测 160 → 160/1.5），必须按目标屏重算回来，
+        // 否则浮窗会带着放错比例的尺寸和落点一直显示（这就是跨屏后"大小不正常"的来源）
+        UpdateSize();
+        PositionOnTarget();
+    }
+
+    /// <summary>
+    /// 按 <see cref="_target"/> 摆位（不碰 DPI，避免在 DPI 变化回调里重入）。
+    /// </summary>
+    private void PositionOnTarget()
+    {
+        (Left, Top) = TargetPosition();
         _lastLeft = _followLeft = Left;
         _lastTop = _followTop = Top;
         UpdateBarSide();
+        PlacePhysical(Left, Top);
+    }
+
+    /// <summary>
+    /// 按目标屏的物理像素矩形把窗口钉死（DIP × 该屏缩放）。
+    /// 换屏换缩放时 WPF 会按"物理尺寸守恒"套用系统给的建议矩形，而 Width/Height 的 DIP 值
+    /// 前后一样，它就不会再把窗口改回 DIP×新缩放——从 150% 的屏切回 100% 的屏之后，
+    /// 浮窗会一直保持 1.5 倍的物理尺寸（实测 240×75 而非 160×50）。位置与尺寸因此不再
+    /// 依赖 WPF 的 DPI 时序，一律由这里按目标屏缩放直接换算。
+    /// </summary>
+    private void PlacePhysical(double left, double top)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        double scale = _target.Scale > 0 ? _target.Scale : 1.0;
+        NativeMethods.SetWindowPos(hwnd, IntPtr.Zero,
+            (int)Math.Round(left * scale), (int)Math.Round(top * scale),
+            (int)Math.Round(Width * scale), (int)Math.Round(Height * scale),
+            NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
     }
 
     /// <summary>
@@ -655,7 +809,7 @@ public partial class OsdWindow : Window
     {
         if (!_visible) return;
 
-        var (left, top) = TargetPosition(CurrentScale());
+        var (left, top) = TargetPosition();
         if (Math.Abs(left - _followLeft) < 0.5 && Math.Abs(top - _followTop) < 0.5) return;
 
         _followLeft = left;
@@ -671,6 +825,7 @@ public partial class OsdWindow : Window
     /// <summary>
     /// 启动跟随轮询：只在“开了自动隐藏 + 用的是预设位置”时才需要——任务栏不会滑出/收起，
     /// 或者位置被用户钉死了，都没有可跟的东西，那就一次也不跑。
+    /// 副屏任务栏（Shell_SecondaryTrayWnd）同样会被跟随：可用区域每次现查，见 <see cref="TaskbarInfo.UsableRect"/>。
     /// </summary>
     private void StartFollow()
     {
@@ -726,7 +881,7 @@ public partial class OsdWindow : Window
     /// 四角对角滑入），落在屏幕中部时回落到竖向。始终朝最近的屏幕边缘收起。
     /// </summary>
     private (double Dx, double Dy) SlideOffset(double left, double top) =>
-        OsdPlacement.SlideOffset(left, top, Width, Height);
+        OsdPlacement.SlideOffset(left, top, Width, Height, _target);
 
     private void AnimateIn()
     {

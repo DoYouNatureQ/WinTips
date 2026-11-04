@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Navigation;
@@ -15,12 +16,21 @@ public partial class SettingsWindow : Window
     /// <summary>测试提示回调（由 App 注入），保存自定义位置后预览真实效果。</summary>
     private readonly Action<TipKind, bool?>? _showTest;
 
+    /// <summary>浮窗大小预览回调（由 App 注入），拖动大小滑杆时实时弹出真实浮窗。</summary>
+    private readonly Action<double>? _previewSize;
+
+    /// <summary>正在拖拽大小滑杆：此时预览用较长的停留时间，避免用户中途停顿一下浮窗就消失。</summary>
+    private bool _draggingScale;
+
+    private const double DragPreviewSeconds = 8;
+
     /// <summary>上一次实际生效的玻璃状态，用于 WM_SETTINGCHANGE 时判断是否真的需要重铺材质。</summary>
     private bool _glassApplied;
 
-    public SettingsWindow(Action<TipKind, bool?>? showTest = null)
+    public SettingsWindow(Action<TipKind, bool?>? showTest = null, Action<double>? previewSize = null)
     {
         _showTest = showTest;
+        _previewSize = previewSize;
         InitializeComponent();
         ApplyPlatformChrome();
         ApplyVersionText();
@@ -76,6 +86,7 @@ public partial class SettingsWindow : Window
     {
         UpdateDurationText(DurationSlider.Value);
         UpdateAnimSpeedText(AnimSpeedSlider.Value);
+        UpdateTipScaleText(TipScaleSlider.Value);
         // 提示文案是代码里按结果拼的，语言切换后需要重刷（XAML 绑定管不到）
         if (StartupHint.Visibility == Visibility.Visible) ShowStartupHint(_lastStartupResult);
     }
@@ -90,15 +101,18 @@ public partial class SettingsWindow : Window
         SubText.Foreground = secondary;
         DurationText.Foreground = secondary;
         AnimSpeedText.Foreground = secondary;
+        TipScaleText.Foreground = secondary;
+        TipScaleDesc.Foreground = secondary;
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
+        FocusMonitorDesc.Foreground = secondary;
         StartupHint.Foreground = secondary;
         FooterText.Foreground = secondary;
         LblKeys.Foreground = secondary;
         LblBehavior.Foreground = secondary;
 
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepB1, SepB2, SepB3, SepB4, SepB5 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5 })
             sep.Background = divider;
     }
 
@@ -117,7 +131,11 @@ public partial class SettingsWindow : Window
         UpdateDurationText(DurationSlider.Value);
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
+        // 滑杆刻度是 0.1 步长，回填值先归一到合法区间与刻度，避免出现 0.63 这种落不到格上的值
+        TipScaleSlider.Value = Math.Round(AppSettings.NormalizeScale(s.TipScale), 1);
+        UpdateTipScaleText(TipScaleSlider.Value);
         LoadPlacement();
+        FocusMonitorToggle.IsChecked = s.TipFollowFocus;
         StartupToggle.IsChecked = StartupManager.IsEnabled();
         LangSystem.IsChecked = Loc.Language == AppLanguage.System;
         LangZh.IsChecked = Loc.Language == AppLanguage.Chinese;
@@ -188,6 +206,16 @@ public partial class SettingsWindow : Window
         _showTest?.Invoke(TipKind.CapsLock, true);
     }
 
+    /// <summary>
+    /// 跟随焦点显示器。开关后立即弹一次真实提示：此时设置窗口就是前台窗口，
+    /// 提示会落在它所在的这块屏上——用户一眼就能确认自己刚开的是什么东西。
+    /// </summary>
+    private void ApplyFollowFocus(bool enable)
+    {
+        Save(v => v.TipFollowFocus = enable);
+        _showTest?.Invoke(TipKind.CapsLock, true);
+    }
+
     private static string AnimSpeedLabel(double speed)
     {
         if (speed <= 0) return Loc.T("AnimNone");
@@ -196,6 +224,36 @@ public partial class SettingsWindow : Window
     }
 
     private void UpdateAnimSpeedText(double speed) => AnimSpeedText.Text = AnimSpeedLabel(speed);
+
+    /// <summary>浮窗大小标签：直接显示百分比（100% = 原始尺寸），两种语言通用，不走词条表。</summary>
+    private void UpdateTipScaleText(double scale)
+    {
+        TipScaleText.Text = $"{(int)Math.Round(scale * 100)}%";
+        // 已在 100% 时没有可还原的东西，按钮置灰（与「自定义位置」那行的行为一致）
+        ResetScaleBtn.IsEnabled = Math.Abs(scale - 1) > 0.001;
+    }
+
+    /// <summary>拖动大小滑杆期间用较长停留时间：用户中途停顿一下浮窗也不该消失。</summary>
+    private void TipScaleSlider_DragStarted(object sender, DragStartedEventArgs e) => _draggingScale = true;
+
+    private void TipScaleSlider_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _draggingScale = false;
+        // 松手后回到正常的停留时长，别让预览赖在屏幕上不动
+        _previewSize?.Invoke(AppSettings.Instance.DisplaySeconds);
+    }
+
+    /// <summary>
+    /// 浮窗大小变更：写入设置后立刻弹（或就地重排）真实浮窗做预览——所见即所得，
+    /// 不必先关掉设置窗口才能看到效果。
+    /// </summary>
+    private void ApplyTipScale(double value)
+    {
+        double scale = AppSettings.NormalizeScale(value);
+        UpdateTipScaleText(scale);
+        SaveSoon(v => v.TipScale = scale);
+        _previewSize?.Invoke(_draggingScale ? DragPreviewSeconds : AppSettings.Instance.DisplaySeconds);
+    }
 
     private void WireEvents()
     {
@@ -229,6 +287,17 @@ public partial class SettingsWindow : Window
             SaveSoon(v => v.AnimationSpeed = speed);
         };
 
+        // 大小滑杆：每跨一格刻度才触发一次（控件已开启吸附刻度），刷新标签、落盘并实时预览
+        TipScaleSlider.ValueChanged += (_, e) => ApplyTipScale(e.NewValue);
+
+        // 还原默认：把滑杆拨回 100%，ValueChanged 负责落盘与预览；万一值本来就等于 1.0
+        // （浮点残留），ValueChanged 不会触发，这里直接补一次，保证按钮永远有反应
+        ResetScaleBtn.Click += (_, _) =>
+        {
+            TipScaleSlider.Value = 1.0;
+            if (Math.Abs(AppSettings.NormalizeScale(AppSettings.Instance.TipScale) - 1) > 0.001) ApplyTipScale(1.0);
+        };
+
         StartupToggle.Checked += (_, _) => ApplyStartup(true);
         StartupToggle.Unchecked += (_, _) => ApplyStartup(false);
 
@@ -242,6 +311,9 @@ public partial class SettingsWindow : Window
         PosLeft.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementLeft, null);
         PosCenter.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementCenter, null);
         PosRight.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementRight, null);
+
+        FocusMonitorToggle.Checked += (_, _) => ApplyFollowFocus(true);
+        FocusMonitorToggle.Unchecked += (_, _) => ApplyFollowFocus(false);
 
         CustomPosBtn.Click += (_, _) => OpenPlacementPicker();
         ResetPosBtn.Click += (_, _) =>

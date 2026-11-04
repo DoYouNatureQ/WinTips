@@ -20,6 +20,7 @@ A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scro
 - **Native materials**: DWM acrylic, system rounded corners, light/dark theme and accent color follow the system, high-DPI aware. On Windows 10, in high contrast, with composition disabled, when system "Transparency effects" is off, or while Battery Saver is active, the app falls back to the opaque colors from the design spec instead of overlaying translucent cards on DWM's solid fallback (Mica ignores Battery Saver, so the settings window keeps its material).
 - **Unobtrusive**: click-through, never steals focus, hidden from the taskbar and Alt+Tab, auto-dismisses after 1–5 seconds (adjustable).
 - **Settings window**: Win11 Settings styling, applied and saved instantly. Flyout position is two independent axes — Top/Bottom plus Left/Center/Right (Top + Center, Top + Right, Bottom + Center, …) — or choose "Custom position" and drag the flyout anywhere, then save (one click restores the default).
+- **Multiple displays**: follows the focused display by default — the flyout lands on the display with the active window, positioned with that display's own DPI and taskbar state (edge-aware slide, mirrored accent bar and auto-hide taskbar following all still apply); turn "Follow the focused display" off to pin it back to the primary display.
 - **Visual placement**: in custom-position mode dashed guides mark the 15% edge zones and the zone the flyout center falls into is highlighted (that is the side it will slide from); the flyout snaps to the screen's center axes, and the arrow keys nudge it pixel by pixel (tap = 1 px, hold to repeat, Shift = 10 px).
 - **Bilingual UI**: built-in Simplified Chinese and English. Follows the system language by default; switch anytime under "Interface language" in Settings — effective immediately, no restart.
 - Lives in the tray, single instance, no third-party dependencies (WPF + WinForms, .NET 10).
@@ -66,7 +67,7 @@ Any failing step `pause`s and leaves the state intact for inspection.
 ## Known Limitations
 
 - The Insert hint is event-based and shows no on/off state (Windows does not track that state at the system level).
-- Notifications appear on the primary display only.
+- With several displays the flyout follows the active window's display by default; turn off "Follow the focused display" in the settings to keep it on the primary display.
 - A low-level keyboard hook cannot see keys sent to elevated (administrator) windows.
 - Cuts from non-keyboard sources (e.g. the "Cut" context-menu item) cannot be told apart from copies and are shown with the copy style.
 

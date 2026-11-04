@@ -13,8 +13,9 @@ namespace WinTips.UI;
 /// <summary>
 /// 自定义位置模式：全屏半透明遮罩（置于浮窗与拖动提示之下）压暗桌面并挡住桌面点击；
 /// 提示浮窗与真实 OSD 同尺寸同外观（所见即所得），按住拖动；操作条（提示文字 + 取消/保存）
-/// 跟随浮窗，下方优先、贴近工作区底边时翻到浮窗上方。遮罩窗口铺满主显示器（与 OSD
-/// 显示范围一致），保存时以浮窗左上角作为提示位置（DIP，主屏坐标系）。
+/// 跟随浮窗，下方优先、贴近工作区底边时翻到浮窗上方。遮罩窗口铺满主显示器，
+/// 保存的是相对该屏左上角的偏移——开启「跟随焦点显示器」后，同一偏移会套到浮窗
+/// 实际所在的那块屏上（屏更小时自动收回屏内）。
 /// 辅助线：屏幕四边各 15% 的贴边判定区用虚线框出，按生效方向高亮对应的一条边缘带
 /// （左右优先于上下，与真实提示的滑入方向一致）；浮窗中心靠近屏幕中轴时自动吸附对齐。
 /// 定位方式：按住浮窗拖动，或用方向键逐像素微调（长按连发）。
@@ -56,6 +57,11 @@ public partial class PlacementPickerWindow : Window
         InitializeComponent();
         ApplyTheme();
 
+        // 预览卡片跟着用户的“浮窗大小”一起缩放：设置里已经调过大小的话，
+        // 这里拖动的必须是真实尺寸，否则保存下来的位置在浮窗变大后会贴出屏外。
+        double scale = AppSettings.NormalizeScale(AppSettings.Instance.TipScale);
+        if (Math.Abs(scale - 1) > 0.001) TipCard.LayoutTransform = new ScaleTransform(scale, scale);
+
         // 遮罩只盖主显示器（与 OSD 的显示范围一致）；坐标即屏幕 DIP，保存时无需换算
         Left = 0;
         Top = 0;
@@ -91,6 +97,13 @@ public partial class PlacementPickerWindow : Window
 
     private double ScreenW => ActualWidth > 0 ? ActualWidth : Width;
     private double ScreenH => ActualHeight > 0 ? ActualHeight : Height;
+
+    /// <summary>
+    /// 摆放画布永远铺在主显示器上（自定义位置存的是“相对显示器左上角的偏移”，
+    /// 开启「跟随焦点显示器」后同一偏移会套到浮窗实际所在的那块屏），
+    /// 因此这里的参照物固定为主屏，与实际弹出时的换算无关。
+    /// </summary>
+    private MonitorArea _area = MonitorArea.Primary();
 
     private void ApplyTheme()
     {
@@ -178,11 +191,12 @@ public partial class PlacementPickerWindow : Window
     private void LayoutInitial()
     {
         var s = AppSettings.Instance;
+        _area = MonitorArea.Primary();
         (double left, double top) = s.HasCustomPosition
             ? (s.CustomLeft!.Value, s.CustomTop!.Value)
             : OsdPlacement.DefaultFor(AppSettings.NormalizePlacement(s.TipPlacement),
                 AppSettings.NormalizeVertical(s.TipVertical),
-                TipCard.ActualWidth, TipCard.ActualHeight, OsdPlacement.PrimaryScale());
+                TipCard.ActualWidth, TipCard.ActualHeight, _area);
 
         MoveCard(left, top, allowSnap: true);
 
@@ -197,7 +211,7 @@ public partial class PlacementPickerWindow : Window
         double w = TipCard.ActualWidth, h = TipCard.ActualHeight;
         if (w <= 0 || h <= 0) return;
 
-        (left, top) = OsdPlacement.ClampToPrimary(left, top, w, h);
+        (left, top) = OsdPlacement.ClampTo(left, top, w, h, _area);
         if (allowSnap) (left, top, _snapX, _snapY) = SnapToCenter(left, top, w, h);
         else _snapX = _snapY = false;
 
@@ -253,7 +267,7 @@ public partial class PlacementPickerWindow : Window
         SetRect(_bands[(int)OsdPlacement.PopSide.Right], sw - zw, 0, zw, sh);
 
         // 只高亮真正生效的那一条边（左右优先于上下，与真实提示的滑动方向一致）
-        var active = OsdPlacement.ActiveSide(left, top, w, h);
+        var active = OsdPlacement.ActiveSide(left, top, w, h, _area);
         Show(_bands[(int)OsdPlacement.PopSide.Left], active == OsdPlacement.PopSide.Left);
         Show(_bands[(int)OsdPlacement.PopSide.Right], active == OsdPlacement.PopSide.Right);
         Show(_bands[(int)OsdPlacement.PopSide.Top], active == OsdPlacement.PopSide.Top);
@@ -390,8 +404,8 @@ public partial class PlacementPickerWindow : Window
 
     private void Save()
     {
-        (double left, double top) = OsdPlacement.ClampToPrimary(
-            Canvas.GetLeft(TipCard), Canvas.GetTop(TipCard), TipCard.ActualWidth, TipCard.ActualHeight);
+        (double left, double top) = OsdPlacement.ClampTo(
+            Canvas.GetLeft(TipCard), Canvas.GetTop(TipCard), TipCard.ActualWidth, TipCard.ActualHeight, _area);
         Saved?.Invoke(left, top);
         Close();
     }
