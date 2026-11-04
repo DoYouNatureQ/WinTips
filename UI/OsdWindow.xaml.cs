@@ -56,6 +56,38 @@ public partial class OsdWindow : Window
 
     private static bool IsClip(TipKind k) => TipInfo.IsClipboard(k);
 
+    /// <summary>字体族只解析一次；FormattedText 每次测量都要用到它。</summary>
+    private static readonly FontFamily OsdFont = new("Segoe UI Variable Display, Segoe UI");
+
+    private static readonly Typeface MediumFace =
+        new(OsdFont, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
+
+    private static readonly Typeface SemiBoldFace =
+        new(OsdFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
+    /// <summary>
+    /// 文案宽度缓存。提示文案是有限集合（7 种提示 × 开/关 × ×N），命中率极高；
+    /// 原先每次弹出都要重新走一遍 FormattedText 的字体匹配与字形布局。
+    /// </summary>
+    private static readonly Dictionary<(string Text, double Size, FontWeight Weight), double> WidthCache = new();
+
+    /// <summary>当前外观键（深浅色 / 高对比度 / 强调色）：变化时才重建画刷。</summary>
+    private (bool Dark, bool HighContrast, Color Accent) _chromeKey;
+    private bool _chromeReady;
+
+    private SolidColorBrush _surfaceBrush = Brushes.White;
+    private SolidColorBrush _textBrush = Brushes.Black;
+    private SolidColorBrush _accentBrush = Brushes.DodgerBlue;
+    private SolidColorBrush _onAccentBrush = Brushes.White;
+
+    /// <summary>画刷冻结后可跨线程共享，也免掉每次赋值时的变更通知链。</summary>
+    private static SolidColorBrush Frozen(Color c)
+    {
+        var b = new SolidColorBrush(c);
+        b.Freeze();
+        return b;
+    }
+
     public OsdWindow()
     {
         InitializeComponent();
@@ -151,6 +183,7 @@ public partial class OsdWindow : Window
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
     {
         base.OnDpiChanged(oldDpi, newDpi);
+        WidthCache.Clear(); // 字形宽度随 DPI 的舍入略有差异，换 DPI 后缓存作废
         if (!_visible) return;
         UpdateSize();
         Reposition();
@@ -160,22 +193,36 @@ public partial class OsdWindow : Window
     {
         var hwnd = new WindowInteropHelper(this).Handle;
         bool dark = ThemeHelper.IsDarkTheme;
-        var solid = new SolidColorBrush(ThemeHelper.OsdSurface(dark));
 
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
+        // 只有外观真的变了才重建画刷并重新赋予控件：Foreground 每次赋值都会
+        // 触发整棵可视树的继承值重算，而 ApplyChrome 在每次弹窗时都会被调用。
+        var key = (dark, ThemeHelper.HighContrast, ThemeHelper.AccentColor);
+        if (!_chromeReady || !key.Equals(_chromeKey))
+        {
+            _chromeKey = key;
+            _chromeReady = true;
+
+            _surfaceBrush = Frozen(ThemeHelper.OsdSurface(dark));
+            _textBrush = Frozen(ThemeHelper.TextPrimary(dark));
+            _accentBrush = Frozen(ThemeHelper.AccentColor);
+            _onAccentBrush = Frozen(ThemeHelper.OnAccent(dark));
+
+            Foreground = _textBrush;
+            LockIndicator.Fill = _accentBrush;
+            CountBadge.Background = _accentBrush;
+            CountText.Foreground = _onAccentBrush;
+        }
+
         // 系统不支持亚克力时退回纯色卡片（Win10、高对比度、系统关掉透明效果、
-        // 节电模式都必须走这条分支，否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）
+        // 节电模式都必须走这条分支，否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）。
+        // 节电模式/透明开关不会通知窗口，所以这一项每次弹出都得现查。
         Root.Background = ThemeHelper.AcrylicAllowed &&
                           DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW)
             ? Brushes.Transparent
-            : solid;
-
-        Foreground = new SolidColorBrush(ThemeHelper.TextPrimary(dark));
-        LockIndicator.Fill = new SolidColorBrush(ThemeHelper.AccentColor);
-        CountBadge.Background = new SolidColorBrush(ThemeHelper.AccentColor);
-        CountText.Foreground = new SolidColorBrush(ThemeHelper.OnAccent(dark));
+            : _surfaceBrush;
     }
 
     public void PreWarm()
@@ -545,15 +592,24 @@ public partial class OsdWindow : Window
     private double MeasureText(string text, double size = 14, FontWeight? weight = null)
     {
         if (string.IsNullOrEmpty(text)) return 0;
-        var typeface = new Typeface(
-            new FontFamily("Segoe UI Variable Display, Segoe UI"),
-            FontStyles.Normal, weight ?? FontWeights.Medium, FontStretches.Normal);
+
+        var face = weight ?? FontWeights.Medium;
+        var key = (text, size, face);
+        if (WidthCache.TryGetValue(key, out double cached)) return cached;
+
         double pixelsPerDip = 1.0;
         try { pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip; } catch { }
+
+        // 字号必须用调用方给的 size：之前这里写死 14，导致 ×N 徽章（12.5pt）按 14pt 量宽
         var ft = new FormattedText(
             text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-            typeface, 14, Brushes.Black, pixelsPerDip);
-        return ft.Width;
+            face == FontWeights.SemiBold ? SemiBoldFace : MediumFace, size, Brushes.Black, pixelsPerDip);
+        double width = ft.Width;
+
+        // 文案集合有限，攒到上限直接清空即可（不清会随语言/DPI 切换缓慢增长）
+        if (WidthCache.Count >= 256) WidthCache.Clear();
+        WidthCache[key] = width;
+        return width;
     }
 
     /// <summary>当前 DPI 缩放（物理像素 → DIP），取浮窗自身的渲染变换。</summary>

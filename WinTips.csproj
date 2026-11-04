@@ -9,22 +9,22 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
+    <!-- 不再启用 WinForms：托盘图标已换成原生 Shell_NotifyIcon（见 UI/TrayService.cs）。
+         关掉它可以把 System.Windows.Forms / Forms.Primitives / System.Drawing / GDI+
+         共约 19.8MB 的程序集从常驻内存里整体移除。 -->
+    <UseWindowsForms>false</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>WinTips</RootNamespace>
     <AssemblyName>WinTips</AssemblyName>
     <!-- 版本号唯一真源：设置页底部与托盘悬停提示都读它（见 Core/AppInfo.cs）。
          发版只改这里，不要在各处硬编码。 -->
-    <Version>0.31</Version>
+    <Version>0.4</Version>
     <Product>WinTips</Product>
     <Description>Win11 风格的键盘状态提示（大写/数字/滚动锁定与 Insert 键）</Description>
     <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <!-- WFO0003：WinForms 分析器要求 DPI 走 Application.SetHighDpiMode，本项目是 WPF 主程序
-         （只用 WinForms 的 NotifyIcon），DPI 只能由清单声明，故静音该提示 -->
-    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <!-- 单文件发布产物只要 WinTips.exe：不要 PDB（否则 publish 目录会多出 WinTips.pdb）。
@@ -44,8 +44,8 @@
     <Page Remove="App\App.xaml" />
   </ItemGroup>
 
+  <!-- 显式关掉这两个命名空间的隐式 using：项目里已无 System.Drawing / WinForms 依赖 -->
   <ItemGroup>
-    <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
   </ItemGroup>
 

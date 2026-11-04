@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Threading;
 
 namespace WinTips.Core;
 
@@ -144,8 +145,48 @@ public sealed class AppSettings
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, SaveOptions));
         }
         catch { }
+    }
+
+    /// <summary>
+    /// 序列化选项必须是静态单例：<see cref="JsonSerializerOptions"/> 内部缓存着整套类型元数据，
+    /// 每次 new 一个都等于重建一份缓存，用完即弃——滑杆这类高频保存会持续制造这份开销。
+    /// </summary>
+    private static readonly JsonSerializerOptions SaveOptions = new() { WriteIndented = true };
+
+    private static DispatcherTimer? _pendingSave;
+
+    /// <summary>
+    /// 延迟落盘：滑杆拖动时 ValueChanged 每 tick 触发一次保存，直接写文件会把一次拖拽变成
+    /// 几十次磁盘写入。这里合并成 400ms 后的单次写入；退出前由 <see cref="FlushPendingSave"/> 兜底。
+    /// </summary>
+    public void SaveSoon()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null) { Save(); return; } // 无 UI 线程（测试/退出中）直接写
+
+        if (_pendingSave is null)
+        {
+            _pendingSave = new DispatcherTimer(DispatcherPriority.Background, dispatcher);
+            _pendingSave.Tick += (_, _) =>
+            {
+                _pendingSave!.Stop();
+                Instance.Save();
+            };
+        }
+
+        _pendingSave.Stop();
+        _pendingSave.Interval = TimeSpan.FromMilliseconds(400);
+        _pendingSave.Start();
+    }
+
+    /// <summary>把待写的设置立刻落盘，否则用户拖完滑杆直接退出会丢掉最后一次改动。</summary>
+    public static void FlushPendingSave()
+    {
+        if (_pendingSave?.IsEnabled != true) return;
+        _pendingSave.Stop();
+        Instance.Save();
     }
 }

@@ -4,7 +4,7 @@
 // @name:zh-CN      WinTips 键盘状态提示
 // @description     Shows a Win11-style floating OSD for Caps/Num/Scroll Lock, Insert and copy/paste/cut
 // @description:zh-CN 按下大写/数字/滚动锁定、Insert 或复制/粘贴/剪切时弹出 Win11 质感的浮窗提示
-// @version         1.2.1
+// @version         1.3.0
 // @author          DoYouNatureQ
 // @github          https://github.com/DoYouNatureQ
 // @homepage        https://github.com/DoYouNatureQ/WinTips
@@ -39,6 +39,10 @@ counts consecutive actions.
 - **Slides in from the nearest edge.** A card within 15% of the left or right
   edge comes in horizontally (this wins over top/bottom), otherwise vertically
   from whichever half of the screen it sits in.
+- **Follows the taskbar out of the way.** The card is anchored to the taskbar's
+  live edge instead of the work area: with auto-hide on it lifts as the bar
+  slides in and settles back to the screen edge as the bar retreats, so a
+  taskbar that pops up mid-tip never covers it.
 - **Clipboard aware.** Copy tips only appear after the clipboard actually
   changes, so `Ctrl+C` used to interrupt a console app doesn't pop a false
   "Copied". Non-keyboard copies (context menu, in-app buttons) can be reported
@@ -61,8 +65,9 @@ counts consecutive actions.
 - **Display duration** — how long the card stays, 500 to 10000 ms.
 - **Animation speed** — 100 is normal (300 ms), 50 is twice as fast, 0 disables
   the animation.
-- **Vertical / horizontal position** — above the taskbar or below the top edge;
-  left, center or right.
+- **Vertical / horizontal position** — above the taskbar (tracked live, so a bar
+  that auto-hides never covers the card) or below the top edge; left, center or
+  right.
 - **Show on** — the monitor that holds the mouse cursor, or always the primary
   display.
 - **Horizontal / vertical offset** — pixel-level fine tuning.
@@ -308,6 +313,8 @@ constexpr int kClipIntentMs = 800;    // wait this long for the clipboard to cha
 constexpr int kClipMergeMs = 250;     // coalesce clipboard manager write-backs
 constexpr int kPollQuietMs = 1200;    // let a hook-reported toggle settle first
 constexpr int kPollMs = 250;          // elevated-window fallback
+constexpr int kFollowIntervalMs = 60; // the taskbar slide takes ~200 ms
+constexpr int kFollowMs = 140;        // shorter than the entrance, so it keeps up
 
 enum TipKind {
     kCapsLock = 0,
@@ -325,6 +332,7 @@ constexpr UINT WM_APP_QUIT = WM_APP + 2;
 
 constexpr UINT_PTR kTimerAnim = 1;
 constexpr UINT_PTR kTimerHold = 2;
+constexpr UINT_PTR kTimerFollow = 3;
 constexpr UINT_PTR kTimerPoll = 4;
 
 // =============================================================================
@@ -676,12 +684,175 @@ float ScaleForMonitor(HMONITOR monitor) {
     return dpi > 0 ? (float)dpi / 96.0f : 1.0f;
 }
 
+// =============================================================================
+// Taskbar
+// =============================================================================
+// The work area only says whether the taskbar reserved space: with auto-hide on
+// it stays at the full display while the taskbar slides in and out, and it lags
+// behind a taskbar that was just dragged to another edge. The taskbar's own
+// window rect follows both, so the card is anchored to that instead - the same
+// source the standalone build uses (Native/TaskbarInfo.cs). Collapsed, the tray
+// window parks 2 px inside the screen, which is what keeps the card hugging the
+// edge; slid out, it hands the card the 48 px it needs as clearance.
+
+constexpr wchar_t kTrayClass[] = L"Shell_TrayWnd";
+constexpr wchar_t kSecondaryTrayClass[] = L"Shell_SecondaryTrayWnd";
+
+struct TaskbarBand {
+    RECT rect{};
+    int edge = ABE_BOTTOM;
+    bool valid = false;
+};
+
+int g_bandEdge = -1; // cached docked edge, -1 while still unknown
+
+bool ClipToRect(const RECT& src, const RECT& bounds, RECT& out) {
+    out.left = std::max(src.left, bounds.left);
+    out.top = std::max(src.top, bounds.top);
+    out.right = std::min(src.right, bounds.right);
+    out.bottom = std::min(src.bottom, bounds.bottom);
+    return out.right > out.left && out.bottom > out.top;
+}
+
+// Whether the band really hugs that edge and spans the whole display. A cached
+// edge that no longer fits means the taskbar was dragged somewhere else.
+bool BandHugsEdge(const RECT& band, const RECT& bounds, int edge) {
+    long width = bounds.right - bounds.left;
+    long height = bounds.bottom - bounds.top;
+    switch (edge) {
+        case ABE_TOP:
+            return band.top <= bounds.top && band.right - band.left >= width;
+        case ABE_LEFT:
+            return band.left <= bounds.left && band.bottom - band.top >= height;
+        case ABE_RIGHT:
+            return band.right >= bounds.right && band.bottom - band.top >= height;
+        default:
+            return band.bottom >= bounds.bottom &&
+                   band.right - band.left >= width;
+    }
+}
+
+int NearestEdge(const RECT& band, const RECT& bounds) {
+    if (band.right - band.left >= band.bottom - band.top) {
+        return std::abs(band.top - bounds.top) <=
+                       std::abs(bounds.bottom - band.bottom)
+                   ? ABE_TOP
+                   : ABE_BOTTOM;
+    }
+    return std::abs(band.left - bounds.left) <=
+                   std::abs(bounds.right - band.right)
+               ? ABE_LEFT
+               : ABE_RIGHT;
+}
+
+struct BandSearch {
+    const RECT* bounds;
+    RECT* band;
+    bool hit;
+};
+
+BOOL CALLBACK FindSecondaryTrayProc(HWND hwnd, LPARAM param) {
+    auto* search = (BandSearch*)param;
+    wchar_t cls[64]{};
+    if (!GetClassNameW(hwnd, cls, 64) || wcscmp(cls, kSecondaryTrayClass) != 0) {
+        return TRUE;
+    }
+    RECT r{};
+    if (!GetWindowRect(hwnd, &r) ||
+        !ClipToRect(r, *search->bounds, *search->band)) {
+        return TRUE;
+    }
+    search->hit = true;
+    return FALSE;
+}
+
+// The band this display's taskbar occupies right now, in screen pixels.
+bool QueryTaskbarBand(const RECT& bounds, TaskbarBand& out) {
+    RECT band{};
+    HWND tray = FindWindowW(kTrayClass, nullptr);
+    bool found =
+        tray && GetWindowRect(tray, &band) && ClipToRect(band, bounds, out.rect);
+
+    if (!found) {
+        // Windows 11 gives every extra display its own taskbar window.
+        BandSearch search{&bounds, &out.rect, false};
+        EnumWindows(FindSecondaryTrayProc, (LPARAM)&search);
+        found = search.hit;
+    }
+
+    if (!found) {
+        // No taskbar window on this display: fall back to the docked rect.
+        APPBARDATA pos{};
+        pos.cbSize = sizeof(pos);
+        if (!SHAppBarMessage(ABM_GETTASKBARPOS, &pos) ||
+            !ClipToRect(pos.rc, bounds, out.rect)) {
+            return false;
+        }
+        g_bandEdge = (int)pos.uEdge;
+        out.edge = (int)pos.uEdge;
+        out.valid = true;
+        return true;
+    }
+
+    int edge = g_bandEdge;
+    if (edge < 0 || !BandHugsEdge(out.rect, bounds, edge)) {
+        APPBARDATA pos{};
+        pos.cbSize = sizeof(pos);
+        edge = SHAppBarMessage(ABM_GETTASKBARPOS, &pos) ? (int)pos.uEdge : -1;
+        if (edge < 0 || !BandHugsEdge(out.rect, bounds, edge)) {
+            edge = NearestEdge(out.rect, bounds);
+        }
+        g_bandEdge = edge;
+    }
+    out.edge = edge;
+    out.valid = true;
+    return true;
+}
+
+// The part of the display the card may use: the monitor minus the band the
+// taskbar occupies right now. Collapsed that band is the 2 px reveal strip, so
+// the card ends up right at the screen edge.
+RECT UsableRect(const RECT& bounds, const TaskbarBand& band) {
+    if (!band.valid) {
+        return bounds;
+    }
+    RECT r = bounds;
+    switch (band.edge) {
+        case ABE_TOP:
+            r.top = std::max(r.top, band.rect.bottom);
+            break;
+        case ABE_LEFT:
+            r.left = std::max(r.left, band.rect.right);
+            break;
+        case ABE_RIGHT:
+            r.right = std::min(r.right, band.rect.left);
+            break;
+        default:
+            r.bottom = std::min(r.bottom, band.rect.top);
+            break;
+    }
+    // A band that swallowed the display would leave nowhere to put the card.
+    if (r.right - r.left < 2 || r.bottom - r.top < 2) {
+        return bounds;
+    }
+    return r;
+}
+
+// Only an auto-hidden taskbar moves while the card is up; pinned, it keeps
+// still and there is nothing to follow.
+bool TaskbarAutoHide() {
+    APPBARDATA state{};
+    state.cbSize = sizeof(state);
+    return (SHAppBarMessage(ABM_GETSTATE, &state) & ABS_AUTOHIDE) != 0;
+}
+
 // The display the card is drawn on. Resolved once per tip so the card lands on
 // the monitor the user is actually looking at, with that monitor's own scale.
 struct MonitorTarget {
     HMONITOR handle = nullptr;
     RECT bounds{0, 0, 0, 0}; // whole monitor, in virtual-screen coordinates
-    RECT work{0, 0, 0, 0};   // same, minus the taskbar
+    RECT work{0, 0, 0, 0};   // same, minus the taskbar as it is right now
+    TaskbarBand band;        // the taskbar itself, for the follow loop
     float scale = 1.0f;
     bool valid = false;
 
@@ -704,6 +875,10 @@ bool LoadMonitor(HMONITOR handle, MonitorTarget& out) {
     out.handle = handle;
     out.bounds = info.rcMonitor;
     out.work = info.rcWork;
+    out.band = TaskbarBand{};
+    if (QueryTaskbarBand(out.bounds, out.band)) {
+        out.work = UsableRect(out.bounds, out.band);
+    }
     out.scale = ScaleForMonitor(handle);
     out.valid = true;
     return true;
@@ -806,7 +981,9 @@ Placement ComputePlacement(const MonitorTarget& mon, int vertical, int horizonta
         left = (float)bounds.left + ((float)mon.Width() - w) / 2.0f;
     }
 
-    // rcWork already excludes the taskbar, wherever it happens to dock.
+    // `work` is the monitor minus the band the taskbar occupies right now, so
+    // this sits above a slid-out taskbar and right at the edge when it is
+    // collapsed - see QueryTaskbarBand/UsableRect.
     float top = vertical == 0 ? (float)work.top + gap
                               : (float)work.bottom - gap - h;
 
@@ -1541,7 +1718,15 @@ Surface g_surface;
 float g_scale = 1.0f;
 Theme g_theme;
 FrameState g_frame;
-Placement g_placement;
+Placement g_placement; // where the card belongs with the taskbar as it is now
+int g_posX;            // where it is actually drawn, eased toward g_placement
+int g_posY;
+bool g_following;      // an ease toward g_placement is in flight
+float g_followFromX;
+float g_followFromY;
+ULONGLONG g_followStart;
+int g_followMs;
+bool g_backdropPending; // moved since the last screen copy
 int g_cardWidth;
 int g_cardHeight;
 
@@ -1695,6 +1880,12 @@ void UpdateGeometry() {
     MeasureCard(g_scale, g_frame, g_cardWidth, g_cardHeight);
     g_placement =
         ComputePlacement((float)g_cardWidth, (float)g_cardHeight, g_scale);
+    // A fresh layout starts at the target; the follow ease only takes over when
+    // the taskbar moves under a card that is already on screen.
+    g_posX = g_placement.x;
+    g_posY = g_placement.y;
+    g_following = false;
+    g_backdropPending = false;
     g_surface.Ensure(g_cardWidth, g_cardHeight);
 }
 
@@ -1705,8 +1896,7 @@ void RefreshBackdrop() {
         g_backdrop.Invalidate();
         return;
     }
-    if (g_backdrop.Matches(g_placement.x, g_placement.y, g_cardWidth,
-                           g_cardHeight)) {
+    if (g_backdrop.Matches(g_posX, g_posY, g_cardWidth, g_cardHeight)) {
         return;
     }
 
@@ -1717,8 +1907,7 @@ void RefreshBackdrop() {
 
     int radius = (int)std::lround((float)g_settings.blurRadius * g_scale);
     HDC screen = GetDC(nullptr);
-    CaptureBackdrop(screen, g_placement.x, g_placement.y, g_cardWidth,
-                    g_cardHeight, radius);
+    CaptureBackdrop(screen, g_posX, g_posY, g_cardWidth, g_cardHeight, radius);
     ReleaseDC(nullptr, screen);
 
     if (wasVisible) {
@@ -1736,16 +1925,15 @@ void Present(float dx, float dy, BYTE alpha) {
         Graphics g(g_surface.dc);
         RenderCard(g, g_scale, (float)g_cardWidth, (float)g_cardHeight, g_frame,
                    g_theme,
-                   CardHangsTop(g_monitor, g_placement.x, g_placement.y,
-                                (float)g_cardWidth, (float)g_cardHeight));
+                   CardHangsTop(g_monitor, g_posX, g_posY, (float)g_cardWidth,
+                                (float)g_cardHeight));
     }
     g_surface.Premultiply();
 
     HDC screen = GetDC(nullptr);
     POINT src{0, 0};
     SIZE size{g_cardWidth, g_cardHeight};
-    POINT dst{g_placement.x + (int)std::lround(dx),
-              g_placement.y + (int)std::lround(dy)};
+    POINT dst{g_posX + (int)std::lround(dx), g_posY + (int)std::lround(dy)};
 
     BLENDFUNCTION blend{};
     blend.BlendOp = AC_SRC_OVER;
@@ -1761,8 +1949,11 @@ void HideNow() {
     if (g_hwnd) {
         ShowWindow(g_hwnd, SW_HIDE);
         KillTimer(g_hwnd, kTimerAnim);
+        KillTimer(g_hwnd, kTimerFollow);
     }
     g_phase = kPhaseHidden;
+    g_following = false;
+    g_backdropPending = false;
     g_count = 0;
     g_badgePop = false;
     // The desktop may have changed while the card was up; capture again next
@@ -1779,6 +1970,20 @@ void StepAnimation() {
     float alpha = 1.0f;
     float dx = 0.0f;
     float dy = 0.0f;
+
+    // The taskbar moved under the card: slide to the place it left for it.
+    if (g_following) {
+        float t = g_followMs > 0 ? (float)(now - g_followStart) / g_followMs
+                                 : 1.0f;
+        float e = EaseOutCubic(t);
+        g_posX = (int)std::lround(Lerp(g_followFromX, (float)g_placement.x, e));
+        g_posY = (int)std::lround(Lerp(g_followFromY, (float)g_placement.y, e));
+        if (t >= 1.0f) {
+            g_following = false;
+            g_posX = g_placement.x;
+            g_posY = g_placement.y;
+        }
+    }
 
     if (g_phase == kPhaseIn) {
         float t = g_animMs > 0 ? (float)(now - g_phaseStart) / g_animMs : 1.0f;
@@ -1844,9 +2049,93 @@ void StepAnimation() {
 
     Present(dx, dy, (BYTE)std::lround(255.0f * Clamp01(alpha)));
 
-    if (g_phase == kPhaseHold && !busy) {
+    if (g_phase == kPhaseHold && !busy && !g_following) {
         KillTimer(g_hwnd, kTimerAnim);
     }
+}
+
+// Keeps the card off a taskbar that slides in and out. Same shape as the
+// standalone build's FollowTaskbar: re-read the band every 60 ms (a few
+// microseconds - FindWindow plus GetWindowRect, deliberately no ABM query) and
+// only touch the window once the place the card belongs has actually moved.
+void FollowTaskbar() {
+    if (!g_hwnd || g_phase == kPhaseHidden || g_phase == kPhaseOut) {
+        return;
+    }
+    if (!g_monitor.valid) {
+        return;
+    }
+
+    // Deliberately just the band: FindWindow plus GetWindowRect are microseconds,
+    // while a full monitor + DPI query every 60 ms would show up in the profile.
+    // Bounds and scale only change on WM_DISPLAYCHANGE / WM_DPICHANGED, which
+    // OnDisplayChanged already handles.
+    TaskbarBand band;
+    if (!QueryTaskbarBand(g_monitor.bounds, band) || !band.valid) {
+        return;
+    }
+
+    if (g_monitor.band.valid && EqualRect(&band.rect, &g_monitor.band.rect)) {
+        // The taskbar has not moved. If the card just finished easing, take a
+        // fresh screen copy at its new place - captured while it was still up,
+        // so the snapshot would otherwise stay frozen where it used to be. Once
+        // per move: a capture that comes back unusable must not turn into a
+        // hide/show loop.
+        if (g_backdropPending && g_phase == kPhaseHold && !g_following) {
+            g_backdropPending = false;
+            RefreshBackdrop();
+        }
+        return;
+    }
+    g_monitor.band = band;
+    g_monitor.work = UsableRect(g_monitor.bounds, band);
+
+    Placement target =
+        ComputePlacement((float)g_cardWidth, (float)g_cardHeight, g_scale);
+    if (target.x == g_posX && target.y == g_posY) {
+        g_placement = target;
+        return;
+    }
+
+    g_placement = target;
+    g_followFromX = (float)g_posX;
+    g_followFromY = (float)g_posY;
+    g_followStart = GetTickCount64();
+    g_followMs = g_settings.AnimationMs() > 0 ? kFollowMs : 0;
+    g_following = g_followMs > 0;
+    g_backdropPending = true;
+    if (!g_following) {
+        g_posX = target.x;
+        g_posY = target.y;
+    }
+    // The taskbar raised itself when it slid out; put the card back on top of
+    // it, otherwise a partial overlap still hides the lower half.
+    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+    if (g_following) {
+        SetTimer(g_hwnd, kTimerAnim, 16, nullptr);
+    }
+    StepAnimation();
+}
+
+// Only an auto-hidden taskbar moves while the card is up. Pinned, the band is
+// static, so the poll would never find work to do and is not started at all.
+void StartFollow() {
+    if (!g_hwnd) {
+        return;
+    }
+    KillTimer(g_hwnd, kTimerFollow);
+    if (!g_monitor.valid || !TaskbarAutoHide()) {
+        return;
+    }
+    SetTimer(g_hwnd, kTimerFollow, kFollowIntervalMs, nullptr);
+}
+
+void StopFollow() {
+    if (g_hwnd) {
+        KillTimer(g_hwnd, kTimerFollow);
+    }
+    g_following = false;
 }
 
 void StartStatusTween(bool fromOn) {
@@ -1915,12 +2204,18 @@ void ShowTip(TipKind kind, bool on) {
     }
 
     if (g_hwnd) {
+        // Another topmost window (the taskbar itself, most likely) may have
+        // been raised above the card since the last tip.
+        SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                         SWP_NOOWNERZORDER);
         SetTimer(g_hwnd, kTimerAnim, 16, nullptr);
         KillTimer(g_hwnd, kTimerHold);
         SetTimer(g_hwnd, kTimerHold,
                  (UINT)Clamp(g_settings.displayMs, 500, 10000), nullptr);
     }
 
+    StartFollow();
     StepAnimation();
 }
 
@@ -1928,6 +2223,8 @@ void BeginHide() {
     if (g_phase == kPhaseHidden) {
         return;
     }
+    // Stop chasing the taskbar: the exit slide owns the position from here.
+    StopFollow();
     if (g_hwnd) {
         KillTimer(g_hwnd, kTimerHold);
     }
@@ -2039,6 +2336,7 @@ void ApplySettings() {
     if (g_phase != kPhaseHidden) {
         UpdateGeometry();
         RefreshBackdrop();
+        StartFollow(); // the new settings may not want a follow loop at all
         StepAnimation();
     }
 }
@@ -2050,6 +2348,9 @@ void OnTimer(UINT_PTR id) {
             break;
         case kTimerHold:
             BeginHide();
+            break;
+        case kTimerFollow:
+            FollowTaskbar();
             break;
         case kTimerClip:
             if (g_hwnd) {
@@ -2066,6 +2367,7 @@ void OnDisplayChanged() {
     g_theme = CurrentTheme();
     if (g_phase != kPhaseHidden) {
         UpdateGeometry();
+        StartFollow(); // auto-hide may have been switched on or off
         StepAnimation();
     } else if (ResolveTargetMonitor()) {
         g_scale = g_monitor.scale;

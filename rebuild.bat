@@ -139,13 +139,23 @@ rem ----------------------------------------
 echo [4/9] Publishing WinTips...
 echo.
 
+rem EnableCompressionInSingleFile is deliberately FALSE.
+rem A compressed single-file bundle has no file backing: every managed
+rem assembly is decompressed into private committed memory the first time
+rem it is loaded, so the WPF + BCL images become unshareable and the OS can
+rem never trim them. Measured on the dev machine (same build, same idle
+rem state): 83.5 MB private working set compressed vs 38.8 MB uncompressed.
+rem The price is a larger exe on disk (68 MB -> 156 MB), but MSIX and Inno
+rem Setup are compressed containers anyway, so the download size barely
+rem moves while the resident footprint is halved.
+
 dotnet publish ^
     -c Release ^
     -r win-x64 ^
     --self-contained true ^
     -p:PublishSingleFile=true ^
     -p:IncludeNativeLibrariesForSelfExtract=true ^
-    -p:EnableCompressionInSingleFile=true ^
+    -p:EnableCompressionInSingleFile=false ^
     -o "%PROJECT_ROOT%\publish"
 
 if errorlevel 1 (

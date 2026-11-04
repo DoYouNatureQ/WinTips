@@ -27,6 +27,10 @@ public partial class TrayMenuWindow : Window
     private double _taskbarTopPx = double.MaxValue;
     private static TrayMenuWindow? _active;
 
+    /// <summary>字体族解析结果缓存：每次右键都新建 FontFamily 会重复解析候选字体串。</summary>
+    private static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol");
+    private static readonly FontFamily UiFont = new("Segoe UI Variable Display, Segoe UI");
+
     internal TrayMenuWindow(Action openSettings, Action exit, Action<bool> toggleStartup,
         bool startup, Action<TipKind, bool?> showTest)
     {
@@ -105,7 +109,7 @@ public partial class TrayMenuWindow : Window
             var icon = new TextBlock
             {
                 Text = glyph,
-                FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"),
+                FontFamily = IconFont,
                 FontSize = 16,
                 VerticalAlignment = VerticalAlignment.Center,
                 Opacity = 0.9,
@@ -126,7 +130,7 @@ public partial class TrayMenuWindow : Window
             _chevron = new TextBlock
             {
                 Text = "\uE70D",
-                FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"),
+                FontFamily = IconFont,
                 FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center,
                 Opacity = 0.7,
@@ -139,7 +143,7 @@ public partial class TrayMenuWindow : Window
             var check = new TextBlock
             {
                 Text = isChecked.Value ? "\uE73E" : "",
-                FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol"),
+                FontFamily = IconFont,
                 FontSize = 13,
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = new SolidColorBrush(ThemeHelper.AccentColor),
@@ -317,7 +321,7 @@ public partial class TrayMenuWindow : Window
             double m = source.CompositionTarget.TransformToDevice.M11;
             if (m > 0) scale = m;
         }
-        var cursor = System.Windows.Forms.Cursor.Position;
+        NativeMethods.GetCursorPos(out var cursor);
         double cx = cursor.X / scale;
 
         double menuW = ActualWidth, menuH = ActualHeight;

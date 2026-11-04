@@ -513,6 +513,73 @@ int MonitorLayoutChecks() {
     return failures;
 }
 
+// The band the taskbar occupies decides where the card sits: collapsed it is the
+// 2 px reveal strip, so the card hugs the screen edge; slid out it hands the card
+// 48 px of clearance. Both come from UsableRect, not from the work area, which
+// is why the card follows an auto-hidden taskbar.
+int TaskbarBandChecks() {
+    MonitorTarget primary;
+    primary.bounds = RECT{0, 0, 1920, 1080};
+    primary.work = RECT{0, 0, 1920, 1040};
+    primary.scale = 1.0f;
+    primary.valid = true;
+
+    struct BandCase {
+        const wchar_t* name;
+        RECT band;
+        int edge;
+        int y; // expected top edge of a 160x50 card, bottom preset
+    };
+
+    BandCase cases[2] = {
+        {L"auto-hide, taskbar collapsed", RECT{0, 1078, 1920, 1080}, ABE_BOTTOM,
+         1012},
+        {L"auto-hide, taskbar slid out", RECT{0, 1032, 1920, 1080}, ABE_BOTTOM,
+         966},
+    };
+
+    int failures = 0;
+    for (const BandCase& c : cases) {
+        MonitorTarget mon = primary;
+        TaskbarBand band;
+        band.rect = c.band;
+        band.edge = c.edge;
+        band.valid = true;
+        mon.work = UsableRect(mon.bounds, band);
+        Placement got = ComputePlacement(mon, 1, 1, 0, 0, 160.0f, 50.0f, 1.0f);
+        bool ok = got.x == 880 && got.y == c.y;
+        if (!ok) {
+            failures++;
+        }
+        wprintf(L"  %-32s %s  at (%d,%d), usable bottom %ld\n", c.name,
+                ok ? L"ok  " : L"FAIL", got.x, got.y, mon.work.bottom);
+    }
+
+    struct EdgeCase {
+        const wchar_t* name;
+        bool got;
+        bool want;
+    };
+
+    EdgeCase edgeCases[3] = {
+        {L"band hugs the bottom edge",
+         BandHugsEdge(RECT{0, 1032, 1920, 1080}, primary.bounds, ABE_BOTTOM),
+         true},
+        {L"band is not the left edge",
+         BandHugsEdge(RECT{0, 1032, 1920, 1080}, primary.bounds, ABE_LEFT),
+         false},
+        {L"thin band reads as vertical",
+         NearestEdge(RECT{0, 0, 48, 1080}, primary.bounds) == ABE_LEFT, true},
+    };
+    for (const EdgeCase& c : edgeCases) {
+        if (c.got != c.want) {
+            failures++;
+        }
+        wprintf(L"  %-32s %s\n", c.name, c.got == c.want ? L"ok  " : L"FAIL");
+    }
+    return failures;
+}
+
 // Exercises the real chain (hook -> window message -> animation) and reports
 // what the overlay actually did, so the logic can be checked without Windhawk.
 int RunSelfTest() {
@@ -535,6 +602,14 @@ int RunSelfTest() {
                 g_monitor.bounds.top, g_monitor.work.right - g_monitor.work.left,
                 g_monitor.work.bottom - g_monitor.work.top, g_monitor.work.left,
                 g_monitor.work.top, g_monitor.scale);
+        if (g_monitor.band.valid) {
+            wprintf(L"taskbar band               : (%ld,%ld)-(%ld,%ld), "
+                    L"edge %d, auto-hide %s\n",
+                    g_monitor.band.rect.left, g_monitor.band.rect.top,
+                    g_monitor.band.rect.right, g_monitor.band.rect.bottom,
+                    g_monitor.band.edge,
+                    TaskbarAutoHide() ? L"on" : L"off");
+        }
     } else {
         wprintf(L"target monitor             : unavailable\n");
     }
@@ -549,6 +624,13 @@ int RunSelfTest() {
     int layoutFailures = MonitorLayoutChecks();
     wprintf(L"placement cases            : %s\n",
             layoutFailures == 0 ? L"all passed" : L"FAILURES");
+
+    wprintf(L"\n--- taskbar band ---\n");
+    int bandFailures = TaskbarBandChecks();
+    wprintf(L"taskbar cases              : %s\n",
+            bandFailures == 0 ? L"all passed" : L"FAILURES");
+    wprintf(L"auto-hide                  : %s\n",
+            TaskbarAutoHide() ? L"on" : L"off");
 
     g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE uiThread =

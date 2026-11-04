@@ -8,20 +8,20 @@ namespace WinTips.Core;
 /// </summary>
 internal static class AppInfo
 {
-    /// <summary>形如 "0.31"：已去掉 SourceLink 追加的 +hash 等元数据。</summary>
+    /// <summary>形如 "0.4"：已去掉 SourceLink 追加的 +hash 等元数据。</summary>
     public static string Version { get; } = ResolveVersion();
 
-    /// <summary>形如 "V0.31"，界面直接展示用。</summary>
+    /// <summary>形如 "V0.4"，界面直接展示用。</summary>
     public static string DisplayVersion => "V" + Version;
 
     private static string ResolveVersion()
     {
         var asm = typeof(AppInfo).Assembly;
 
-        // InformationalVersion 由 <Version> 派生，优先用它（保留 0.31 这种两位写法）
+        // InformationalVersion 由 <Version> 派生，优先用它（保留 0.4 这种两位写法）
         string? raw = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
 
-        // 兜底：AssemblyVersion 一定是四段，取前三段（0.31.0）
+        // 兜底：AssemblyVersion 一定是四段，取前三段（0.4.0）
         if (string.IsNullOrWhiteSpace(raw))
             raw = asm.GetName().Version?.ToString(3);
 
@@ -34,7 +34,7 @@ internal static class AppInfo
         int cut = raw.IndexOfAny(['+', '-', ' ']);
         if (cut > 0) raw = raw[..cut];
 
-        // 尾部多余的 .0（Version 写成 0.31.0.0 时）收成 0.31，避免显示 "V0.31.0.0"
+        // 尾部多余的 .0（Version 写成 0.4.0.0 时）收成 0.4，避免显示 "V0.4.0.0"
         while (raw.EndsWith(".0", StringComparison.Ordinal) && raw.Count(c => c == '.') > 1)
             raw = raw[..^2];
 

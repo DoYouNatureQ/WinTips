@@ -120,6 +120,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        AppSettings.FlushPendingSave(); // 滑杆的延迟保存可能还没到点，退出前补写一次
         _hook?.Dispose();
         _tray?.Dispose();
         if (_ownsMutex)

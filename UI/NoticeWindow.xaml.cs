@@ -51,19 +51,10 @@ public partial class NoticeWindow : Window
 
     private void TrySetIcon()
     {
-        try
-        {
-            var exe = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exe)) return;
-            var ico = System.Drawing.Icon.ExtractAssociatedIcon(exe);
-            if (ico != null)
-            {
-                var src = Imaging.CreateBitmapSourceFromHIcon(ico.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                Icon = src;
-                AppIcon.Source = src;
-            }
-        }
-        catch { }
+        var src = AppIcons.Source;
+        if (src == null) return;
+        Icon = src;
+        AppIcon.Source = src;
     }
 
     protected override void OnSourceInitialized(EventArgs e)

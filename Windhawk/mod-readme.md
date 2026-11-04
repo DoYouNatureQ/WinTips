@@ -36,6 +36,10 @@ counts consecutive actions.
 - **Slides in from the nearest edge.** A card within 15% of the left or right
   edge comes in horizontally (this wins over top/bottom), otherwise vertically
   from whichever half of the screen it sits in.
+- **Follows the taskbar out of the way.** The card is anchored to the taskbar's
+  live edge instead of the work area: with auto-hide on it lifts as the bar
+  slides in and settles back to the screen edge as the bar retreats, so a
+  taskbar that pops up mid-tip never covers it.
 - **Clipboard aware.** Copy tips only appear after the clipboard actually
   changes, so `Ctrl+C` used to interrupt a console app doesn't pop a false
   "Copied". Non-keyboard copies (context menu, in-app buttons) can be reported
@@ -58,8 +62,9 @@ counts consecutive actions.
 - **Display duration** — how long the card stays, 500 to 10000 ms.
 - **Animation speed** — 100 is normal (300 ms), 50 is twice as fast, 0 disables
   the animation.
-- **Vertical / horizontal position** — above the taskbar or below the top edge;
-  left, center or right.
+- **Vertical / horizontal position** — above the taskbar (tracked live, so a bar
+  that auto-hides never covers the card) or below the top edge; left, center or
+  right.
 - **Show on** — the monitor that holds the mouse cursor, or always the primary
   display.
 - **Horizontal / vertical offset** — pixel-level fine tuning.

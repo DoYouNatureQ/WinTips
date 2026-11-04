@@ -257,4 +257,86 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
+
+    // ---- 托盘图标（Shell_NotifyIcon）----
+    // 用原生托盘替代 WinForms 的 NotifyIcon：后者会把 System.Windows.Forms（13.1MB）、
+    // Forms.Primitives（3.4MB）、System.Drawing 与 GDI+（约 1.3MB）一并拖进进程常驻内存，
+    // 而这里只需要一个图标、一条提示文字和几次鼠标消息。
+    public const uint NIM_ADD = 0x00000000;
+    public const uint NIM_MODIFY = 0x00000001;
+    public const uint NIM_DELETE = 0x00000002;
+    public const uint NIM_SETVERSION = 0x00000004;
+
+    public const uint NIF_MESSAGE = 0x00000001;
+    public const uint NIF_ICON = 0x00000002;
+    public const uint NIF_TIP = 0x00000004;
+    public const uint NIF_SHOWTIP = 0x00000080;
+
+    /// <summary>V4 行为：回调 lParam 低字是鼠标消息，wParam 里带光标坐标。</summary>
+    public const uint NOTIFYICON_VERSION_4 = 4;
+
+    public const uint WM_APP = 0x8000;
+    public const uint WM_CONTEXTMENU = 0x007B;
+    public const uint WM_LBUTTONUP = 0x0202;
+    public const uint WM_LBUTTONDBLCLK = 0x0203;
+    public const uint WM_RBUTTONUP = 0x0205;
+
+    public const int WS_POPUP = unchecked((int)0x80000000);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct NOTIFYICONDATAW
+    {
+        public int cbSize;
+        public IntPtr hWnd;
+        public uint uID;
+        public uint uFlags;
+        public uint uCallbackMessage;
+        public IntPtr hIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string szTip;
+        public uint dwState;
+        public uint dwStateMask;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string szInfo;
+        /// <summary>与 uTimeout 共用同一块内存：设置版本时写这里。</summary>
+        public uint uVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+        public string szInfoTitle;
+        public uint dwInfoFlags;
+        public Guid guidItem;
+        public IntPtr hBalloonIcon;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "Shell_NotifyIconW")]
+    public static extern bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATAW lpData);
+
+    /// <summary>Explorer 重启后广播的消息名，收到后必须重新 NIM_ADD，否则图标消失。</summary>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "RegisterWindowMessageW")]
+    public static extern uint RegisterWindowMessageW(string lpString);
+
+    // ---- 图标句柄 ----
+    // ExtractIconEx 拿到的 HICON 由调用方 DestroyIcon 释放；
+    // LoadIcon 拿到的系统图标是共享资源，绝对不能销毁。
+    public const int SM_CXICON = 11;
+    public const int SM_CYICON = 12;
+    public const int SM_CXSMICON = 49;
+    public const int SM_CYSMICON = 50;
+
+    public static readonly IntPtr IDI_APPLICATION = new(32512);
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "ExtractIconExW")]
+    public static extern uint ExtractIconExW(string lpszFile, int nIconIndex,
+        out IntPtr phiconLarge, out IntPtr phiconSmall, uint nIcons);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "LoadIconW")]
+    public static extern IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out POINT lpPoint);
 }

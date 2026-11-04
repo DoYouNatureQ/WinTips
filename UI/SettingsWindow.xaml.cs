@@ -219,14 +219,14 @@ public partial class SettingsWindow : Window
         DurationSlider.ValueChanged += (_, e) =>
         {
             UpdateDurationText(e.NewValue);
-            Save(v => v.DisplaySeconds = e.NewValue);
+            SaveSoon(v => v.DisplaySeconds = e.NewValue);
         };
 
         AnimSpeedSlider.ValueChanged += (_, e) =>
         {
             double speed = Math.Round(e.NewValue, 1);
             UpdateAnimSpeedText(speed);
-            Save(v => v.AnimationSpeed = speed);
+            SaveSoon(v => v.AnimationSpeed = speed);
         };
 
         StartupToggle.Checked += (_, _) => ApplyStartup(true);
@@ -314,21 +314,17 @@ public partial class SettingsWindow : Window
         AppSettings.Instance.Save();
     }
 
+    /// <summary>滑杆专用：内存里立刻生效，落盘合并到 400ms 后（见 <see cref="AppSettings.SaveSoon"/>）。</summary>
+    private void SaveSoon(Action<AppSettings> apply)
+    {
+        apply(AppSettings.Instance);
+        AppSettings.Instance.SaveSoon();
+    }
+
     private void UpdateDurationText(double v) =>
         DurationText.Text = Loc.Format("ValueSeconds", v == Math.Floor(v) ? $"{v:0}" : $"{v:0.#}");
 
-    private void TrySetIcon()
-    {
-        try
-        {
-            var exe = Environment.ProcessPath;
-            if (string.IsNullOrEmpty(exe)) return;
-            var ico = System.Drawing.Icon.ExtractAssociatedIcon(exe);
-            if (ico != null)
-                Icon = Imaging.CreateBitmapSourceFromHIcon(ico.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-        }
-        catch { }
-    }
+    private void TrySetIcon() => Icon = AppIcons.Source;
 
     protected override void OnSourceInitialized(EventArgs e)
     {

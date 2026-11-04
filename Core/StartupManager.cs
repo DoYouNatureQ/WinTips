@@ -1,7 +1,7 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
-using Windows.ApplicationModel;
 
 namespace WinTips.Core;
 
@@ -24,12 +24,16 @@ internal enum StartupChangeResult
 /// <summary>
 /// 开机自启的唯一入口，按运行形态走两条通道：
 ///
-///   MSIX 商店版（进程带包标识）：调用 WinRT <see cref="StartupTask"/>，
+///   MSIX 商店版（进程带包标识）：交给 <see cref="PackagedStartup"/> 调 WinRT StartupTask，
 ///   对应 Build/msix/AppxManifest.xml 里的 windows.startupTask 声明。商店版必须走这条——
 ///   直接写 HKCU\...\Run 会被 MSIX 的注册表虚拟化静默吞掉，开关看着打开了，
 ///   实际重启后不会自启，甚至读回来的还是虚拟副本里的"已开启"。
 ///
 ///   免安装版（绿色 exe / Inno 安装版，无包标识）：沿用 HKCU\...\Run，与旧版行为一致。
+///
+/// 本类刻意不出现任何 <c>Windows.*</c> 类型：WinRT 投影（Microsoft.Windows.SDK.NET.dll，
+/// 本机实测 23.7MB）一旦被 JIT 触碰就会整块加载进内存，而免安装版根本用不到它。
+/// 因此 WinRT 代码全部隔离在 <see cref="PackagedStartup"/>，本类只在带包标识时转调它。
 ///
 /// 对外是同一套同步 API，调用方不需要知道自己在哪种形态下运行。
 /// </summary>
@@ -49,16 +53,14 @@ internal static class StartupManager
     /// <summary>当前进程是否带 MSIX 包标识。结果缓存：一个进程生命周期内不会变。</summary>
     public static bool IsPackaged => _packaged ??= DetectPackaged();
 
+    /// <summary>
+    /// 查询自启状态。<see cref="PackagedStartup.IsEnabled"/> 标了 NoInlining，
+    /// 保证本方法的方法体里不会出现 WinRT 类型令牌，免安装版也就不加载那 23.7MB 投影。
+    /// </summary>
     public static bool IsEnabled()
     {
         if (!IsPackaged) return IsRunValuePresent();
-
-        try
-        {
-            var task = GetStartupTask();
-            return task is not null && task.State == StartupTaskState.Enabled;
-        }
-        catch { return false; }
+        return PackagedStartup.IsEnabled();
     }
 
     public static StartupChangeResult SetEnabled(bool enable)
@@ -69,44 +71,8 @@ internal static class StartupManager
             return StartupChangeResult.Ok;
         }
 
-        try
-        {
-            var task = GetStartupTask();
-            if (task is null) return StartupChangeResult.Failed;
-
-            if (!enable)
-            {
-                task.Disable();
-                return StartupChangeResult.Ok;
-            }
-
-            return Await(task.RequestEnableAsync()) switch
-            {
-                StartupTaskState.Enabled => StartupChangeResult.Ok,
-                StartupTaskState.DisabledByUser => StartupChangeResult.BlockedByUser,
-                StartupTaskState.DisabledByPolicy => StartupChangeResult.BlockedByPolicy,
-                _ => StartupChangeResult.Failed,
-            };
-        }
-        catch { return StartupChangeResult.Failed; }
+        return PackagedStartup.SetEnabled(enable);
     }
-
-    /// <summary>
-    /// 取清单里声明的启动任务。清单没声明 startupTask 时 WinRT 抛 ELEMENT_NOT_FOUND，
-    /// 这里统一收敛成 null，由调用方按"失败"处理。
-    /// </summary>
-    private static StartupTask? GetStartupTask()
-    {
-        try { return Await(StartupTask.GetAsync(TaskId)); }
-        catch { return null; }
-    }
-
-    /// <summary>
-    /// 同步等待 WinRT 异步操作。StartupTask 的完成回调由 WinRT 在自己的线程上触发，
-    /// 不依赖调用线程的消息泵，所以在 UI 线程上阻塞不会死锁；单次调用在毫秒级。
-    /// </summary>
-    private static T Await<T>(Windows.Foundation.IAsyncOperation<T> operation) =>
-        operation.AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// 判定是否带包标识：无标识时返回 AppModelErrorNoPackage；有标识时因为缓冲为空
