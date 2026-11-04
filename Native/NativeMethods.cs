@@ -166,6 +166,10 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
+    /// <summary>前台窗口属于哪个进程：判断前台是不是本进程自己的窗口（设置页、托盘菜单）。</summary>
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowTextW(IntPtr hWnd, [MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder sb, int max);
 
@@ -267,6 +271,13 @@ internal static partial class NativeMethods
     /// <summary>窗口当前所在显示器的有效 DPI（由系统维护，与 WPF 内部缩放可能不同步）。</summary>
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(IntPtr hWnd);
+
+    /// <summary>
+    /// 系统 DPI（1607+）。<see cref="GetDpiForMonitor"/> 拿不到某块屏的 DPI 时用它兜底：
+    /// 总比按 1.0 换算好——在 150% 的屏上按 1.0 算会把浮窗整体摆偏三分之一。
+    /// </summary>
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForSystem();
 
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;

@@ -141,12 +141,23 @@ public partial class OsdWindow : Window
             ClipboardUpdated?.Invoke();
         else if (msg == NativeMethods.WM_DISPLAYCHANGE || msg == NativeMethods.WM_SETTINGCHANGE)
         {
-            // 切换显示器/主屏、改缩放比例：按当前目标屏重排一次，把缩放、位置、尺寸一起对齐。
+            // 切换显示器/主屏、改缩放、改分辨率、改排列：目标屏本身可能已经搬走或消失，
+            // 先把它的几何与缩放按系统最新值重取（见 RefreshTarget），再按新值重排一次。
             // 隐藏窗口收不到系统 WM_DPICHANGED，不主动对齐的话下次弹出会按旧缩放渲染。
+            RefreshTarget();
             Reposition();
         }
         return IntPtr.Zero;
     }
+
+    /// <summary>
+    /// 显示配置变了：优先沿用当前这块屏（用户正看着它），但矩形与缩放一律按系统最新值重取；
+    /// 只有当这块屏已经不存在（拔线、关闭内置屏）时才重新按焦点/光标挑选。
+    /// <c>_target</c> 是弹出那一刻的快照，不重取就会继续按"已经不存在的屏幕"和旧缩放摆位——
+    /// 这是插拔显示器、改完缩放后浮窗跑到屏外或只露半截的直接原因。
+    /// </summary>
+    private void RefreshTarget() =>
+        _target = MonitorArea.FromHandle(_target.Handle) ?? ResolveTarget();
 
     /// <summary>
     /// 本次提示要落在哪台显示器：开启「跟随焦点显示器」时取焦点窗口所在屏（见
@@ -217,9 +228,14 @@ public partial class OsdWindow : Window
             PlacePhysical(left, top); // 真实移动：让系统自己发现窗口换了屏
             if (Math.Abs(CurrentScale() - want) <= 0.01) return;
 
+            // 查不到这块屏的 DPI 就用 _target 上已经记下的缩放反推（它本身也有系统 DPI 兜底），
+            // 之前这里直接 return，窗口的缩放会一直停在上一条屏，落位就差一个缩放比。
+            uint dpiX = 0, dpiY = 0;
             if (NativeMethods.GetDpiForMonitor(_target.Handle, NativeMethods.MDT_EFFECTIVE_DPI,
-                    out uint dpiX, out uint dpiY) != 0 || dpiX == 0)
-                return;
+                    out dpiX, out dpiY) != 0 || dpiX == 0)
+            {
+                dpiX = dpiY = (uint)Math.Round(want * 96);
+            }
 
             int x = (int)Math.Round(left * want), y = (int)Math.Round(top * want);
             int w = (int)Math.Round(Width * want), h = (int)Math.Round(Height * want);
@@ -318,22 +334,21 @@ public partial class OsdWindow : Window
         SetPoseInstant(true);
         UpdateSize();
 
-        double left = Left, top = Top;
         Left = SystemParameters.VirtualScreenLeft - Width - 1000;
         Top = SystemParameters.VirtualScreenTop;
         Show();
 
-        EventHandler rendered = (_, _) => FinishWarmRender(left, top);
+        EventHandler rendered = (_, _) => FinishWarmRender();
         _warmRendered = rendered;
         CompositionTarget.Rendering += rendered;
 
         // 兜底：万一 Rendering 事件未按预期触发，也要把窗口收回并复位
         _warmGuard = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _warmGuard.Tick += (_, _) => FinishWarmRender(left, top);
+        _warmGuard.Tick += (_, _) => FinishWarmRender();
         _warmGuard.Start();
     }
 
-    private void FinishWarmRender(double left, double top)
+    private void FinishWarmRender()
     {
         if (_warmRendered == null) return;
         CompositionTarget.Rendering -= _warmRendered;
@@ -344,8 +359,9 @@ public partial class OsdWindow : Window
         Hide();
         BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
-        Left = left;
-        Top = top;
+        // 不按"移出去之前的 Left/Top"手动复原：那段值此刻可能已经过期（DPI 或目标屏变了），
+        // 直接按目标屏重算一次落点，DIP 与物理矩形一起摆正。
+        PositionOnTarget();
     }
 
     public void ShowTip(TipKind kind, bool? state, double seconds)
@@ -403,11 +419,12 @@ public partial class OsdWindow : Window
         }
 
         bool ready = new WindowInteropHelper(this).Handle != IntPtr.Zero;
-        if (ready)
-        {
-            ApplyChrome();
-            Reposition();
-        }
+
+        // 无论句柄是否就绪都先算一次落点：句柄未就绪时 Reposition 只写 Left/Top（物理钉位会跳过），
+        // 这样下面的 PlacePhysical 不会拿到尚未初始化的 NaN 坐标——NaN 转 int 会得到
+        // int.MinValue，窗口先被扔到虚拟屏外再由 Reposition 拉回，多屏下这一帧格外显眼。
+        ApplyChrome();
+        Reposition();
 
         int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
         if (ms <= 0)
@@ -424,12 +441,12 @@ public partial class OsdWindow : Window
 
         Show();
         // Show() 之后 WPF 可能按自己缓存的实际尺寸重设一次 HWND，再钉一次物理矩形
-        PlacePhysical(Left, Top);
+        PlacePhysical(_lastLeft, _lastTop);
         _visible = true;
         _shownOnce = true;
         if (!ready)
         {
-            ApplyChrome();
+            ApplyChrome(); // 句柄刚建好：亚克力、深色标题栏都要求先有 HWND
             Reposition();
         }
         AnimateIn();
@@ -755,6 +772,10 @@ public partial class OsdWindow : Window
 
     private void Reposition()
     {
+        // _target 是弹出那一刻的快照：句柄已失效（拔线、改排列）说明快照过期了，
+        // 继续用它算就会把浮窗摆到一块不存在的屏幕上。
+        if (!_target.IsLive) _target = ResolveTarget();
+
         BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
 
@@ -771,18 +792,54 @@ public partial class OsdWindow : Window
 
     /// <summary>
     /// 按 <see cref="_target"/> 摆位（不碰 DPI，避免在 DPI 变化回调里重入）。
+    /// 落点先算成"目标屏坐标系里的 DIP"，再统一交给 <see cref="Place"/>。
     /// </summary>
     private void PositionOnTarget()
     {
-        (Left, Top) = TargetPosition();
-        _lastLeft = _followLeft = Left;
-        _lastTop = _followTop = Top;
+        var (left, top) = TargetPosition();
+        _lastLeft = _followLeft = left;
+        _lastTop = _followTop = top;
         UpdateBarSide();
-        PlacePhysical(Left, Top);
+        Place();
     }
 
     /// <summary>
-    /// 按目标屏的物理像素矩形把窗口钉死（DIP × 该屏缩放）。
+    /// 唯一落位入口：按目标屏缩放钉一次物理矩形，再把落点换算成 WPF 的 DIP 写回 Left/Top。
+    /// 为什么不能只写 Left/Top：WPF 用"窗口此刻的缩放"把它们换成物理像素，而落点是按
+    /// "目标屏缩放"算出来的。窗口缩放没跟上目标屏时（系统没投递 WM_DPICHANGED、隐藏窗口、
+    /// 句柄刚建），两条换算比例不同，之后任意一次布局/Show/改尺寸引发的 SetWindowPos
+    /// 都会把窗口搬偏一整段 —— 表现就是"弹出来是对的，随后自己跳走"。
+    /// 也不能只钉物理矩形：WPF 不知道被挪过，下一次布局仍按旧 DIP 重算。
+    /// 两边都写、且写的是同一个物理点，才不会有谁覆盖谁的问题。
+    /// </summary>
+    private void Place()
+    {
+        // 顺序很关键：先钉物理矩形（这一步可能顺带触发系统投递 WM_DPICHANGED，
+        // 让窗口缩放跟上目标屏），再按"此刻"的缩放把 DIP 基值回写成同一个物理点。
+        // 反过来的话，回写用的还是旧缩放，而回写过程中触发的 DPI 变化会把基值再改一次，
+        // 之后任意一次布局回写就会把窗口搬偏。
+        PlacePhysical(_lastLeft, _lastTop);
+        Left = ToWindowDip(_lastLeft);
+        Top = ToWindowDip(_lastTop);
+    }
+
+    /// <summary>
+    /// 目标屏 DIP → WPF 窗口 DIP 的比例。窗口缩放与目标屏一致时恒为 1（绝大多数情况，
+    /// 此时所有落位/动画代码等价于直接使用目标屏 DIP）。
+    /// </summary>
+    private double WindowDipRatio()
+    {
+        double want = _target.Scale > 0 ? _target.Scale : 1.0;
+        double cur = CurrentScale();
+        return cur <= 0 || Math.Abs(cur - want) < 0.0001 ? 1.0 : want / cur;
+    }
+
+    /// <summary>目标屏坐标系的 DIP → WPF 窗口坐标系的 DIP（见 <see cref="WindowDipRatio"/>）。</summary>
+    private double ToWindowDip(double targetDip) => targetDip * WindowDipRatio();
+
+    /// <summary>
+    /// 按目标屏的物理像素矩形把窗口钉死（DIP × 该屏缩放）。入参是**目标屏坐标系**的 DIP，
+    /// 不是 WPF 的 Left/Top（窗口缩放没跟上目标屏时两者不同，见 <see cref="Place"/>）。
     /// 换屏换缩放时 WPF 会按"物理尺寸守恒"套用系统给的建议矩形，而 Width/Height 的 DIP 值
     /// 前后一样，它就不会再把窗口改回 DIP×新缩放——从 150% 的屏切回 100% 的屏之后，
     /// 浮窗会一直保持 1.5 倍的物理尺寸（实测 240×75 而非 160×50）。位置与尺寸因此不再
@@ -843,15 +900,18 @@ public partial class OsdWindow : Window
         _moveGen++; // 让在途跟随动画的收尾回调失效，别去抢收起动画对 Left/Top 的控制
     }
 
-    /// <summary>把浮窗平滑挪到目标位置（跟随任务栏时用）。</summary>
+    /// <summary>把浮窗平滑挪到目标位置（跟随任务栏时用）。入参是目标屏坐标系的 DIP。</summary>
     private void MoveContentTo(double left, double top, int ms)
     {
+        double toLeft = ToWindowDip(left), toTop = ToWindowDip(top);
+
         if (ms <= 0)
         {
             BeginAnimation(LeftProperty, null);
             BeginAnimation(TopProperty, null);
-            Left = left;
-            Top = top;
+            Left = toLeft;
+            Top = toTop;
+            PlacePhysical(left, top);
             return;
         }
 
@@ -860,7 +920,7 @@ public partial class OsdWindow : Window
         var span = TimeSpan.FromMilliseconds(ms);
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
 
-        var animTop = new DoubleAnimation(fromTop, top, span) { EasingFunction = ease };
+        var animTop = new DoubleAnimation(fromTop, toTop, span) { EasingFunction = ease };
         // 动画结束后把基值落到目标：否则之后任何一次 BeginAnimation(Left/Top, null)
         // 都会把窗口弹回动画前的旧基值
         animTop.Completed += (_, _) =>
@@ -868,11 +928,12 @@ public partial class OsdWindow : Window
             if (gen != _moveGen || !_visible) return;
             BeginAnimation(LeftProperty, null);
             BeginAnimation(TopProperty, null);
-            Left = left;
-            Top = top;
+            Left = toLeft;
+            Top = toTop;
+            PlacePhysical(left, top);
         };
 
-        BeginAnimation(LeftProperty, new DoubleAnimation(fromLeft, left, span) { EasingFunction = ease });
+        BeginAnimation(LeftProperty, new DoubleAnimation(fromLeft, toLeft, span) { EasingFunction = ease });
         BeginAnimation(TopProperty, animTop);
     }
 
@@ -887,7 +948,6 @@ public partial class OsdWindow : Window
     {
         int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
         Root.BeginAnimation(UIElement.OpacityProperty, null);
-        double targetLeft = Left, targetTop = Top;
         if (ms <= 0)
         {
             Root.Opacity = 1;
@@ -901,19 +961,22 @@ public partial class OsdWindow : Window
         };
         Root.BeginAnimation(UIElement.OpacityProperty, fade);
 
-        var (dx, dy) = SlideOffset(targetLeft, targetTop);
+        // 滑动偏移按落点（目标屏坐标系）算，写回 Left/Top 时再换算成窗口 DIP
+        var (dx, dy) = SlideOffset(_lastLeft, _lastTop);
         var span = TimeSpan.FromMilliseconds(ms);
 
         if (dx != 0)
         {
-            BeginAnimation(LeftProperty, new DoubleAnimation(targetLeft + dx, targetLeft, span)
+            BeginAnimation(LeftProperty, new DoubleAnimation(
+                ToWindowDip(_lastLeft + dx), ToWindowDip(_lastLeft), span)
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
             });
         }
         if (dy != 0)
         {
-            BeginAnimation(TopProperty, new DoubleAnimation(targetTop + dy, targetTop, span)
+            BeginAnimation(TopProperty, new DoubleAnimation(
+                ToWindowDip(_lastTop + dy), ToWindowDip(_lastTop), span)
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
             });
@@ -938,8 +1001,9 @@ public partial class OsdWindow : Window
             BeginAnimation(LeftProperty, null);
             BeginAnimation(TopProperty, null);
             Root.Opacity = 1;
-            Left = targetLeft;
-            Top = targetTop;
+            Left = ToWindowDip(targetLeft);
+            Top = ToWindowDip(targetTop);
+            PlacePhysical(targetLeft, targetTop); // 收起后把物理矩形也留在落点上，下次弹出直接从这儿起步
         }
 
         if (ms <= 0)
@@ -961,14 +1025,14 @@ public partial class OsdWindow : Window
 
         if (dx != 0)
         {
-            BeginAnimation(LeftProperty, new DoubleAnimation(targetLeft + dx, span)
+            BeginAnimation(LeftProperty, new DoubleAnimation(ToWindowDip(targetLeft + dx), span)
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
             });
         }
         if (dy != 0)
         {
-            BeginAnimation(TopProperty, new DoubleAnimation(targetTop + dy, span)
+            BeginAnimation(TopProperty, new DoubleAnimation(ToWindowDip(targetTop + dy), span)
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
             });

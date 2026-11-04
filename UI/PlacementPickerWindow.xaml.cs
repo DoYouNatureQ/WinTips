@@ -62,11 +62,14 @@ public partial class PlacementPickerWindow : Window
         double scale = AppSettings.NormalizeScale(AppSettings.Instance.TipScale);
         if (Math.Abs(scale - 1) > 0.001) TipCard.LayoutTransform = new ScaleTransform(scale, scale);
 
-        // 遮罩只盖主显示器（与 OSD 的显示范围一致）；坐标即屏幕 DIP，保存时无需换算
-        Left = 0;
-        Top = 0;
-        Width = SystemParameters.PrimaryScreenWidth;
-        Height = SystemParameters.PrimaryScreenHeight;
+        // 遮罩只盖主显示器（与 OSD 的显示范围一致），几何直接用 MonitorArea 的 DIP 矩形：
+        // SystemParameters.PrimaryScreenWidth/Height 走的是"系统 DPI"派生值，主屏缩放改过、
+        // 或它与系统 DPI 不一致时会和 OSD 落位用的换算差一截——这里差多少，拖出来的
+        // 位置就存歪多少（表现为"设置里拖到右下角，实际浮窗出现在别处"）。
+        Left = _area.Left;
+        Top = _area.Top;
+        Width = _area.Width;
+        Height = _area.Height;
 
         BuildGuides();
 
@@ -211,7 +214,7 @@ public partial class PlacementPickerWindow : Window
         double w = TipCard.ActualWidth, h = TipCard.ActualHeight;
         if (w <= 0 || h <= 0) return;
 
-        (left, top) = OsdPlacement.ClampTo(left, top, w, h, _area);
+        (left, top) = OsdPlacement.ClampToUsable(left, top, w, h, _area);
         if (allowSnap) (left, top, _snapX, _snapY) = SnapToCenter(left, top, w, h);
         else _snapX = _snapY = false;
 
@@ -306,10 +309,11 @@ public partial class PlacementPickerWindow : Window
         rect.Height = h;
     }
 
-    /// <summary>操作条跟随浮窗：下方留 8px；贴近工作区底边放不下时翻到浮窗上方；水平居中并钳制在屏内。</summary>
+    /// <summary>操作条跟随浮窗：下方留 8px；贴近可用区底边放不下时翻到浮窗上方；水平居中并钳制在屏内。</summary>
     private void PlaceHintBar(double tipLeft, double tipTop)
     {
-        double workBottom = SystemParameters.WorkArea.Bottom;
+        // 用本屏的可用区而不是 SystemParameters.WorkArea：后者只描述主屏，且是系统 DPI 派生值
+        double workBottom = _area.Usable().Bottom;
         double hintW = HintBar.ActualWidth, hintH = HintBar.ActualHeight;
         double tipH = TipCard.ActualHeight;
 
@@ -404,7 +408,7 @@ public partial class PlacementPickerWindow : Window
 
     private void Save()
     {
-        (double left, double top) = OsdPlacement.ClampTo(
+        (double left, double top) = OsdPlacement.ClampToUsable(
             Canvas.GetLeft(TipCard), Canvas.GetTop(TipCard), TipCard.ActualWidth, TipCard.ActualHeight, _area);
         Saved?.Invoke(left, top);
         Close();
