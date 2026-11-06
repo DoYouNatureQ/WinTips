@@ -2,7 +2,7 @@
 
 # WinTips
 
-[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
 
 [简体中文](README.md) | **English**
 
@@ -23,6 +23,7 @@ A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scro
 - **Multiple displays**: follows the focused display by default — the flyout lands on the display with the active window, positioned with that display's own DPI and taskbar state (edge-aware slide, mirrored accent bar and auto-hide taskbar following all still apply); turn "Follow the focused display" off to pin it back to the primary display.
 - **Visual placement**: in custom-position mode dashed guides mark the 15% edge zones and the zone the flyout center falls into is highlighted (that is the side it will slide from); the flyout snaps to the screen's center axes, and the arrow keys nudge it pixel by pixel (tap = 1 px, hold to repeat, Shift = 10 px).
 - **Multilingual UI**: Simplified Chinese, Traditional Chinese, English, German, Japanese, Russian, Spanish and Portuguese built in. Follows the system language by default; other languages live in a drop-down in Settings — effective immediately, no restart.
+- **Font ships with the app**: the UI font **HarmonyOS Sans SC** (Regular / Medium / Bold, Latin and CJK in one family) is embedded inside `WinTips.exe`, so it looks the same whether or not the font is installed (the flyout is sized from measured text, so identical metrics mean identical layout), and nothing is written to the system font table. A single-file publish still produces exactly one exe. Settings can switch the UI font to any installed family — applied immediately, with the flyout re-laid out on the new metrics; if the embedded resource fails to load or the chosen font gets uninstalled, it falls back to Microsoft YaHei UI / Segoe UI.
 - Lives in the tray, single instance, no third-party dependencies (WPF + WinForms, .NET 10).
 
 ## Usage
@@ -39,11 +40,23 @@ Just run `WinTips.exe` — once the tray icon appears, it is working.
 - With several displays the flyout follows the active window's display by default; turn off "Follow the focused display" in the settings to keep it on the primary display.
 - A low-level keyboard hook cannot see keys sent to elevated (administrator) windows.
 - Cuts from non-keyboard sources (e.g. the "Cut" context-menu item) cannot be told apart from copies and are shown with the copy style.
-- The UI font prefers **HarmonyOS Sans SC** (Latin and CJK in one file), falling back to Microsoft YaHei UI / Segoe UI when it is not installed, which looks slightly different. The font is not bundled — install it yourself if you want the exact look.
+
+## License
+
+WinTips is released under the **GNU General Public License v3.0** (or any later version); the full text is in [LICENSE](LICENSE).
+
+- You may use, modify and redistribute it, including commercially — but **redistributing a modified version requires providing the complete corresponding source under the GPL**, and derivative works must also be GPL.
+- Unlike the AGPL, the GPL has no network clause: offering the program to others as an online service does not trigger the source requirement (and a local desktop tool like this never would anyway).
+- Copyright notices and the license text must be preserved when redistributing.
+- **Versions 0.5 and earlier were released under the MIT License**: those already-published versions remain usable under the MIT terms (a granted license cannot be revoked); the MIT text is in those releases' git history.
+- For closed-source integration or a commercial exemption, open an issue to request a separate license.
+- The UI font HarmonyOS Sans is **not covered by this project's GPL license**; it has its own agreement (see Credits below).
 
 ## Credits
 
-The flyout's look and motion are recreated from the LockWindow design in [FluentFlyout](https://github.com/unchihugo/FluentFlyout) (GPL-3.0); the code here is an independent implementation.
+The flyout's look and motion are recreated from the LockWindow design in [FluentFlyout](https://github.com/unchihugo/FluentFlyout) (GPL-3.0); the code here is an independent implementation. WinTips itself is GPL-3.0 too, so the two are license-compatible.
+
+The UI font **HarmonyOS Sans SC** is © Huawei Device Co., Ltd. and is redistributed unmodified with the app under the [HarmonyOS Sans Fonts License Agreement](Resources/Fonts/LICENSE_Fonts.txt): the font files are not modified (hence no subsetting), are never distributed on their own, and the full agreement is kept in the repository and compiled into the assembly — click the version number at the bottom of the settings window and choose "Show full agreement" to read it (hovering the version also shows the font credit; the dialog links the upstream text for cross-checking only).
 
 ---
 

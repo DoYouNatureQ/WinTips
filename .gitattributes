@@ -8,3 +8,9 @@
 *.ps1  text eol=crlf
 *.iss  text eol=crlf
 *.isl  text eol=crlf
+
+# 字体是二进制且必须逐字节原样入库：换行转换会直接毁掉 ttf，
+# 而 HarmonyOS Sans 的许可协议也不允许修改字体文件。
+*.ttf  binary
+*.otf  binary
+*.ttc  binary

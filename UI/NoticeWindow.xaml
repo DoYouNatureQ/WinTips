@@ -5,13 +5,13 @@
         Title="WinTips" Width="448" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="Transparent" ShowInTaskbar="False" Topmost="True"
-        FontFamily="{x:Static loc:AppFont.Ui}">
+        FontFamily="{DynamicResource AppUiFont}">
     <Window.Resources>
         <Style x:Key="AccentButton" TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}"/>
-            <Setter Property="FontFamily" Value="{x:Static loc:AppFont.Ui}"/>
+            <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Height" Value="32"/>
             <Setter Property="MinWidth" Value="120"/>

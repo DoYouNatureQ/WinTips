@@ -1,0 +1,15 @@
+﻿2026-11-06T04:59:38.9945618Z ##[group]Run actions/setup-python@v7
+2026-11-06T04:59:38.9945841Z with:
+2026-11-06T04:59:38.9945964Z   python-version: 3.x
+2026-11-06T04:59:38.9946079Z   check-latest: false
+2026-11-06T04:59:38.9947379Z   token: ***
+2026-11-06T04:59:38.9947559Z   mirror: https://raw.githubusercontent.com/actions/python-versions/main
+2026-11-06T04:59:38.9947775Z   update-environment: true
+2026-11-06T04:59:38.9947937Z   allow-prereleases: false
+2026-11-06T04:59:38.9948060Z   freethreaded: false
+2026-11-06T04:59:38.9948197Z env:
+2026-11-06T04:59:38.9948294Z   PYTHONUTF8: 1
+2026-11-06T04:59:38.9948406Z ##[endgroup]
+2026-11-06T04:59:39.1460369Z ##[group]Installed versions
+2026-11-06T04:59:39.1641762Z Successfully set up CPython (3.15.2)
+2026-11-06T04:59:39.1642208Z ##[endgroup]

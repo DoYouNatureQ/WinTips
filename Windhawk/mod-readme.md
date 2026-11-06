@@ -140,3 +140,12 @@ clipboard tips, this mod is.
 
 - Standalone version, source and issue tracker:
   [WinTips](https://github.com/DoYouNatureQ/WinTips)
+
+## License
+
+GPL-3.0-or-later, the same license as the standalone WinTips app. The mod can be
+copied and modified, but redistributed versions must come with the complete
+corresponding source under the GPL. The look and motion take reference from the
+LockWindow design in FluentFlyout (GPL-3.0); the code here is an independent
+implementation, and the two licenses are compatible.
+

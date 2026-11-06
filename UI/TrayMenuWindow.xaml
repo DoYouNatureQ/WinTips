@@ -10,7 +10,7 @@
         Topmost="True"
         Background="Transparent"
         SizeToContent="WidthAndHeight"
-        FontFamily="{x:Static core:AppFont.Ui}"
+        FontFamily="{DynamicResource AppUiFont}"
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal">
     <Window.Resources>

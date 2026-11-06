@@ -47,6 +47,8 @@ public partial class App : Application
         // 读配置并确定界面语言：任何窗口（含下面的单实例提示窗）创建前必须完成
         var settings = AppSettings.Load();
         Loc.Apply(Loc.Parse(settings.Language));
+        // 界面字体同理：空串 = 内嵌的 HarmonyOS Sans SC，否则按用户选的字族解析
+        AppFont.Apply(settings.UiFont);
 
         if (!createdNew)
         {

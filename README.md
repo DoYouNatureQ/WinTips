@@ -2,7 +2,7 @@
 
 # WinTips
 
-[![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)
 
 **简体中文** | [English](README.en.md)
 
@@ -23,6 +23,7 @@ Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / S
 - **多显示器**：默认跟随焦点——提示落在当前活动窗口所在的那块屏，按该屏自己的 DPI 与任务栏形态摆放（贴边滑入、指示条镜像、任务栏自动隐藏跟随都照常生效）；关掉「跟随焦点显示器」则固定回主显示器。
 - **可视化摆放**：自定义位置时用虚线标出四边 15% 的贴边判定区，浮窗中心进入哪个区就高亮该区（即真实提示的滑入方向）；浮窗靠近屏幕中轴时自动吸附对齐；方向键可逐像素微调（按一下 1 像素、长按连发，Shift 每次 10 像素）。
 - **多语言界面**：内置简体中文、繁體中文、English、Deutsch、日本語、Русский、Español、Português 八种语言，默认跟随系统语言；其余语言收在设置的下拉框里，切换后立即生效、无需重启。
+- **字体随包分发**：界面字体 **HarmonyOS Sans SC**（Regular / Medium / Bold 三个字重，中英文同一字族）内嵌在 `WinTips.exe` 里，装没装这个字体都长一个样（浮窗宽度按字体实测，观感一致意味着布局也一致），也不必往系统字体表里塞东西；单文件发布后发布目录依旧只有一个 exe。设置里可以把界面字体换成系统里已装的任意字族，选中即生效、浮窗立即按新字宽重排；内嵌资源异常或选中的字体被卸载时会回退到微软雅黑 UI / Segoe UI。
 - 托盘常驻、单实例、无第三方依赖（WPF + WinForms，.NET 10）。
 
 ## 使用
@@ -39,11 +40,23 @@ Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / S
 - 多显示器下提示默认跟着当前活动窗口走（同一块屏上）；想让它固定在主显示器，可在设置里关掉「跟随焦点显示器」。
 - 低级键盘钩子收不到发往提权（管理员）窗口的按键。
 - 非键盘来源的剪切（如右键菜单“剪切”）无法与复制区分，会以复制样式提示。
-- 界面字体优先使用 **HarmonyOS Sans SC**（中英文同一字体文件），未安装时自动回退到微软雅黑 UI / Segoe UI，观感会略有差异。字体不随程序分发，需自行安装（个人使用可直接双击 ttf 安装到当前用户，无需管理员权限）。
+
+## 许可
+
+本项目以 **GNU GPL-3.0**（GNU 通用公共许可证第 3 版，或你选择的更新版本）发布，全文见 [LICENSE](LICENSE)。
+
+- 可以自由使用、修改、分发，包括商用；但**分发修改后的版本必须以 GPL 提供完整对应源码**，衍生作品也须采用 GPL。
+- 与 AGPL 不同，GPL 没有网络服务条款：把程序作为在线服务提供给他人不触发开源义务（本工具是本地桌面程序，本来也用不上）。
+- 分发时必须保留版权声明与许可文本。
+- **0.5 及更早的版本曾以 MIT 发布**：那些已经发出去的版本仍然可以按 MIT 使用（授出的许可无法收回），MIT 原文见这些版本的 git 历史。
+- 需要闭源集成或商业豁免，请开 issue 联系作者单独授权。
+- 界面字体 HarmonyOS Sans **不在本项目的 GPL 范围内**，另有其自身协议（见下方致谢）。
 
 ## 致谢
 
-浮窗外观与动效复刻自 [FluentFlyout](https://github.com/unchihugo/FluentFlyout)（GPL-3.0）的 LockWindow 设计，代码为独立实现。
+浮窗外观与动效复刻自 [FluentFlyout](https://github.com/unchihugo/FluentFlyout)（GPL-3.0）的 LockWindow 设计，代码为独立实现；本项目同样采用 GPL-3.0，与上游许可兼容。
+
+界面字体 **HarmonyOS Sans SC** 版权归华为终端有限公司（© Huawei Device Co., Ltd.），按 [HarmonyOS Sans 字体许可协议](Resources/Fonts/LICENSE_Fonts.txt) 随程序原样分发：字体文件不做任何修改（因此没有做子集裁剪），不单独分发，协议全文随仓库保留并打进程序集——设置页点底部版本号，在弹窗里点「查看协议全文」即可读到（悬停版本号也能看到字体出处；弹窗里另附官方原文链接，仅作核对）。
 
 ---
 

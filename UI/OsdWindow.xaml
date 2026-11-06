@@ -12,7 +12,7 @@
         Focusable="False"
         Background="Transparent"
         Width="160" Height="50"
-        FontFamily="{x:Static core:AppFont.Ui}"
+        FontFamily="{DynamicResource AppUiFont}"
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal">
     <!-- 布局与动效 1:1 复刻 FluentFlyout LockWindow（GPL-3.0 项目的设计） -->
@@ -20,7 +20,10 @@
         <!-- 玻璃材质分两层：GlassImage 是抓屏模糊后的背景图，GlassPlate 是叠在其上的
              底色（alpha 可调）+ 1px 受光描边。拆成两层才能在拖动"材质透明度"时
              只换一个画刷，而不必重新抓屏。未开启玻璃材质时两层一起隐藏，
-             由系统亚克力或 Root.Background 的纯色兜底 -->
+             由系统亚克力或 Root.Background 的纯色兜底。
+             这里的 RadiusX/RadiusY/Margin/StrokeThickness 只是 1.0 倍率下的初值，
+             运行时由 ApplyGlassMetrics 按"浮窗大小"倍率反向补偿——两层都挂在 Root 的
+             LayoutTransform 下，不补偿的话圆角会跟着放大，和 DWM 裁窗口的固定圆角打架 -->
         <Rectangle x:Name="GlassImage" RadiusX="8" RadiusY="8" Visibility="Collapsed"/>
         <Rectangle x:Name="GlassPlate" RadiusX="8" RadiusY="8" Margin="0.5"
                    StrokeThickness="1" Visibility="Collapsed"/>

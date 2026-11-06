@@ -1,0 +1,23 @@
+﻿2026-11-06T04:59:39.1900823Z ##[group]Run actions/cache@v6
+2026-11-06T04:59:39.1901038Z with:
+2026-11-06T04:59:39.1901156Z   path: D:\a\_temp/windhawk
+2026-11-06T04:59:39.1901303Z   key: v1-Windows-1.7.3
+2026-11-06T04:59:39.1901436Z   enableCrossOsArchive: false
+2026-11-06T04:59:39.1901574Z   fail-on-cache-miss: false
+2026-11-06T04:59:39.1901705Z   lookup-only: false
+2026-11-06T04:59:39.1901822Z   save-always: false
+2026-11-06T04:59:39.1901932Z env:
+2026-11-06T04:59:39.1902033Z   PYTHONUTF8: 1
+2026-11-06T04:59:39.1902204Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:39.1902489Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.15.2\x64/lib/pkgconfig
+2026-11-06T04:59:39.1902747Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:39.1903152Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:39.1903382Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:39.1903563Z ##[endgroup]
+2026-11-06T04:59:39.5303844Z Cache hit for: v1-Windows-1.7.3
+2026-11-06T04:59:41.0293153Z Received 134217728 of 210834923 (63.7%), 96.7 MBs/sec
+2026-11-06T04:59:41.6367288Z Received 210834923 of 210834923 (100.0%), 104.1 MBs/sec
+2026-11-06T04:59:41.6371401Z Cache Size: ~201 MB (210834923 B)
+2026-11-06T04:59:41.6510186Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/ccfea61f-8688-42eb-814f-8f43856a1fc5/cache.tzst -P -C D:/a/windhawk-mods/windhawk-mods --force-local --use-compress-program "zstd -d"
+2026-11-06T04:59:43.9347575Z Cache restored successfully
+2026-11-06T04:59:43.9545967Z Cache restored from key: v1-Windows-1.7.3

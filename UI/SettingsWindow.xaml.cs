@@ -97,6 +97,8 @@ public partial class SettingsWindow : Window
         UpdateTipScaleText(TipScaleSlider.Value);
         // 提示文案是代码里按结果拼的，语言切换后需要重刷（XAML 绑定管不到）
         if (StartupHint.Visibility == Visibility.Visible) ShowStartupHint(_lastStartupResult);
+        // 字体下拉框的「内置（HarmonyOS Sans SC）」也要跟着换词
+        RebuildFontChoices();
     }
 
     private void ApplyTheme()
@@ -117,13 +119,16 @@ public partial class SettingsWindow : Window
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
         FocusMonitorDesc.Foreground = secondary;
+        FontDesc.Foreground = secondary;
         StartupHint.Foreground = secondary;
         FooterText.Foreground = secondary;
+        // Hyperlink 的默认前景是强调色蓝，这里跟上页脚那行的次要色，只在悬停时靠光标和提示区分
+        VersionLink.Foreground = secondary;
         LblKeys.Foreground = secondary;
         LblBehavior.Foreground = secondary;
 
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6 })
             sep.Background = divider;
     }
 
@@ -156,6 +161,7 @@ public partial class SettingsWindow : Window
         LangCombo.ItemsSource = Loc.Options;
         SyncLanguageUi();
         RefreshPlacementUi();
+        RebuildFontChoices();
     }
 
     /// <summary>位置行 UI 状态：自定义生效时禁用预设单选并启用「还原默认」。</summary>
@@ -383,6 +389,12 @@ public partial class SettingsWindow : Window
             if (LangCombo.SelectedItem is LanguageOption option) SetLanguage(option.Language);
         };
 
+        FontCombo.SelectionChanged += (_, _) =>
+        {
+            if (_syncingFont) return;
+            if (FontCombo.SelectedItem is FontChoice choice) ApplyUiFont(choice);
+        };
+
         // 切换预设位置后弹一次真实提示，让用户直观看到落点
         PosTop.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementTop);
         PosBottom.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementBottom);
@@ -498,6 +510,43 @@ public partial class SettingsWindow : Window
         SyncLanguageUi();
     }
 
+    /// <summary>程序化回填字体下拉框时置位，避免触发保存与预览。</summary>
+    private bool _syncingFont;
+
+    /// <summary>
+    /// 重建字体下拉框：第一项固定是「默认字体」（随包分发的 HarmonyOS Sans SC），其后是系统里已装的字族。
+    /// 打开窗口与切换界面语言（「默认字体」这词的文案要跟着换）都会走这里。
+    /// </summary>
+    private void RebuildFontChoices()
+    {
+        var choices = FontCatalog.BuildChoices();
+        string current = AppFont.CurrentSetting;
+
+        _syncingFont = true;
+        try
+        {
+            FontCombo.ItemsSource = choices;
+            FontCombo.SelectedItem =
+                choices.FirstOrDefault(c => c.IsDefault
+                    ? current.Length == 0
+                    : string.Equals(c.Name, current, StringComparison.OrdinalIgnoreCase))
+                ?? choices[0];
+        }
+        finally { _syncingFont = false; }
+    }
+
+    /// <summary>
+    /// 换界面字体：立即生效（样式与各窗口都吃 <see cref="AppFont"/> 写的那个动态资源），
+    /// 再弹一次真实提示——浮窗宽度按实测文字算，不亲眼看一眼很难判断换完合不合适。
+    /// </summary>
+    private void ApplyUiFont(FontChoice choice)
+    {
+        string setting = choice.IsDefault ? "" : choice.Name;
+        AppFont.Apply(setting);
+        Save(v => v.UiFont = setting);
+        _showTest?.Invoke(TipKind.CapsLock, true);
+    }
+
     private void Save(Action<AppSettings> apply)
     {
         apply(AppSettings.Instance);
@@ -573,6 +622,13 @@ public partial class SettingsWindow : Window
         Background = surface;
         Panel.Background = surface;
     }
+
+    /// <summary>
+    /// 点底部版本号打开「许可与致谢」：字体出处、外观参考与协议全文都在那里。
+    /// 单独一行的字体注记撤掉后，许可要求的「软件内注明」由这个弹窗承担（见 <see cref="LicenseWindow"/>）。
+    /// </summary>
+    private void VersionLink_Click(object sender, RoutedEventArgs e) =>
+        new LicenseWindow { Owner = this }.ShowDialog();
 
     private void Hyperlink_RequestNavigate(object sender, RequestNavigateEventArgs e)
     {

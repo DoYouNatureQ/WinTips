@@ -1,0 +1,19 @@
+﻿2026-11-06T04:59:42.2698460Z ##[group]Run actions/cache@v6
+2026-11-06T04:59:42.2698734Z with:
+2026-11-06T04:59:42.2698903Z   path: D:\a\_temp/windhawk
+2026-11-06T04:59:42.2699098Z   key: v1-Windows-1.6.1
+2026-11-06T04:59:42.2699283Z   enableCrossOsArchive: false
+2026-11-06T04:59:42.2699473Z   fail-on-cache-miss: false
+2026-11-06T04:59:42.2699653Z   lookup-only: false
+2026-11-06T04:59:42.2699814Z   save-always: false
+2026-11-06T04:59:42.2699959Z env:
+2026-11-06T04:59:42.2700094Z   PYTHONUTF8: 1
+2026-11-06T04:59:42.2700313Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:42.2700709Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.15.2\x64/lib/pkgconfig
+2026-11-06T04:59:42.2701051Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:42.2701654Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:42.2701953Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:42.2702196Z ##[endgroup]
+2026-11-06T04:59:42.7737863Z Cache hit for: v1-Windows-1.6.1
+2026-11-06T04:59:43.0745335Z ##[warning]Failed to restore: 
+2026-11-06T04:59:43.0752783Z Cache not found for input keys: v1-Windows-1.6.1

@@ -1,0 +1,42 @@
+﻿2026-11-06T04:59:43.1006359Z ##[group]Run if [[ "1.6.1" == 1.* ]]; then
+2026-11-06T04:59:43.1006739Z [36;1mif [[ "1.6.1" == 1.* ]]; then[0m
+2026-11-06T04:59:43.1006963Z [36;1m  release_tag="v1.6.1"[0m
+2026-11-06T04:59:43.1007173Z [36;1m  installer_args=''[0m
+2026-11-06T04:59:43.1007363Z [36;1melse[0m
+2026-11-06T04:59:43.1007628Z [36;1m  # Starting with 2.0.0-alpha.1, the release tag has no "v" prefix, and[0m
+2026-11-06T04:59:43.1008207Z [36;1m  # the compiler is a separate component that /DEVTOOLS pulls into the[0m
+2026-11-06T04:59:43.1008513Z [36;1m  # install.[0m
+2026-11-06T04:59:43.1008698Z [36;1m  release_tag="1.6.1"[0m
+2026-11-06T04:59:43.1008901Z [36;1m  installer_args='/DEVTOOLS'[0m
+2026-11-06T04:59:43.1009100Z [36;1mfi[0m
+2026-11-06T04:59:43.1009244Z [36;1m[0m
+2026-11-06T04:59:43.1009621Z [36;1minstaller_url="https://github.com/ramensoftware/windhawk/releases/download/$release_tag/windhawk_setup.exe"[0m
+2026-11-06T04:59:43.1010150Z [36;1minstaller_path="D:\a\_temp/windhawk_setup.exe"[0m
+2026-11-06T04:59:43.1010568Z [36;1mecho "Downloading $installer_url to $installer_path"[0m
+2026-11-06T04:59:43.1010861Z [36;1mcurl -L "$installer_url" -o "$installer_path"[0m
+2026-11-06T04:59:43.1011096Z [36;1m[0m
+2026-11-06T04:59:43.1011255Z [36;1mextract_path="D:\a\_temp\windhawk"[0m
+2026-11-06T04:59:43.1011516Z [36;1mecho "Extracting $installer_path to $extract_path"[0m
+2026-11-06T04:59:43.1011877Z [36;1mMSYS_NO_PATHCONV=1 "$installer_path" /S /PORTABLE $installer_args "/D=$extract_path"[0m
+2026-11-06T04:59:43.1029245Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2026-11-06T04:59:43.1029574Z env:
+2026-11-06T04:59:43.1029732Z   PYTHONUTF8: 1
+2026-11-06T04:59:43.1029959Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:43.1030461Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.15.2\x64/lib/pkgconfig
+2026-11-06T04:59:43.1030854Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:43.1031174Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:43.1031479Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.15.2\x64
+2026-11-06T04:59:43.1031738Z ##[endgroup]
+2026-11-06T04:59:43.7006938Z Downloading https://github.com/ramensoftware/windhawk/releases/download/v1.6.1/windhawk_setup.exe to D:\a\_temp/windhawk_setup.exe
+2026-11-06T04:59:43.7906423Z   % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current
+2026-11-06T04:59:43.7906906Z                                  Dload  Upload  Total   Spent   Left   Speed
+2026-11-06T04:59:43.7907105Z 
+2026-11-06T04:59:43.9500779Z   0      0   0      0   0      0      0      0                              0
+2026-11-06T04:59:43.9501178Z   0      0   0      0   0      0      0      0                              0
+2026-11-06T04:59:43.9501451Z   0      0   0      0   0      0      0      0                              0
+2026-11-06T04:59:44.0714557Z 
+2026-11-06T04:59:44.2683851Z   0      0   0      0   0      0      0      0                              0
+2026-11-06T04:59:44.2685470Z 100 10.33M 100 10.33M   0      0 20.38M      0                              0
+2026-11-06T04:59:44.2686670Z 100 10.33M 100 10.33M   0      0 20.37M      0                              0
+2026-11-06T04:59:44.2687190Z 100 10.33M 100 10.33M   0      0 20.37M      0                              0
+2026-11-06T04:59:44.2809080Z Extracting D:\a\_temp/windhawk_setup.exe to D:\a\_temp\windhawk

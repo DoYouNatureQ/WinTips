@@ -134,5 +134,5 @@ wintips-osd-test.exe --pick a.png x y 4        :: 取一小块像素的平均颜
 ## 发布前待办
 
 - 外观设计参考自 FluentFlyout（GPL-3.0），本仓库代码为独立实现；
-  提交官方仓库前请确认 `@license` 与这段表述一致。
+  `@license` 已按 SPDX 标为 `GPL-3.0-or-later`，与根目录 `LICENSE`（GPL-3.0 或更新版本）一致。
 - `@author` / `@github` / `@homepage` 已填为 `DoYouNatureQ`，与远程仓库一致。

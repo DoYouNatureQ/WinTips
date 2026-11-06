@@ -38,6 +38,17 @@
     <Resource Include="Resources\app.ico" />
   </ItemGroup>
 
+  <!-- 界面字体随包分发：HarmonyOS Sans SC 的三个字重编译进程序集的 .g.resources，
+       运行时用 pack:// 目录 URI 解析（见 Core/AppFont.cs）。用 Resource 而不是 Content，
+       是为了让字体跟着 WinTips.exe 一起走——单文件发布后 publish 目录仍然只有一个 exe，
+       用户也不用再手动装字体。
+       许可协议要求原样分发、保留版权声明与协议：字体文件一个字节都不许改（因此不能做
+       子集化裁剪），协议全文随仓库保留并打进程序集（Resources\Fonts\LICENSE_Fonts.txt）。 -->
+  <ItemGroup>
+    <Resource Include="Resources\Fonts\*.ttf" />
+    <EmbeddedResource Include="Resources\Fonts\LICENSE_Fonts.txt" />
+  </ItemGroup>
+
   <!-- App.xaml 移入 App/ 子目录后需显式声明为应用定义 -->
   <ItemGroup>
     <ApplicationDefinition Include="App\App.xaml" />

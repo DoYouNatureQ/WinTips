@@ -35,6 +35,8 @@
     <SolidColorBrush x:Key="InputHoverBrush" Color="#99FFFFFF"/>
     <SolidColorBrush x:Key="InputStrokeBrush" Color="#1A000000"/>
     <SolidColorBrush x:Key="ChevronBrush" Color="#66000000"/>
+    <!-- 细滚动条滑块（许可弹窗的协议正文用）：默认 WPF 滚动条是带箭头的经典样式 -->
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#59000000"/>
 
     <!-- Win11 风格开关 -->
     <Style x:Key="Win11Switch" TargetType="ToggleButton">
@@ -156,7 +158,7 @@
         <Setter Property="FontSize" Value="13.5"/>
         <!-- 必须显式给前景色：主题样式里的 ControlTextBrush 会盖掉窗口继承的白色 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-        <Setter Property="FontFamily" Value="{x:Static core:AppFont.Ui}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
@@ -189,7 +191,7 @@
         <Setter Property="FontSize" Value="13.5"/>
         <!-- 同上：主题样式默认是黑色 ControlTextBrush，深色下按钮文字会看不见 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-        <Setter Property="FontFamily" Value="{x:Static core:AppFont.Ui}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Padding" Value="12,5"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -222,7 +224,7 @@
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}"/>
-        <Setter Property="FontFamily" Value="{x:Static core:AppFont.Ui}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Padding" Value="12,5"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -284,7 +286,7 @@
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <!-- 下拉项在独立弹出层里，既继承不到窗口前景色，主题样式又会给成黑色 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-        <Setter Property="FontFamily" Value="{x:Static core:AppFont.Ui}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBoxItem">
@@ -318,7 +320,7 @@
         <Setter Property="Height" Value="32"/>
         <!-- 当前选项文本由模板里的 ContentPresenter 呈现，同样吃不到窗口继承色 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-        <Setter Property="FontFamily" Value="{x:Static core:AppFont.Ui}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="ItemContainerStyle" Value="{StaticResource Win11ComboBoxItem}"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -380,6 +382,54 @@
                             <Setter TargetName="Selection" Property="Visibility" Value="Hidden"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Win11 风格提示气泡（版本号悬停看字体许可用）：实色底 + 细描边，
+         默认 WPF 提示是方角白底，和这套 UI 放在一起像上个时代的控件 -->
+    <Style x:Key="Win11ToolTip" TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Background" Value="{DynamicResource WindowSurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border CornerRadius="6" BorderThickness="1" Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- 细滚动条：只有一根圆角滑块，没有箭头与轨道底色，适合卡片里的长文 -->
+    <Style x:Key="Win11ScrollBar" TargetType="ScrollBar">
+        <Setter Property="Width" Value="10"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Width="10" Background="Transparent">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border CornerRadius="3" Margin="2,0"
+                                                    Background="{DynamicResource ScrollThumbBrush}"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

@@ -254,6 +254,26 @@ public static class Loc
             "Systemsprache", "システムに合わせる", "Как в системе",
             "Seguir al sistema", "Seguir o sistema");
 
+        // —— 界面字体 ——
+        Add("RowUiFont",
+            "界面字体", "介面字型", "UI font",
+            "Schrift der Oberfläche", "画面のフォント", "Шрифт интерфейса",
+            "Fuente de la interfaz", "Fonte da interface");
+        Add("RowUiFontDesc",
+            "默认字体已随程序分发，无需安装；换成系统里已装的字体立即生效。",
+            "預設字型已隨程式分發，無需安裝；換成系統裡已安裝的字型立即生效。",
+            "The default font ships with the app, so nothing needs installing. An installed font applies immediately.",
+            "Die Standardschrift wird mitgeliefert und muss nicht installiert werden. Eine installierte Schrift greift sofort.",
+            "既定のフォントはアプリに同梱されているため、インストールは不要です。インストール済みのフォントに変えるとすぐ反映されます。",
+            "Шрифт по умолчанию входит в состав приложения и не требует установки. Установленный шрифт применяется сразу.",
+            "La fuente predeterminada se incluye con la aplicación, así que no hay que instalar nada. Una fuente instalada se aplica al instante.",
+            "A fonte padrão acompanha o aplicativo, sem precisar de instalação. Uma fonte instalada passa a valer na hora.");
+        // 下拉框第一项：内置字体，名字由程序填
+        Add("FontChoiceDefault",
+            "默认字体", "預設字型", "Default font",
+            "Standardschrift", "既定のフォント", "Шрифт по умолчанию",
+            "Fuente predeterminada", "Fonte padrão");
+
         // —— 数值标签 ——
         Add("ValueSeconds",
             "{0} 秒", "{0} 秒", "{0} s",
@@ -374,6 +394,61 @@ public static class Loc
             "确定", "確定", "OK",
             "OK", "OK", "ОК",
             "Aceptar", "OK");
+
+        // —— 许可与致谢弹窗（点设置页版本号打开）——
+        Add("LicenseTitle",
+            "许可与致谢", "授權與致謝", "Licenses & credits",
+            "Lizenzen & Danksagung", "ライセンスと謝辞", "Лицензии и благодарности",
+            "Licencias y créditos", "Licenças e créditos");
+        // {0} = 版本号
+        Add("LicenseSubtitle",
+            "WinTips {0}，以 GPL-3.0 许可发布。界面字体 HarmonyOS Sans 随程序原样分发。",
+            "WinTips {0}，以 GPL-3.0 授權釋出。介面字型 HarmonyOS Sans 隨程式原樣分送。",
+            "WinTips {0}, released under the GPL-3.0 license. The UI font HarmonyOS Sans ships unmodified with the app.",
+            "WinTips {0}, veröffentlicht unter der GPL-3.0-Lizenz. Die UI-Schrift HarmonyOS Sans wird unverändert mitgeliefert.",
+            "WinTips {0}（GPL-3.0 ライセンス）。UI フォント HarmonyOS Sans を無改変のまま同梱しています。",
+            "WinTips {0}, распространяется по лицензии GPL-3.0. Шрифт интерфейса HarmonyOS Sans поставляется без изменений.",
+            "WinTips {0}, publicado bajo la licencia GPL-3.0. La fuente de la interfaz HarmonyOS Sans se incluye sin modificar.",
+            "WinTips {0}, distribuído sob a licença GPL-3.0. A fonte da interface HarmonyOS Sans acompanha o app sem alterações.");
+        Add("LicenseFontDesc",
+            "随程序原样分发：字体文件未做任何修改（因此没有做子集裁剪），也不单独分发。",
+            "隨程式原樣分送：字型檔未做任何修改（因此沒有做子集裁剪），也不單獨分送。",
+            "Redistributed unmodified with the app: the font files are untouched (hence no subsetting) and are never distributed on their own.",
+            "Unverändert mit der App verteilt: die Dateien bleiben unverändert (daher kein Subsetting) und werden nie separat verteilt.",
+            "アプリに同梱して無改変のまま再配布しています（サブセット化は行わず、単体では配布しません）。",
+            "Поставляется вместе с приложением без изменений: файлы шрифта не изменялись (поэтому без субсеттинга) и не распространяются отдельно.",
+            "Se distribuye sin modificar junto con la aplicación: los archivos no se alteran (por eso no hay subsetting) y nunca se distribuyen por separado.",
+            "Distribuída sem alterações junto com o aplicativo: os arquivos não são modificados (por isso sem subsetting) e nunca são distribuídos separadamente.");
+        Add("LicenseCredit",
+            "浮窗外观与动效参考 FluentFlyout（GPL-3.0）的 LockWindow 设计，代码为独立实现；本项目同样采用 GPL-3.0，与上游许可兼容。",
+            "浮動視窗外觀與動效參考 FluentFlyout（GPL-3.0）的 LockWindow 設計，程式碼為獨立實作；本專案同樣採用 GPL-3.0，與上游授權相容。",
+            "The flyout's look and motion take reference from the LockWindow design in FluentFlyout (GPL-3.0); the code here is an independent implementation, and WinTips is GPL-3.0 as well, so the two are license-compatible.",
+            "Aussehen und Bewegung der Einblendung orientieren sich am LockWindow-Design von FluentFlyout (GPL-3.0); der Code ist eine eigenständige Umsetzung. WinTips steht selbst unter GPL-3.0, die Lizenzen sind also kompatibel.",
+            "ポップアップの外観と動きは FluentFlyout（GPL-3.0）の LockWindow デザインを参考にしたもので、コードは独自実装です。WinTips 自体も GPL-3.0 のため、ライセンスは互換です。",
+            "Внешний вид и анимация уведомления повторяют дизайн LockWindow из FluentFlyout (GPL-3.0); код — независимая реализация. Сам WinTips распространяется по GPL-3.0, лицензии совместимы.",
+            "El aspecto y el movimiento de la ventana emergente se inspiran en el diseño LockWindow de FluentFlyout (GPL-3.0); el código es una implementación independiente. WinTips también usa GPL-3.0, por lo que las licencias son compatibles.",
+            "O visual e o movimento da janela flutuante são inspirados no design LockWindow do FluentFlyout (GPL-3.0); o código é uma implementação independente. O WinTips também usa GPL-3.0, portanto as licenças são compatíveis.");
+        Add("LicenseShowAgreement",
+            "查看协议全文", "檢視協議全文", "Show full agreement",
+            "Vollständige Lizenz anzeigen", "ライセンス全文を表示", "Показать полный текст",
+            "Ver texto completo", "Ver texto completo");
+        Add("LicenseHideAgreement",
+            "收起协议全文", "收合協議全文", "Hide agreement",
+            "Lizenz ausblenden", "ライセンス全文を隠す", "Скрыть полный текст",
+            "Ocultar texto completo", "Ocultar texto completo");
+        Add("LicenseOfficialLink",
+            "官方原文 ↗", "官方原文 ↗", "Original text ↗",
+            "Originaltext ↗", "原文 ↗", "Оригинал ↗",
+            "Texto original ↗", "Texto original ↗");
+        Add("LicenseTip",
+            "点击查看字体许可与致谢全文", "點擊查看字型授權與致謝全文", "Click for the full font license and credits",
+            "Klicken für die vollständige Schriftlizenz und Danksagung", "クリックでフォントライセンスと謝辞の全文を表示",
+            "Нажмите, чтобы открыть полный текст лицензии и благодарности", "Haz clic para ver la licencia completa y los créditos",
+            "Clique para ver a licença completa e os créditos");
+        Add("LicenseClose",
+            "关闭", "關閉", "Close",
+            "Schließen", "閉じる", "Закрыть",
+            "Cerrar", "Fechar");
     }
 
     /// <summary>登记一条词条：参数顺序固定为 简中、繁中、英、德、日、俄、西、葡。</summary>

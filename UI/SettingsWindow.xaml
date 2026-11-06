@@ -5,7 +5,7 @@
         Title="{loc:Tr SettingsTitle}" Width="800" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="Transparent" ShowInTaskbar="False"
-        FontFamily="{x:Static loc:AppFont.Ui}">
+        FontFamily="{DynamicResource AppUiFont}">
     <!-- Win11 设置风格：Mica 底 + 圆角半透明卡片分组；两大板块左右并排，避免窄高比例 -->
     <Grid>
         <Grid.RowDefinitions>
@@ -142,25 +142,25 @@
                     VerticalAlignment="Stretch"
                     Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource CardStrokeBrush}">
                 <StackPanel>
-                    <StackPanel Margin="0,10">
+                    <StackPanel Margin="0,6">
                         <Grid>
                             <TextBlock Text="{loc:Tr RowDuration}" FontSize="14"/>
                             <TextBlock x:Name="DurationText" FontSize="14" HorizontalAlignment="Right"/>
                         </Grid>
                         <Slider x:Name="DurationSlider" Style="{StaticResource Win11Slider}" Minimum="0.5" Maximum="5" TickFrequency="0.5"
-                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,12,0,4"/>
+                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,5,0,0"/>
                     </StackPanel>
                     <Border x:Name="SepB1" Height="1" Margin="0,3" Opacity="0.5"/>
-                    <StackPanel Margin="0,10">
+                    <StackPanel Margin="0,6">
                         <Grid>
                             <TextBlock Text="{loc:Tr RowAnimSpeed}" FontSize="14"/>
                             <TextBlock x:Name="AnimSpeedText" FontSize="14" HorizontalAlignment="Right"/>
                         </Grid>
                         <Slider x:Name="AnimSpeedSlider" Style="{StaticResource Win11Slider}" Minimum="0" Maximum="3" TickFrequency="0.1"
-                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,12,0,4"/>
+                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,5,0,0"/>
                     </StackPanel>
                     <Border x:Name="SepB2" Height="1" Margin="0,3" Opacity="0.5"/>
-                    <StackPanel Margin="0,10">
+                    <StackPanel Margin="0,6">
                         <Grid>
                             <TextBlock Text="{loc:Tr RowTipScale}" FontSize="14" VerticalAlignment="Center"/>
                             <!-- 右侧：当前百分比 + 还原默认（100% 时禁用，与「自定义位置」那行同款按钮） -->
@@ -170,7 +170,7 @@
                             </StackPanel>
                         </Grid>
                         <Slider x:Name="TipScaleSlider" Style="{StaticResource Win11Slider}" Minimum="0.6" Maximum="2" TickFrequency="0.1"
-                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,12,0,4"
+                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Margin="0,5,0,3"
                                 Thumb.DragStarted="TipScaleSlider_DragStarted" Thumb.DragCompleted="TipScaleSlider_DragCompleted"/>
                         <TextBlock x:Name="TipScaleDesc" Text="{loc:Tr RowTipScaleDesc}" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
@@ -221,14 +221,40 @@
                         </Grid>
                         <ComboBox x:Name="LangCombo" Style="{StaticResource Win11ComboBox}" Margin="0,8,0,0"/>
                     </StackPanel>
+                    <Border x:Name="SepB6" Height="1" Margin="0,3" Opacity="0.5"/>
+                    <!-- 界面字体：第一项固定叫「默认字体」（即随包分发的 HarmonyOS Sans SC），其余是系统里已装的字族。
+                         换字体直接生效——浮窗宽度按实测文字算，字体一换排版就变 -->
+                    <StackPanel Margin="0,10">
+                        <TextBlock Text="{loc:Tr RowUiFont}" FontSize="14"/>
+                        <ComboBox x:Name="FontCombo" Style="{StaticResource Win11ComboBox}" Margin="0,8,0,0"
+                                  MaxDropDownHeight="320"/>
+                        <TextBlock x:Name="FontDesc" Text="{loc:Tr RowUiFontDesc}" FontSize="11.5"
+                                   Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </Grid>
 
-        <!-- 底部一行：版本号 · 作者链接（版本号取自 csproj 的 <Version>，见 AppInfo） -->
+        <!-- 底部一行：版本号 · 作者链接（版本号取自 csproj 的 <Version>，见 AppInfo）。
+             版本号悬停给字体出处（字体名 + 版权），点击打开「许可与致谢」弹窗看协议全文——
+             HarmonyOS Sans 许可要求的「软件内注明 + 随副本保留协议」由这两处一起承担（见 LicenseWindow），
+             页脚不必再单占一行 -->
         <TextBlock x:Name="FooterText" Grid.Row="2" FontSize="11.5" Margin="1,20,0,0"
                    TextWrapping="Wrap" TextAlignment="Center">
-            <Run x:Name="VersionRun" Text="V0.0"/><Run Text="&#160;·&#160;"/><Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
+            <Hyperlink x:Name="VersionLink" Click="VersionLink_Click" TextDecorations="{x:Null}">
+                <!-- 悬停先给个两行的出处（字体名 + 版权），点击再看协议全文 -->
+                <Hyperlink.ToolTip>
+                    <ToolTip Style="{StaticResource Win11ToolTip}" Placement="Top">
+                        <StackPanel MaxWidth="300">
+                            <TextBlock Text="HarmonyOS Sans SC" FontWeight="Medium"/>
+                            <TextBlock Text="© Huawei Device Co., Ltd." FontSize="11.5" Margin="0,1,0,0"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+                            <TextBlock Text="{loc:Tr LicenseTip}" FontSize="11.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </ToolTip>
+                </Hyperlink.ToolTip>
+                <Run x:Name="VersionRun" Text="V0.0"/>
+            </Hyperlink><Run Text="&#160;·&#160;"/><Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
         </TextBlock>
         </Grid>
     </Grid>

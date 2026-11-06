@@ -68,23 +68,24 @@ public partial class OsdWindow : Window
     private static bool IsClip(TipKind k) => TipInfo.IsClipboard(k);
 
     /// <summary>
-    /// 字体族只解析一次；FormattedText 每次测量都要用到它。
-    /// 必须与窗口 XAML 上的 FontFamily 同源（<see cref="AppFont.Ui"/>），
-    /// 否则测出来的是另一个字体的宽度，浮窗会偏宽或裁字。
+    /// 当前字族与它的两个字重。FormattedText 每次测量都要用到，构造一次缓存住；
+    /// 必须与窗口 XAML 上那个 <c>{DynamicResource AppUiFont}</c> 同源（都来自
+    /// <see cref="AppFont.Ui"/>），否则测出来的是另一个字体的宽度，浮窗会偏宽或裁字。
+    /// 用户换字体时由 <see cref="OnUiFontChanged"/> 整体重建。
     /// </summary>
-    private static readonly FontFamily OsdFont = AppFont.Ui;
+    private FontFamily _osdFont = AppFont.Ui;
+    private Typeface _mediumFace = CreateFace(AppFont.Ui, FontWeights.Medium);
+    private Typeface _semiBoldFace = CreateFace(AppFont.Ui, FontWeights.SemiBold);
 
-    private static readonly Typeface MediumFace =
-        new(OsdFont, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
-
-    private static readonly Typeface SemiBoldFace =
-        new(OsdFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private static Typeface CreateFace(FontFamily family, FontWeight weight) =>
+        new(family, FontStyles.Normal, weight, FontStretches.Normal);
 
     /// <summary>
     /// 文案宽度缓存。提示文案是有限集合（7 种提示 × 开/关 × ×N），命中率极高；
     /// 原先每次弹出都要重新走一遍 FormattedText 的字体匹配与字形布局。
+    /// 非静态：换字体后整表作废，而窗口是常驻复用的。
     /// </summary>
-    private static readonly Dictionary<(string Text, double Size, FontWeight Weight), double> WidthCache = new();
+    private readonly Dictionary<(string Text, double Size, FontWeight Weight), double> _widthCache = new();
 
     /// <summary>当前外观键（深浅色 / 高对比度 / 强调色）：变化时才重建画刷。</summary>
     private (bool Dark, bool HighContrast, Color Accent) _chromeKey;
@@ -102,6 +103,21 @@ public partial class OsdWindow : Window
     /// <summary>抓屏时向四周多抓的一圈，模糊完裁掉：不给足边界，窗口边缘会因为卷积取样不足而发暗。</summary>
     private const int GlassBlurPadding = 24;
 
+    /// <summary>
+    /// 卡片圆角（DIP）。这个值必须锁定，不能跟着"浮窗大小"放大。
+    ///
+    /// 窗口本身的圆角是 DWM 裁的（DWMWCP_ROUND），半径是系统固定值（约 8 DIP，
+    /// 与窗口尺寸无关）；而玻璃那两层是 WPF 自绘的。两者原本同为 8，1.0 倍时严丝合缝；
+    /// 一旦倍率把它放大（它们挂在 Root 的 LayoutTransform 下），就会出现两条弧打架——
+    /// 放大时自绘弧 16 DIP 被 DWM 的 8 DIP 弧硬切，角上的 1px 描边直接断掉、角变形；
+    /// 缩小时自绘弧又比窗口小，角外侧多露一圈系统材质。所以圆角与描边一律按 1/倍率
+    /// 反向补偿（见 <see cref="ApplyGlassMetrics"/>），让屏幕上的实际量恒定。
+    /// </summary>
+    private const double GlassCornerRadius = 8;
+
+    /// <summary>玻璃描边宽度（DIP），同样不随倍率变粗变细。</summary>
+    private const double GlassStrokeThickness = 1;
+
     private SolidColorBrush _surfaceBrush = Brushes.White;
     private SolidColorBrush _textBrush = Brushes.Black;
     private SolidColorBrush _accentBrush = Brushes.DodgerBlue;
@@ -118,9 +134,30 @@ public partial class OsdWindow : Window
     public OsdWindow()
     {
         InitializeComponent();
+        ReloadFont();
+        AppFont.Changed += OnUiFontChanged;
         _hideTimer.Tick += (_, _) => HideAnimated();
         _followTimer.Interval = TimeSpan.FromMilliseconds(FollowIntervalMs);
         _followTimer.Tick += (_, _) => FollowTaskbar();
+    }
+
+    /// <summary>按当前字族重建字重对象；<see cref="_widthCache"/> 里的宽度也随之作废。</summary>
+    private void ReloadFont()
+    {
+        _osdFont = AppFont.Ui;
+        _mediumFace = CreateFace(_osdFont, FontWeights.Medium);
+        _semiBoldFace = CreateFace(_osdFont, FontWeights.SemiBold);
+        _widthCache.Clear();
+    }
+
+    /// <summary>
+    /// 用户在设置里换了界面字体：窗口里的文字由 DynamicResource 自己刷新，这里只负责
+    /// 换掉测量用的字重、清空宽度缓存，再把正显示着的浮窗按新字宽重排一次。
+    /// </summary>
+    private void OnUiFontChanged()
+    {
+        ReloadFont();
+        if (IsVisible) { UpdateSize(); }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -145,6 +182,7 @@ public partial class OsdWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        AppFont.Changed -= OnUiFontChanged;
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -275,7 +313,7 @@ public partial class OsdWindow : Window
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
     {
         base.OnDpiChanged(oldDpi, newDpi);
-        WidthCache.Clear(); // 字形宽度随 DPI 的舍入略有差异，换 DPI 后缓存作废
+        _widthCache.Clear(); // 字形宽度随 DPI 的舍入略有差异，换 DPI 后缓存作废
 
         // WPF 处理 WM_DPICHANGED 时会先套用系统给的建议矩形（按物理尺寸守恒缩放），
         // 那个矩形往往不是浮窗该在的位置/尺寸；这里紧跟着按目标屏重排一次，把窗口摆正。
@@ -855,7 +893,11 @@ public partial class OsdWindow : Window
         Height = Math.Ceiling(BaseHeight * scale);
     }
 
-    /// <summary>内容根节点的等比缩放变换：字形、矢量图标、指示条、圆角一起跟随，无需逐控件调字号。</summary>
+    /// <summary>
+    /// 内容根节点的等比缩放变换：字形、矢量图标、指示条一起跟随，无需逐控件调字号。
+    /// 玻璃那两层的圆角/描边例外——它们跟着放大就会和 DWM 裁窗口的固定圆角打架，
+    /// 因此在 <see cref="ApplyGlassMetrics"/> 里按同一倍率反向抵消。
+    /// </summary>
     private ScaleTransform? _rootScale;
 
     private void ApplyScale(double scale)
@@ -864,10 +906,34 @@ public partial class OsdWindow : Window
         {
             _rootScale = new ScaleTransform(scale, scale);
             Root.LayoutTransform = _rootScale;
-            return;
         }
-        if (Math.Abs(_rootScale.ScaleX - scale) < 0.001) return;
-        _rootScale.ScaleX = _rootScale.ScaleY = scale;
+        else if (Math.Abs(_rootScale.ScaleX - scale) >= 0.001)
+        {
+            _rootScale.ScaleX = _rootScale.ScaleY = scale;
+        }
+
+        // 不能像别的地方那样"倍率没变就直接返回"：首次调用时变换刚建好，
+        // 玻璃层的补偿量还没写过，那一次必须落下去（XAML 里的 8 只在 1.0 倍时正确）。
+        ApplyGlassMetrics(scale);
+    }
+
+    /// <summary>
+    /// 玻璃两层的几何量按倍率反向补偿：Root 上的 LayoutTransform 会把子元素的一切
+    /// 尺寸一起放大（圆角、描边、内缩），而这三样在屏幕上必须是恒定的——圆角要跟
+    /// DWM 裁窗口的那条弧对齐（固定 ~8 DIP），描边要维持 1px 细线。乘上 1/倍率
+    /// 抵消掉变换后，落到屏幕上就还是 8 DIP 圆角、1 DIP 描边。
+    /// </summary>
+    private void ApplyGlassMetrics(double scale)
+    {
+        double inv = scale > 0 ? 1 / scale : 1;
+        double radius = GlassCornerRadius * inv;
+        double stroke = GlassStrokeThickness * inv;
+
+        GlassImage.RadiusX = GlassImage.RadiusY = radius;
+        GlassPlate.RadiusX = GlassPlate.RadiusY = radius;
+        GlassPlate.StrokeThickness = stroke;
+        // 描边画在矩形轮廓线上，内缩半个线宽才能让它整个落在卡片内侧
+        GlassPlate.Margin = new Thickness(stroke / 2);
     }
 
     private double MeasureText(string text, double size = 14, FontWeight? weight = null)
@@ -876,7 +942,7 @@ public partial class OsdWindow : Window
 
         var face = weight ?? FontWeights.Medium;
         var key = (text, size, face);
-        if (WidthCache.TryGetValue(key, out double cached)) return cached;
+        if (_widthCache.TryGetValue(key, out double cached)) return cached;
 
         double pixelsPerDip = 1.0;
         try { pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip; } catch { }
@@ -884,12 +950,12 @@ public partial class OsdWindow : Window
         // 字号必须用调用方给的 size：之前这里写死 14，导致 ×N 徽章（12.5pt）按 14pt 量宽
         var ft = new FormattedText(
             text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-            face == FontWeights.SemiBold ? SemiBoldFace : MediumFace, size, Brushes.Black, pixelsPerDip);
+            face == FontWeights.SemiBold ? _semiBoldFace : _mediumFace, size, Brushes.Black, pixelsPerDip);
         double width = ft.Width;
 
         // 文案集合有限，攒到上限直接清空即可（不清会随语言/DPI 切换缓慢增长）
-        if (WidthCache.Count >= 256) WidthCache.Clear();
-        WidthCache[key] = width;
+        if (_widthCache.Count >= 256) _widthCache.Clear();
+        _widthCache[key] = width;
         return width;
     }
 

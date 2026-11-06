@@ -7,6 +7,9 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="/Resources/Styles.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+            <!-- 界面字体：启动时由 AppFont.Apply 覆盖成内嵌的 HarmonyOS Sans SC 或用户选的系统字体
+                 （见 Core/AppFont.cs）。这里的值只在资源键被意外清空时兜底，正常不会被用到。 -->
+            <FontFamily x:Key="AppUiFont">Microsoft YaHei UI, Segoe UI</FontFamily>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

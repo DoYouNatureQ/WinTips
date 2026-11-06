@@ -73,6 +73,13 @@ public sealed class AppSettings
     /// </summary>
     public string Language { get; set; } = "System";
 
+    /// <summary>
+    /// 界面字体族名：空串 = 内置的 HarmonyOS Sans SC（随包分发，见 <see cref="AppFont"/>）。
+    /// 存的是系统字族的英文族名（Windows 上唯一且不随界面语言变），运行时解析不到
+    /// （字体被卸载或改名）会静默回落到内置字体。
+    /// </summary>
+    public string UiFont { get; set; } = "";
+
     public const string PlacementLeft = "Left";
     public const string PlacementCenter = "Center";
     public const string PlacementRight = "Right";

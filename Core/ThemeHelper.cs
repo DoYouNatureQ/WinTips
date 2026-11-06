@@ -238,6 +238,10 @@ internal static class ThemeHelper
         map["DividerBrush"] = Divider(dark);
         map["WindowSurfaceBrush"] = WindowSurface(dark);
 
+        // 细滚动条滑块（许可弹窗的协议正文）：深色下必须反过来，否则整根看不见
+        map["ScrollThumbBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x59, 0x00, 0x00, 0x00);
+
         // 滑杆
         map["SliderRestBrush"] = hc ? SystemColors.WindowTextColor
             : dark ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x3D, 0x00, 0x00, 0x00);
