@@ -33,20 +33,6 @@ Just run `WinTips.exe` — once the tray icon appears, it is working.
 - Command line: `--settings` opens Settings; `--test caps on 4` previews a notification; `--test menu` previews the menu.
 - Settings are stored in `%APPDATA%\WinTips\settings.json`.
 
-## Build and Publish
-
-Requires the .NET 10 SDK (Windows).
-
-```powershell
-# Debug build
-dotnet build -c Release
-
-# Publish a single-file exe (no .NET runtime required, ~70 MB)
-dotnet publish -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -o publish
-```
-
 ## Known Limitations
 
 - The Insert hint is event-based and shows no on/off state (Windows does not track that state at the system level).

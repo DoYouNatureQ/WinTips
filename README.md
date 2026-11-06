@@ -33,20 +33,6 @@ Windows 11 风格的键盘状态提示工具：按下 **Caps Lock / Num Lock / S
 - 命令行：`--settings` 打开设置；`--test caps on 4` 测试提示；`--test menu` 预览菜单。
 - 设置保存在 `%APPDATA%\WinTips\settings.json`。
 
-## 构建与发布
-
-需要 .NET 10 SDK（Windows）。
-
-```powershell
-# 调试运行
-dotnet build -c Release
-
-# 发布单文件 exe（无 .NET 依赖，约 70 MB）
-dotnet publish -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -o publish
-```
-
 ## 已知限制
 
 - Insert 提示为事件式，不显示开/关状态（Windows 不在系统层维护该状态）。
