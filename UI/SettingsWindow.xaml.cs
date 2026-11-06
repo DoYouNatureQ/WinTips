@@ -19,18 +19,26 @@ public partial class SettingsWindow : Window
     /// <summary>浮窗大小预览回调（由 App 注入），拖动大小滑杆时实时弹出真实浮窗。</summary>
     private readonly Action<double>? _previewSize;
 
+    /// <summary>玻璃材质预览回调（由 App 注入），改材质开关或透明度时重铺真实浮窗。</summary>
+    private readonly Action<double>? _previewAppearance;
+
     /// <summary>正在拖拽大小滑杆：此时预览用较长的停留时间，避免用户中途停顿一下浮窗就消失。</summary>
     private bool _draggingScale;
+
+    /// <summary>正在拖拽材质透明度滑杆（与 <see cref="_draggingScale"/> 同理）。</summary>
+    private bool _draggingGlass;
 
     private const double DragPreviewSeconds = 8;
 
     /// <summary>上一次实际生效的玻璃状态，用于 WM_SETTINGCHANGE 时判断是否真的需要重铺材质。</summary>
     private bool _glassApplied;
 
-    public SettingsWindow(Action<TipKind, bool?>? showTest = null, Action<double>? previewSize = null)
+    public SettingsWindow(Action<TipKind, bool?>? showTest = null, Action<double>? previewSize = null,
+                          Action<double>? previewAppearance = null)
     {
         _showTest = showTest;
         _previewSize = previewSize;
+        _previewAppearance = previewAppearance;
         InitializeComponent();
         ApplyPlatformChrome();
         ApplyVersionText();
@@ -103,6 +111,9 @@ public partial class SettingsWindow : Window
         AnimSpeedText.Foreground = secondary;
         TipScaleText.Foreground = secondary;
         TipScaleDesc.Foreground = secondary;
+        GlassDesc.Foreground = secondary;
+        GlassOpacityLabel.Foreground = secondary;
+        GlassOpacityText.Foreground = secondary;
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
         FocusMonitorDesc.Foreground = secondary;
@@ -112,7 +123,7 @@ public partial class SettingsWindow : Window
         LblBehavior.Foreground = secondary;
 
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5 })
             sep.Background = divider;
     }
 
@@ -134,12 +145,16 @@ public partial class SettingsWindow : Window
         // 滑杆刻度是 0.1 步长，回填值先归一到合法区间与刻度，避免出现 0.63 这种落不到格上的值
         TipScaleSlider.Value = Math.Round(AppSettings.NormalizeScale(s.TipScale), 1);
         UpdateTipScaleText(TipScaleSlider.Value);
+        // 回填材质开关与透明度；刻度是 0.05，先把值吸附到格上，避免滑杆停在两格之间
+        GlassToggle.IsChecked = s.TipGlass;
+        GlassOpacitySlider.Value = Math.Round(AppSettings.NormalizeGlassOpacity(s.TipGlassOpacity) / 0.05) * 0.05;
+        UpdateGlassOpacityText(GlassOpacitySlider.Value);
+        RefreshGlassUi();
         LoadPlacement();
         FocusMonitorToggle.IsChecked = s.TipFollowFocus;
         StartupToggle.IsChecked = StartupManager.IsEnabled();
-        LangSystem.IsChecked = Loc.Language == AppLanguage.System;
-        LangZh.IsChecked = Loc.Language == AppLanguage.Chinese;
-        LangEn.IsChecked = Loc.Language == AppLanguage.English;
+        LangCombo.ItemsSource = Loc.Options;
+        SyncLanguageUi();
         RefreshPlacementUi();
     }
 
@@ -233,9 +248,52 @@ public partial class SettingsWindow : Window
         ResetScaleBtn.IsEnabled = Math.Abs(scale - 1) > 0.001;
     }
 
+    /// <summary>材质透明度标签：百分比，与大小那条同款、不走词条表。</summary>
+    private void UpdateGlassOpacityText(double opacity) =>
+        GlassOpacityText.Text = $"{(int)Math.Round(AppSettings.NormalizeGlassOpacity(opacity) * 100)}%";
+
+    /// <summary>
+    /// 材质开关决定透明度滑杆是否可用：关掉玻璃材质后没有可调的对象，
+    /// 留着一条能拖但毫无反应的滑杆比把它灰掉更让人困惑。
+    /// </summary>
+    private void RefreshGlassUi()
+    {
+        bool on = GlassToggle.IsChecked == true;
+        GlassOpacitySlider.IsEnabled = on;
+        GlassOpacityLabel.Opacity = on ? 1 : 0.45;
+        GlassOpacityText.Opacity = on ? 1 : 0.45;
+    }
+
+    /// <summary>
+    /// 材质开关：写入设置后让真实浮窗按新外观重铺一次。开关会改变浮窗走不走
+    /// 抓屏路径，所以那边会先收起再重新弹出（抓屏不能在自己可见时进行）。
+    /// </summary>
+    private void ApplyGlass(bool enable)
+    {
+        Save(v => v.TipGlass = enable);
+        RefreshGlassUi();
+        _previewAppearance?.Invoke(AppSettings.Instance.DisplaySeconds);
+    }
+
+    private void GlassOpacitySlider_DragStarted(object sender, DragStartedEventArgs e) => _draggingGlass = true;
+
+    private void GlassOpacitySlider_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _draggingGlass = false;
+        _previewAppearance?.Invoke(AppSettings.Instance.DisplaySeconds);
+    }
+
+    /// <summary>材质透明度变更：只换浮窗那层底色，不重新抓屏，所以拖动时每一格都能即时响应。</summary>
+    private void ApplyGlassOpacity(double value)
+    {
+        double opacity = AppSettings.NormalizeGlassOpacity(value);
+        UpdateGlassOpacityText(opacity);
+        SaveSoon(v => v.TipGlassOpacity = opacity);
+        _previewAppearance?.Invoke(_draggingGlass ? DragPreviewSeconds : AppSettings.Instance.DisplaySeconds);
+    }
+
     /// <summary>拖动大小滑杆期间用较长停留时间：用户中途停顿一下浮窗也不该消失。</summary>
     private void TipScaleSlider_DragStarted(object sender, DragStartedEventArgs e) => _draggingScale = true;
-
     private void TipScaleSlider_DragCompleted(object sender, DragCompletedEventArgs e)
     {
         _draggingScale = false;
@@ -290,6 +348,10 @@ public partial class SettingsWindow : Window
         // 大小滑杆：每跨一格刻度才触发一次（控件已开启吸附刻度），刷新标签、落盘并实时预览
         TipScaleSlider.ValueChanged += (_, e) => ApplyTipScale(e.NewValue);
 
+        GlassToggle.Checked += (_, _) => ApplyGlass(true);
+        GlassToggle.Unchecked += (_, _) => ApplyGlass(false);
+        GlassOpacitySlider.ValueChanged += (_, e) => ApplyGlassOpacity(e.NewValue);
+
         // 还原默认：把滑杆拨回 100%，ValueChanged 负责落盘与预览；万一值本来就等于 1.0
         // （浮点残留），ValueChanged 不会触发，这里直接补一次，保证按钮永远有反应
         ResetScaleBtn.Click += (_, _) =>
@@ -301,9 +363,25 @@ public partial class SettingsWindow : Window
         StartupToggle.Checked += (_, _) => ApplyStartup(true);
         StartupToggle.Unchecked += (_, _) => ApplyStartup(false);
 
-        LangSystem.Checked += (_, _) => SetLanguage(AppLanguage.System);
-        LangZh.Checked += (_, _) => SetLanguage(AppLanguage.Chinese);
-        LangEn.Checked += (_, _) => SetLanguage(AppLanguage.English);
+        LangSystemToggle.Checked += (_, _) =>
+        {
+            if (_syncingLanguage) return;
+            SetLanguage(AppLanguage.System);
+        };
+        LangSystemToggle.Unchecked += (_, _) =>
+        {
+            if (_syncingLanguage) return;
+            // 从「跟随系统」切到具体语言：默认沿用当前生效的那一种，避免用户再点一次下拉框
+            if (LangCombo.SelectedItem is LanguageOption option) SetLanguage(option.Language);
+        };
+        // 用户主动点开 / 用键盘展开下拉框 = 想自己指定语言：先把「跟随系统」摘掉，
+        // 下拉框本身永远可点（旧做法是跟随系统时置灰，用户点了没反应，像坏了）
+        LangCombo.DropDownOpened += (_, _) => LeaveSystemLanguage();
+        LangCombo.SelectionChanged += (_, _) =>
+        {
+            if (_syncingLanguage) return;
+            if (LangCombo.SelectedItem is LanguageOption option) SetLanguage(option.Language);
+        };
 
         // 切换预设位置后弹一次真实提示，让用户直观看到落点
         PosTop.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementTop);
@@ -373,11 +451,51 @@ public partial class SettingsWindow : Window
         StartupHint.Visibility = Visibility.Visible;
     }
 
+    /// <summary>程序化回填语言控件时置位，避免触发 Checked / SelectionChanged 里的保存。</summary>
+    private bool _syncingLanguage;
+
+    /// <summary>
+    /// 回填语言控件：跟随系统时下拉框仍显示系统识别出的那一种，
+    /// 用户一眼就能看出「跟随系统」此刻实际用的是哪门语言。
+    /// 下拉框不置灰 —— 点它就是要自己指定语言，见 <see cref="LeaveSystemLanguage"/>。
+    /// </summary>
+    private void SyncLanguageUi()
+    {
+        _syncingLanguage = true;
+        try
+        {
+            LangSystemToggle.IsChecked = Loc.Language == AppLanguage.System;
+            LangCombo.SelectedItem = Loc.Options.FirstOrDefault(o => o.Language == Loc.Effective)
+                                     ?? Loc.Options.FirstOrDefault();
+        }
+        finally { _syncingLanguage = false; }
+    }
+
+    /// <summary>
+    /// 用户点开下拉框时摘掉「跟随系统」：默认停在当前生效的那一种语言，
+    /// 用户接着选别的即可，不必先回上面把开关关掉。
+    /// 这里刻意不走 <see cref="SetLanguage"/>：它末尾的 <see cref="SyncLanguageUi"/>
+    /// 会重设 SelectedItem，而事件发生在列表刚展开的瞬间，动选中项容易把下拉顶掉。
+    /// </summary>
+    private void LeaveSystemLanguage()
+    {
+        if (Loc.Language != AppLanguage.System) return;
+        if (LangCombo.SelectedItem is not LanguageOption option) return;
+
+        Save(v => v.Language = Loc.ToSetting(option.Language));
+        Loc.Apply(option.Language);
+
+        _syncingLanguage = true;
+        try { LangSystemToggle.IsChecked = false; }
+        finally { _syncingLanguage = false; }
+    }
+
     /// <summary>切换界面语言：写入设置并立即生效（XAML 文案由绑定自动刷新，无需重启）。</summary>
     private void SetLanguage(AppLanguage language)
     {
         Save(v => v.Language = Loc.ToSetting(language));
         Loc.Apply(language);
+        SyncLanguageUi();
     }
 
     private void Save(Action<AppSettings> apply)

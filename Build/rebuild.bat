@@ -5,16 +5,19 @@ rem ========================================
 rem WinTips One-Click Rebuild
 rem stop -> clean -> publish -> package -> start
 rem
-rem usage: rebuild.bat           full rebuild + Build\dist\ (msix + setup)
-rem        rebuild.bat /nopack   skip packaging (fast restart only)
+rem usage: Build\rebuild.bat           full rebuild + Build\dist\ (msix + setup)
+rem        Build\rebuild.bat /nopack   skip packaging (fast restart only)
 rem
-rem This script sits in the project root, next to the .csproj and publish\.
-rem Everything packaging-related (msix\, installer\, dist\) lives in Build\.
+rem This script sits in Build\, one level below the project root. Everything
+rem packaging-related (msix\, installer\, dist\) lives here next to it; the
+rem project root above holds the .csproj and the publish\ output.
 rem ========================================
 
-rem Project root = this script's directory (normalised, no trailing backslash)
-for %%I in ("%~dp0.") do set "PROJECT_ROOT=%%~fI"
-set "BUILD_DIR=%PROJECT_ROOT%\Build"
+rem Build dir = this script's directory (normalised, no trailing backslash)
+for %%I in ("%~dp0.") do set "BUILD_DIR=%%~fI"
+
+rem Project root = parent of the script's directory
+for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
 
 cd /d "%PROJECT_ROOT%"
 
@@ -379,7 +382,7 @@ if "%~2"=="0" (
 
 if "%~2"=="2" (
     echo        [WARN] %~1 skipped: build tool not found ^(see message above^).
-    echo        Install it, then rerun rebuild.bat to produce this package.
+    echo        Install it, then rerun Build\rebuild.bat to produce this package.
     exit /b 0
 )
 

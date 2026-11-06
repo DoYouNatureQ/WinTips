@@ -41,6 +41,9 @@ public partial class OsdWindow : Window
     private EventHandler? _warmRendered;
     private DispatcherTimer? _warmGuard;
     private TipKind _currentKind;
+
+    /// <summary>当前提示的状态（锁键的开/关；剪贴板类为 null）。仅供重铺外观时按原样重弹。</summary>
+    private bool? _currentState;
     private double _lastLeft;
     private double _lastTop;
     private double _followLeft;
@@ -64,8 +67,12 @@ public partial class OsdWindow : Window
 
     private static bool IsClip(TipKind k) => TipInfo.IsClipboard(k);
 
-    /// <summary>字体族只解析一次；FormattedText 每次测量都要用到它。</summary>
-    private static readonly FontFamily OsdFont = new("Segoe UI Variable Display, Segoe UI");
+    /// <summary>
+    /// 字体族只解析一次；FormattedText 每次测量都要用到它。
+    /// 必须与窗口 XAML 上的 FontFamily 同源（<see cref="AppFont.Ui"/>），
+    /// 否则测出来的是另一个字体的宽度，浮窗会偏宽或裁字。
+    /// </summary>
+    private static readonly FontFamily OsdFont = AppFont.Ui;
 
     private static readonly Typeface MediumFace =
         new(OsdFont, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
@@ -82,6 +89,18 @@ public partial class OsdWindow : Window
     /// <summary>当前外观键（深浅色 / 高对比度 / 强调色）：变化时才重建画刷。</summary>
     private (bool Dark, bool HighContrast, Color Accent) _chromeKey;
     private bool _chromeReady;
+
+    /// <summary>当前是否走玻璃路径。只有它为真才值得抓屏——降级成纯色卡片时抓了也没地方用。</summary>
+    private bool _glassActive;
+
+    /// <summary>玻璃底色层（叠在模糊图之上）：抓屏失败时窗口还剩它，不会变成透明空洞。</summary>
+    private SolidColorBrush? _glassVeilBrush;
+
+    /// <summary>模糊半径（物理像素）。太小像没对上焦，太大糊成一块无特征的灰。</summary>
+    private const int GlassBlurRadius = 16;
+
+    /// <summary>抓屏时向四周多抓的一圈，模糊完裁掉：不给足边界，窗口边缘会因为卷积取样不足而发暗。</summary>
+    private const int GlassBlurPadding = 24;
 
     private SolidColorBrush _surfaceBrush = Brushes.White;
     private SolidColorBrush _textBrush = Brushes.Black;
@@ -295,10 +314,77 @@ public partial class OsdWindow : Window
         // 系统不支持亚克力时退回纯色卡片（Win10、高对比度、系统关掉透明效果、
         // 节电模式都必须走这条分支，否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）。
         // 节电模式/透明开关不会通知窗口，所以这一项每次弹出都得现查。
-        Root.Background = ThemeHelper.AcrylicAllowed &&
-                          DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW)
-            ? Brushes.Transparent
-            : _surfaceBrush;
+        bool acrylic = ThemeHelper.AcrylicAllowed &&
+                       DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW);
+
+        // 玻璃材质是"可选增强"：关着就保持最初的样子——只有系统亚克力，不铺任何自绘层。
+        // 开了才往上叠抓屏模糊图与底色（见 UpdateBackdrop），代价是每次弹出一次抓屏。
+        bool glass = acrylic && AppSettings.Instance.TipGlass;
+
+        Root.Background = acrylic ? Brushes.Transparent : _surfaceBrush;
+        ApplyGlassLayers(glass, dark);
+
+        _glassActive = glass;
+    }
+
+    /// <summary>
+    /// 玻璃两层一起铺或一起撤。
+    ///
+    /// 撤的时候还要清掉 GlassImage.Fill：那张位图是窗口尺寸的完整截图，留着会让
+    /// 下一次开启玻璃时先用旧画面顶一帧（位置早就变了）。
+    /// </summary>
+    private void ApplyGlassLayers(bool glass, bool dark)
+    {
+        if (!glass)
+        {
+            GlassImage.Fill = null;
+            GlassImage.Visibility = Visibility.Collapsed;
+            GlassPlate.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        GlassPlate.Stroke = ThemeHelper.GlassStroke(dark);
+        ApplyGlassVeil(dark);
+        GlassImage.Visibility = Visibility.Visible;
+        GlassPlate.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// 只换底色层——这是"材质透明度"滑杆唯一的落点。
+    ///
+    /// 叠一层半透明纯色在图上，与把颜色按同一 alpha 混进像素是等价的（同为
+    /// src·(1−a)+tint·a），所以拆成两层不会改变观感，却让调透明度变成改一个画刷：
+    /// 不必重新抓屏，拖动时每一格都能即时响应。
+    /// </summary>
+    private void ApplyGlassVeil(bool dark)
+    {
+        var tint = ThemeHelper.GlassTintBase(dark);
+        byte alpha = (byte)Math.Round(
+            AppSettings.NormalizeGlassOpacity(AppSettings.Instance.TipGlassOpacity) * 255);
+
+        _glassVeilBrush = Frozen(Color.FromArgb(alpha, tint.R, tint.G, tint.B));
+        GlassPlate.Fill = _glassVeilBrush;
+    }
+
+    /// <summary>
+    /// 抓一次背后的画面、模糊，铺成玻璃片的底图。
+    ///
+    /// 必须在 <see cref="Reposition"/> 之后调用——抓的是窗口"此刻"的物理矩形，
+    /// 位置还没定下来就会抓到上一处的画面。也必须在 Show() 之前：窗口一旦可见，
+    /// 截出来的就是自己（连续弹出时窗口本来就在，那条路径直接沿用上一次的模糊）。
+    /// </summary>
+    private void UpdateBackdrop()
+    {
+        if (!_glassActive) return;
+
+        var bitmap = BackdropCapture.CaptureBlurred(
+            new WindowInteropHelper(this).Handle,
+            GlassBlurPadding,
+            GlassBlurRadius);
+
+        // 抓不到（远程桌面、受保护内容）：这层留空，窗口退回系统亚克力的原始观感，
+        // 上面那层底色与描边还在，不会露出空洞
+        GlassImage.Fill = bitmap is null ? null : new ImageBrush(bitmap) { Stretch = Stretch.Fill };
     }
 
     public void PreWarm()
@@ -387,6 +473,7 @@ public partial class OsdWindow : Window
 
         var prevKind = _currentKind;
         _currentKind = kind;
+        _currentState = state;
         _generation++;
 
         // 锁键提示 / 剪贴板提示共用同一浮窗，按类型切换内容与徽章可见性
@@ -425,6 +512,9 @@ public partial class OsdWindow : Window
         // int.MinValue，窗口先被扔到虚拟屏外再由 Reposition 拉回，多屏下这一帧格外显眼。
         ApplyChrome();
         Reposition();
+
+        // 位置定下来后立刻抓背后的画面：此刻窗口还是隐藏的，截不到自己
+        UpdateBackdrop();
 
         int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
         if (ms <= 0)
@@ -488,6 +578,49 @@ public partial class OsdWindow : Window
         Root.Opacity = 1;
         _hideTimer.Interval = TimeSpan.FromSeconds(ms);
         RestartTimer();
+    }
+
+    /// <summary>
+    /// 设置里改动"玻璃材质"开关或"材质透明度"后的即时预览。
+    ///
+    /// 两条路分开走，是为了拖动滑杆时别闪：
+    /// - 材质档位没变（只是拖了透明度）：只换底色那层，不重新抓屏；
+    /// - 档位变了：抓屏必须趁窗口隐藏时进行（否则截到的是它自己），所以先瞬时收起
+    ///   再按当前内容重新弹出一次。开关是一次性动作，这一下重弹可以接受。
+    /// </summary>
+    public void PreviewAppearance(double seconds)
+    {
+        bool wantGlass = AppSettings.Instance.TipGlass && ThemeHelper.AcrylicAllowed;
+
+        if (_visible && wantGlass == _glassActive)
+        {
+            if (_glassActive) ApplyGlassVeil(ThemeHelper.IsDarkTheme);
+            // 拖滑杆时别让预览自己淡出：接管动画值并延长停留时间
+            Root.BeginAnimation(UIElement.OpacityProperty, null);
+            Root.Opacity = 1;
+            _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(seconds, 0.5, 10));
+            RestartTimer();
+            return;
+        }
+
+        if (_visible) HideInstantly();
+        ShowTip(_currentKind, _currentState, seconds);
+    }
+
+    /// <summary>
+    /// 不做淡出动画直接收起。设置窗口里切换材质要用它：这一下收起只是为了腾出
+    /// 干净的屏幕让抓屏抓到"真实背景"，走动画反而会让用户看见提示消失又出现的全过程。
+    /// </summary>
+    private void HideInstantly()
+    {
+        StopFollow();
+        _hideTimer.Stop();
+        Root.BeginAnimation(UIElement.OpacityProperty, null);
+        BeginAnimation(LeftProperty, null);
+        BeginAnimation(TopProperty, null);
+        Root.Opacity = 1;
+        Hide();
+        _visible = false;
     }
 
     private bool SetStatusText(TipKind kind, bool? state)

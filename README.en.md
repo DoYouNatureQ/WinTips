@@ -22,7 +22,7 @@ A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scro
 - **Settings window**: Win11 Settings styling, applied and saved instantly. Flyout position is two independent axes — Top/Bottom plus Left/Center/Right (Top + Center, Top + Right, Bottom + Center, …) — or choose "Custom position" and drag the flyout anywhere, then save (one click restores the default).
 - **Multiple displays**: follows the focused display by default — the flyout lands on the display with the active window, positioned with that display's own DPI and taskbar state (edge-aware slide, mirrored accent bar and auto-hide taskbar following all still apply); turn "Follow the focused display" off to pin it back to the primary display.
 - **Visual placement**: in custom-position mode dashed guides mark the 15% edge zones and the zone the flyout center falls into is highlighted (that is the side it will slide from); the flyout snaps to the screen's center axes, and the arrow keys nudge it pixel by pixel (tap = 1 px, hold to repeat, Shift = 10 px).
-- **Bilingual UI**: built-in Simplified Chinese and English. Follows the system language by default; switch anytime under "Interface language" in Settings — effective immediately, no restart.
+- **Multilingual UI**: Simplified Chinese, Traditional Chinese, English, German, Japanese, Russian, Spanish and Portuguese built in. Follows the system language by default; other languages live in a drop-down in Settings — effective immediately, no restart.
 - Lives in the tray, single instance, no third-party dependencies (WPF + WinForms, .NET 10).
 
 ## Usage
@@ -47,29 +47,13 @@ dotnet publish -c Release -r win-x64 --self-contained true `
   -p:EnableCompressionInSingleFile=true -o publish
 ```
 
-> One-click rebuild: double-click `rebuild.bat` in the repo root (kills the old process → cleans old output → republishes the single-file exe → relaunches).
-
-### One-click rebuild
-
-Double-click `rebuild.bat` in the repo root. It will:
-
-1. Verify that `dotnet` and a `.csproj` are present (abort with an error if not);
-2. Kill any running `WinTips.exe` and wait until the process has fully exited (so no file locks remain);
-3. Delete `bin` / `obj` / `publish` (and tell you if a directory is still in use);
-4. Clean the single-file extraction cache under `%TEMP%\.net\WinTips\` (every publish changes the hash, so old folders are never reused — they pile up at roughly 8 MB each);
-5. Republish to `publish\` as a single-file, self-contained, compressed build;
-6. Confirm `publish\WinTips.exe` is there and drop any leftover `WinTips.pdb`;
-7. Delete `bin` / `obj` again to leave a clean source tree;
-8. Launch the new `publish\WinTips.exe`.
-
-Any failing step `pause`s and leaves the state intact for inspection.
-
 ## Known Limitations
 
 - The Insert hint is event-based and shows no on/off state (Windows does not track that state at the system level).
 - With several displays the flyout follows the active window's display by default; turn off "Follow the focused display" in the settings to keep it on the primary display.
 - A low-level keyboard hook cannot see keys sent to elevated (administrator) windows.
 - Cuts from non-keyboard sources (e.g. the "Cut" context-menu item) cannot be told apart from copies and are shown with the copy style.
+- The UI font prefers **HarmonyOS Sans SC** (Latin and CJK in one file), falling back to Microsoft YaHei UI / Segoe UI when it is not installed, which looks slightly different. The font is not bundled — install it yourself if you want the exact look.
 
 ## Credits
 

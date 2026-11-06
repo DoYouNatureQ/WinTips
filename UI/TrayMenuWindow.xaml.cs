@@ -27,9 +27,8 @@ public partial class TrayMenuWindow : Window
     private double _taskbarTopPx = double.MaxValue;
     private static TrayMenuWindow? _active;
 
-    /// <summary>字体族解析结果缓存：每次右键都新建 FontFamily 会重复解析候选字体串。</summary>
-    private static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol");
-    private static readonly FontFamily UiFont = new("Segoe UI Variable Display, Segoe UI");
+    /// <summary>字体族解析结果缓存：每次右键都新建 FontFamily 会重复解析候选字体串。正文族见 <see cref="AppFont.Ui"/>。</summary>
+    private static readonly FontFamily IconFont = AppFont.Icon;
 
     internal TrayMenuWindow(Action openSettings, Action exit, Action<bool> toggleStartup,
         bool startup, Action<TipKind, bool?> showTest)
@@ -83,11 +82,19 @@ public partial class TrayMenuWindow : Window
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
         if (ThemeHelper.AcrylicAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW))
+        {
+            // 亚克力只负责"透"，边界得自己画：浅色主题下材质亮度层吃掉约 85%，
+            // 缺了这道受光描边，菜单和一张白色卡片没有区别
+            Root.BorderThickness = new Thickness(1);
+            Root.BorderBrush = ThemeHelper.GlassStroke(dark);
+            Root.Background = new SolidColorBrush(ThemeHelper.GlassTint(dark));
             return;
+        }
 
         // 没有亚克力（Win10 / 高对比度 / 系统关掉透明效果 / 节电模式）：
-        // 不透明直角卡片，圆角缺口与玻璃色带都不会出现
+        // 不透明直角卡片，圆角缺口与玻璃色带都不会出现；边界由卡片自身提供
         Root.CornerRadius = new CornerRadius(0);
+        Root.BorderThickness = new Thickness(0);
         Root.Background = solid;
     }
 

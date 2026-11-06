@@ -1,6 +1,7 @@
 <Window x:Class="WinTips.UI.TrayMenuWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="clr-namespace:WinTips.Core"
         Title="WinTips Menu"
         WindowStyle="None"
         AllowsTransparency="False"
@@ -9,6 +10,7 @@
         Topmost="True"
         Background="Transparent"
         SizeToContent="WidthAndHeight"
+        FontFamily="{x:Static core:AppFont.Ui}"
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal">
     <Window.Resources>

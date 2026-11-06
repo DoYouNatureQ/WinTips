@@ -91,7 +91,7 @@ static int Wh_GetIntSetting(const wchar_t* name, ...) {
         {L"notifyCopy", 1},      {L"notifyPaste", 1},
         {L"notifyCut", 1},       {L"notifyAnyCopy", 1},
         {L"displayMs", 2000},    {L"animationPercent", 100},
-        {L"tipScale", 100},
+        {L"tipScale", 100},      {L"tintOpacity", 55},
         {L"offsetX", 0},         {L"offsetY", 0},
         {L"pollElevated", 1},    {L"suppressFullscreen", 0},
     };
@@ -112,7 +112,9 @@ static int Wh_GetIntSetting(const wchar_t* name, ...) {
 static const wchar_t* Wh_GetStringSetting(const wchar_t* name, ...) {
     std::wstring v = StandaloneReadSetting(name);
     if (v.empty()) {
-        if (_wcsicmp(name, L"vertical") == 0) {
+        if (_wcsicmp(name, L"language") == 0) {
+            v = L"auto";
+        } else if (_wcsicmp(name, L"vertical") == 0) {
             v = L"bottom";
         } else if (_wcsicmp(name, L"horizontal") == 0) {
             v = L"center";

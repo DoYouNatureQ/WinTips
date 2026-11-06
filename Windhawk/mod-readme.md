@@ -48,6 +48,10 @@ counts consecutive actions.
   administrator window has focus, which a low-level keyboard hook can't see.
 - **Follows Windows.** Per-monitor DPI, light/dark theme and the system accent
   color.
+- **Speaks your Windows language.** The card follows the Windows display
+  language: simplified or traditional Chinese, English, German, Japanese,
+  Russian, Spanish and Portuguese, with English for anything else. *Language*
+  pins one of the eight instead.
 - **Follows the focused display.** The card lands on the display with the
   window you are working in, positioned with that display's own DPI, work area
   and taskbar state, so a mixed-DPI setup still lines up. *Show on* can follow
@@ -66,6 +70,10 @@ counts consecutive actions.
 
 ## Settings
 
+- **Language** — language of the text on the card. Follow Windows (the
+  default) matches the Windows display language across simplified and
+  traditional Chinese, English, German, Japanese, Russian, Spanish and
+  Portuguese; any other value pins the card to that language.
 - **Caps Lock / Num Lock / Scroll Lock / Insert / Copy / Paste / Cut** — turn
   each tip on or off.
 - **Also notify non-keyboard copies** — context menu copies, in-app "Copy"
@@ -84,6 +92,9 @@ counts consecutive actions.
 - **Horizontal / vertical offset** — pixel-level fine tuning.
 - **Theme** — follow Windows, dark or light.
 - **Card material** — acrylic (blurred backdrop) or solid.
+- **Tint opacity** — acrylic only: how much of the card is the tint painted
+  over the blurred backdrop. 20 to 90 percent, 55 by default — lower shows more
+  of the background, higher looks more solid.
 - **Blur radius** — 0 to 40 pixels, acrylic material only.
 - **Accent color** — `#RRGGBB` for the status bar and the `×N` badge; leave
   empty to follow the system accent color.

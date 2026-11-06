@@ -7,6 +7,7 @@
         ResizeMode="NoResize" WindowStartupLocation="Manual"
         ShowInTaskbar="False" Topmost="True"
         Background="Transparent"
+        FontFamily="{x:Static loc:AppFont.Ui}"
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal">
     <!-- 自定义位置模式：全屏半透明遮罩压暗桌面，浮窗与拖动提示浮于其上 -->

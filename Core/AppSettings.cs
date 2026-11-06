@@ -36,12 +36,41 @@ public sealed class AppSettings
             : 1.0;
 
     /// <summary>
+    /// 浮窗是否启用"真毛玻璃"材质（抓屏模糊 + 底色 + 受光描边）。
+    ///
+    /// 默认关闭：保持最初的样子——只有系统亚克力（DWMSBT_TRANSIENTWINDOW），
+    /// 它只带一点壁纸色温、透不出背后的内容，但零开销、零兼容风险。
+    /// 开启后才走自绘模糊，那才是和 Win11 任务栏一致的观感，代价是每次弹出多一次抓屏。
+    /// </summary>
+    public bool TipGlass { get; set; }
+
+    public const double MinGlassOpacity = 0.20;
+    public const double MaxGlassOpacity = 0.90;
+    public const double DefaultGlassOpacity = 0.55;
+
+    /// <summary>
+    /// 毛玻璃底色（tint）的不透明度：越低越透、背景越清晰，越高越接近实心。
+    /// 默认 0.55 是"看得见背后在动"与"文字不失读"的平衡点——再高就回到系统
+    /// 材质那种看不出模糊的实心板，再低浅色壁纸上深色文字会糊。
+    /// </summary>
+    public double TipGlassOpacity { get; set; } = DefaultGlassOpacity;
+
+    /// <summary>容错归一化：缺省/非法值回落默认值，越界钳进取值范围（两位小数 = 滑杆刻度）。</summary>
+    public static double NormalizeGlassOpacity(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(Math.Round(value, 2), MinGlassOpacity, MaxGlassOpacity)
+            : DefaultGlassOpacity;
+
+    /// <summary>
     /// 开机自启的镜像值，仅供设置序列化与排查用；真实状态一律以
     /// <see cref="StartupManager.IsEnabled"/> 为准（注册表或 WinRT 启动任务）。
     /// </summary>
     public bool LaunchAtStartup { get; set; }
 
-    /// <summary>界面语言：System（跟随系统）/ zh（简体中文）/ en（English）。</summary>
+    /// <summary>
+    /// 界面语言：System（跟随系统）/ zh / zh-Hant / en / de / ja / ru / es / pt。
+    /// 解析与回写在 <see cref="Loc.Parse"/> / <see cref="Loc.ToSetting"/>，新增语言只需改这两处。
+    /// </summary>
     public string Language { get; set; } = "System";
 
     public const string PlacementLeft = "Left";
@@ -125,6 +154,7 @@ public sealed class AppSettings
                     s.TipPlacement = NormalizePlacement(s.TipPlacement);
                     s.TipVertical = NormalizeVertical(s.TipVertical);
                     s.TipScale = NormalizeScale(s.TipScale);
+                    s.TipGlassOpacity = NormalizeGlassOpacity(s.TipGlassOpacity);
                     NormalizeCustomPosition(s);
                     if (MigrateFromV1(s, text)) s.Save();
                     Instance = s;

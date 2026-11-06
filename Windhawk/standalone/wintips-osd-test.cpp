@@ -5,7 +5,7 @@
 // one copy of the drawing code, and supplies the Windhawk API shims plus a
 // wmain(). Build it with build-test.bat.
 //
-//   --shot <kind> <on|off> <scale> <out.png> [light|dark] [zh|en] [bg.png] [top|bottom] [pct]
+//   --shot <kind> <on|off> <scale> <out.png> [light|dark] [lang] [bg.png] [top|bottom] [pct] [tint]
 //   --selftest                 exercise hook -> window -> animation
 //   --bench [frames]           time one card frame and report the footprint
 //   --live [seconds]           run the overlay for real
@@ -88,8 +88,12 @@ bool SavePreviewPng(const wchar_t* path) {
         Graphics g(&preview);
         SolidBrush background(Color(255, 0x8A, 0x8A, 0x8A));
         g.FillRectangle(&background, 0, 0, g_cardWidth, g_cardHeight);
+        // The surface holds premultiplied pixels (see Surface in the mod), so
+        // it has to be read back as PARGB - treating it as straight ARGB would
+        // darken the preview the same way the old double premultiply darkened
+        // the real card.
         Bitmap card(g_cardWidth, g_cardHeight, g_surface.stride,
-                    PixelFormat32bppARGB, (BYTE*)g_surface.bits);
+                    PixelFormat32bppPARGB, (BYTE*)g_surface.bits);
         g.DrawImage(&card, 0, 0);
     }
 
@@ -124,7 +128,7 @@ bool ParseKind(const wchar_t* text, TipKind& kind) {
 int RunShot(int argc, wchar_t** argv) {
     if (argc < 6) {
         wprintf(L"usage: --shot <caps|num|scroll|insert|copy|paste|cut> "
-                L"<on|off> <scale> <out.png> [light|dark] [zh|en] [bg.png] "
+                L"<on|off> <scale> <out.png> [light|dark] [lang] [bg.png] "
                 L"[top|bottom]\n");
         return 2;
     }
@@ -155,8 +159,17 @@ int RunShot(int argc, wchar_t** argv) {
     if (argc > 10) {
         g_settings.tipScalePercent = _wtoi(argv[10]);
     }
+    // Optional 12th argument: the tint opacity setting, in percent (20-90).
+    if (argc > 11) {
+        g_settings.tintOpacity = Clamp(_wtoi(argv[11]), 20, 90);
+    }
     g_cardScale = g_scale * g_settings.TipScale();
-    g_chinese = _wcsicmp(argc > 7 ? argv[7] : L"zh", L"en") != 0;
+    // 8th argument: the card's language code (zh / zh-Hant / en / de / ja / ru
+    // / es / pt, or auto to follow this machine).
+    g_lang = (LanguageMode)ParseLanguageCode(argc > 7 ? argv[7] : L"zh");
+    if (g_lang == kLangAuto) {
+        g_lang = ResolveLanguage();
+    }
 
     g_frame.kind = kind;
     g_frame.on = on;
@@ -219,8 +232,8 @@ int RunShot(int argc, wchar_t** argv) {
 }
 
 int RunLive(int seconds) {
-    DetectLanguage();
     LoadSettings();
+    DetectLanguage();
     InterlockedExchange(&g_pollEnabled, g_settings.pollElevated ? 1 : 0);
 
     g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -601,8 +614,8 @@ int TaskbarBandChecks() {
 // Exercises the real chain (hook -> window message -> animation) and reports
 // what the overlay actually did, so the logic can be checked without Windhawk.
 int RunSelfTest() {
-    DetectLanguage();
     LoadSettings();
+    DetectLanguage();
 
     wprintf(L"--- environment ---\n");
     wprintf(L"standalone WinTips running : %s\n",
@@ -727,8 +740,8 @@ int RunBench(int argc, wchar_t** argv) {
         frames = 1;
     }
 
-    DetectLanguage();
     LoadSettings();
+    DetectLanguage();
     if (!ResolveTargetMonitor()) {
         LoadMonitor(PrimaryMonitor(), g_monitor);
     }
@@ -769,6 +782,8 @@ int RunBench(int argc, wchar_t** argv) {
     double captureMs =
         (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)freq.QuadPart;
 
+    // Clear + draw is the whole frame: GDI+ already leaves premultiplied
+    // pixels behind, so there is no separate blend pass to time.
     QueryPerformanceCounter(&t0);
     for (int i = 0; i < frames; i++) {
         g_surface.Clear();
@@ -777,32 +792,9 @@ int RunBench(int argc, wchar_t** argv) {
             RenderCard(g, g_cardScale, (float)g_cardWidth, (float)g_cardHeight,
                        g_frame, g_theme, false);
         }
-        g_surface.Premultiply();
     }
     QueryPerformanceCounter(&t1);
     double frameMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
-                     (double)freq.QuadPart / frames;
-
-    // Split the frame into its two halves so a regression points at the right
-    // one: GDI+ drawing, and the per-pixel premultiply pass.
-    QueryPerformanceCounter(&t0);
-    for (int i = 0; i < frames; i++) {
-        g_surface.Clear();
-        Graphics g(g_surface.dc);
-        RenderCard(g, g_cardScale, (float)g_cardWidth, (float)g_cardHeight,
-                   g_frame, g_theme, false);
-    }
-    QueryPerformanceCounter(&t1);
-    double drawMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
-                    (double)freq.QuadPart / frames;
-
-    QueryPerformanceCounter(&t0);
-    for (int i = 0; i < frames; i++) {
-        g_surface.Clear();
-        g_surface.Premultiply();
-    }
-    QueryPerformanceCounter(&t1);
-    double blendMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
                      (double)freq.QuadPart / frames;
 
     // Nothing on screen: the only timer left is the optional 250 ms poll, so a
@@ -829,10 +821,8 @@ int RunBench(int argc, wchar_t** argv) {
     wprintf(L"card                    : %dx%d px (dpi %.2f, size %d%%)\n",
             g_cardWidth, g_cardHeight, g_scale, g_settings.tipScalePercent);
     wprintf(L"backdrop capture + blur : %.2f ms   once per tip\n", captureMs);
-    wprintf(L"card frame (draw+blend) : %.3f ms   over %d frames\n", frameMs,
+    wprintf(L"card frame (clear+draw) : %.3f ms   over %d frames\n", frameMs,
             frames);
-    wprintf(L"  of which drawing      : %.3f ms\n", drawMs);
-    wprintf(L"  of which premultiply  : %.3f ms\n", blendMs);
     wprintf(L"entrance animation      : %d ms     %d frames at 60 Hz\n", animMs,
             animFrames);
     wprintf(L"a full tip costs about  : %.1f ms CPU\n",

@@ -4,7 +4,8 @@
         xmlns:loc="clr-namespace:WinTips.Core"
         Title="{loc:Tr SettingsTitle}" Width="800" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
-        Background="Transparent" ShowInTaskbar="False">
+        Background="Transparent" ShowInTaskbar="False"
+        FontFamily="{x:Static loc:AppFont.Ui}">
     <!-- Win11 设置风格：Mica 底 + 圆角半透明卡片分组；两大板块左右并排，避免窄高比例 -->
     <Grid>
         <Grid.RowDefinitions>
@@ -29,8 +30,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Text="{loc:Tr SettingsHeader}" FontSize="20" FontWeight="SemiBold"
-                       FontFamily="Segoe UI Variable Display, Segoe UI"/>
+            <TextBlock Text="{loc:Tr SettingsHeader}" FontSize="20" FontWeight="SemiBold"/>
             <TextBlock x:Name="SubText" Text="{loc:Tr SettingsSubtitle}"
                        FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
         </StackPanel>
@@ -107,6 +107,34 @@
                                        Text="{loc:Tr RowFocusMonitorDesc}"/>
                         </StackPanel>
                     </Grid>
+                    <Border x:Name="SepK9" Height="1" Margin="0,3" Opacity="0.5"/>
+                    <!-- 玻璃材质：开关决定走不走"抓屏模糊"（关 = 系统亚克力，即最初的样子）。
+                         透明度不再单占一整块（标签 + 滑杆 + 说明三行太占高度），
+                         改成"标签 · 滑杆 · 数值"一行，只保留开关下方一句说明 -->
+                    <StackPanel Margin="0,8">
+                        <Grid>
+                            <ToggleButton x:Name="GlassToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
+                            <TextBlock Text="{loc:Tr RowGlass}" FontSize="14" Margin="58,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </Grid>
+                        <TextBlock x:Name="GlassDesc" Text="{loc:Tr RowGlassDesc}" FontSize="11.5" Margin="58,3,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <!-- 透明度与开关共用 58 的左侧缩进，读起来是一条线上的两行；
+                         滑杆用星号列填满剩余宽度，别把控件挤成一小截 -->
+                    <Grid Margin="0,12,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="58"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="44"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="GlassOpacityLabel" Grid.Column="0" Text="{loc:Tr RowGlassOpacity}" FontSize="12.5"
+                                   VerticalAlignment="Center"/>
+                        <Slider x:Name="GlassOpacitySlider" Grid.Column="1" Style="{StaticResource Win11Slider}" Minimum="0.2" Maximum="0.9" TickFrequency="0.05"
+                                VerticalAlignment="Center" Margin="0,0,14,0"
+                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True"
+                                Thumb.DragStarted="GlassOpacitySlider_DragStarted" Thumb.DragCompleted="GlassOpacitySlider_DragCompleted"/>
+                        <TextBlock x:Name="GlassOpacityText" Grid.Column="2" FontSize="12.5" VerticalAlignment="Center"
+                                   TextAlignment="Right"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 
@@ -180,14 +208,19 @@
                         <TextBlock x:Name="StartupHint" FontSize="11.5" Margin="58,3,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
                     </StackPanel>
                     <Border x:Name="SepB5" Height="1" Margin="0,3" Opacity="0.5"/>
-                    <Grid Margin="0,6,0,8">
-                        <TextBlock Text="{loc:Tr RowLanguage}" FontSize="14" VerticalAlignment="Center"/>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <RadioButton x:Name="LangSystem" Content="{loc:Tr LangSystem}" GroupName="UiLanguage" Style="{StaticResource SegRadio}"/>
-                            <RadioButton x:Name="LangZh" Content="{loc:Tr LangChinese}" GroupName="UiLanguage" Style="{StaticResource SegRadio}" Margin="6,0"/>
-                            <RadioButton x:Name="LangEn" Content="{loc:Tr LangEnglish}" GroupName="UiLanguage" Style="{StaticResource SegRadio}"/>
-                        </StackPanel>
-                    </Grid>
+                    <!-- 语言：只有「跟随系统」留在开关上，其余语言收进下拉框
+                         （下拉项一律用该语言自己的写法，切换界面语言时不必重排）
+                         下拉框始终可点：跟随系统时点它会自动把开关关掉（见 LeaveSystemLanguage） -->
+                    <StackPanel Margin="0,8">
+                        <Grid>
+                            <TextBlock Text="{loc:Tr RowLanguage}" FontSize="14" VerticalAlignment="Center"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="{loc:Tr LangSystem}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <ToggleButton x:Name="LangSystemToggle" Style="{StaticResource Win11Switch}"/>
+                            </StackPanel>
+                        </Grid>
+                        <ComboBox x:Name="LangCombo" Style="{StaticResource Win11ComboBox}" Margin="0,8,0,0"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </Grid>

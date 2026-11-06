@@ -154,6 +154,48 @@ internal static class ThemeHelper
     public static Color PickerScrim() =>
         HighContrast ? WithAlpha(0xD9, SystemColors.WindowColor) : Color.FromArgb(0x40, 0x00, 0x00, 0x00);
 
+    /// <summary>
+    /// 玻璃片的底色：叠在亚克力之上的一层极淡 tint。
+    ///
+    /// 亚克力在浅色主题下亮度层吃掉约 85%，真正透上来的只剩色温；窗口若再完全透明，
+    /// 就没有任何"介质"可言——模糊无处承载，观感和一块白纸没有区别。这里透明度刻意
+    /// 压得很低，只为让那点透光有个可见的落点，不至于把玻璃又压回实心。
+    ///
+    /// 深色下用一层极淡的<b>白</b>而不是黑：深色亚克力本身就是 #2C2C2C 高不透明度，
+    /// 再往暗里压只会更像实心板；加一点白雾才有"雾面玻璃"的观感，也才不会把
+    /// 材质本来就有限的透光彻底吃掉。
+    /// </summary>
+    public static Color GlassTint(bool dark) =>
+        HighContrast ? SystemColors.WindowColor
+            : dark ? Color.FromArgb(0x0F, 0xFF, 0xFF, 0xFF)
+                   : Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF);
+
+    /// <summary>
+    /// 玻璃片描边：顶部受光、向下渐隐的 1px 线。
+    ///
+    /// 人眼判定"这是一片玻璃"主要靠边界而不是模糊强度——四边等亮会像贴纸，
+    /// 只有顶部那道略亮的高光才有被光打到的立体感，也才像 Win11 的原生浮层。
+    /// </summary>
+    public static Brush GlassStroke(bool dark)
+    {
+        if (HighContrast) return new SolidColorBrush(SystemColors.WindowTextColor);
+
+        var brush = new LinearGradientBrush(
+            dark ? Color.FromArgb(0x3D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x4A, 0xFF, 0xFF, 0xFF),
+            dark ? Color.FromArgb(0x0F, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x14, 0x00, 0x00, 0x00),
+            new Point(0.5, 0), new Point(0.5, 1));
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>
+    /// 自绘模糊用的底色基（不透明 RGB）：对齐 Win11 任务栏的取值——浅色 #F3F3F3、深色 #202020。
+    /// 这里只定义"混什么颜色"，实际不透明度由调用方按窗口大小与观感决定。
+    /// </summary>
+    public static Color GlassTintBase(bool dark) =>
+        HighContrast ? SystemColors.WindowColor
+            : dark ? Color.FromRgb(0x20, 0x20, 0x20) : Color.FromRgb(0xF3, 0xF3, 0xF3);
+
     /// <summary>取某个颜色的低透明度版本（高亮带用）。</summary>
     public static Color Tint(Color c, byte alpha) => WithAlpha(alpha, c);
 
@@ -162,58 +204,79 @@ internal static class ThemeHelper
     /// <summary>
     /// 把控件模板里用到的画刷塞进窗口级资源，模板一律走 DynamicResource，
     /// 动态资源搜索会命中窗口级覆盖值。高对比度下这些值全部来自 SystemColors。
+    ///
+    /// 同一份配色也会写进应用级资源：ComboBox 的下拉层、右键菜单等弹出内容是
+    /// 独立的窗口树，往上搜资源搜不到窗口，只能命中应用级；只写窗口级的话，
+    /// 弹出层会拿到样式表里的浅色兜底值（深色模式下就是浅底黑字）。
     /// </summary>
     public static void ApplyTemplateResources(Window w, bool dark)
     {
-        var r = w.Resources;
         Color text = TextPrimary(dark);
         bool hc = HighContrast;
 
-        SolidColorBrush Solid(Color c) => new(c);
+        var map = new Dictionary<string, Color>();
 
-        r["AccentBrush"] = Solid(AccentColor);
-        r["OnAccentBrush"] = Solid(OnAccent(dark));
+        map["AccentBrush"] = AccentColor;
+        map["OnAccentBrush"] = OnAccent(dark);
 
         // 卡片 / 描边
-        r["CardBrush"] = Solid(hc ? SystemColors.WindowColor
-            : dark ? Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xA8, 0xFF, 0xFF, 0xFF));
-        r["CardStrokeBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00));
+        map["CardBrush"] = hc ? SystemColors.WindowColor
+            : dark ? Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xA8, 0xFF, 0xFF, 0xFF);
+        map["CardStrokeBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00);
 
         // 悬停：HC 用系统的“高亮底 + 高亮前景”，与原生菜单一致
-        r["HoverBrush"] = Solid(hc ? SystemColors.HighlightColor
-            : dark ? Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0x00, 0x00, 0x00));
-        r["HoverTextBrush"] = Solid(hc ? SystemColors.HighlightTextColor : text);
-        r["SegHoverBrush"] = Solid(hc ? SystemColors.HighlightColor
-            : dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0F, 0x00, 0x00, 0x00));
+        map["HoverBrush"] = hc ? SystemColors.HighlightColor
+            : dark ? Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0x00, 0x00, 0x00);
+        map["HoverTextBrush"] = hc ? SystemColors.HighlightTextColor : text;
+        map["SegHoverBrush"] = hc ? SystemColors.HighlightColor
+            : dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0F, 0x00, 0x00, 0x00);
 
         // 文字与分隔线
-        r["SecondaryTextBrush"] = Solid(TextSecondary(dark));
-        r["DividerBrush"] = Solid(Divider(dark));
-        r["WindowSurfaceBrush"] = Solid(WindowSurface(dark));
+        map["TextPrimaryBrush"] = text;
+        map["SecondaryTextBrush"] = TextSecondary(dark);
+        map["DividerBrush"] = Divider(dark);
+        map["WindowSurfaceBrush"] = WindowSurface(dark);
 
         // 滑杆
-        r["SliderRestBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : dark ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x3D, 0x00, 0x00, 0x00));
-        r["ThumbRingBrush"] = Solid(hc ? SystemColors.WindowColor
-            : dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White);
-        r["ThumbStrokeBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : Color.FromArgb(0x14, 0x00, 0x00, 0x00));
+        map["SliderRestBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x3D, 0x00, 0x00, 0x00);
+        map["ThumbRingBrush"] = hc ? SystemColors.WindowColor
+            : dark ? Color.FromRgb(0x2B, 0x2B, 0x2B) : Colors.White;
+        map["ThumbStrokeBrush"] = hc ? SystemColors.WindowTextColor
+            : Color.FromArgb(0x14, 0x00, 0x00, 0x00);
 
         // 开关：关闭态的描边与滑块在深色下原本接近纯黑（几乎看不见），改为跟随明暗
-        r["SwitchBorderBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : dark ? Color.FromArgb(0x8A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x6E, 0x00, 0x00, 0x00));
-        r["SwitchThumbBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : dark ? Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF) : Color.FromRgb(0x1A, 0x1A, 0x1A));
-        r["SwitchThumbOnBrush"] = Solid(hc ? SystemColors.HighlightTextColor : Colors.White);
-        r["SwitchBorderHoverBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : dark ? Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x99, 0x00, 0x00, 0x00));
-        r["SwitchThumbHoverBrush"] = Solid(hc ? SystemColors.WindowTextColor
-            : dark ? Colors.White : Color.FromRgb(0x33, 0x33, 0x33));
+        map["SwitchBorderBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0x8A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x6E, 0x00, 0x00, 0x00);
+        map["SwitchThumbBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF) : Color.FromRgb(0x1A, 0x1A, 0x1A);
+        map["SwitchThumbOnBrush"] = hc ? SystemColors.HighlightTextColor : Colors.White;
+        map["SwitchBorderHoverBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x99, 0x00, 0x00, 0x00);
+        map["SwitchThumbHoverBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Colors.White : Color.FromRgb(0x33, 0x33, 0x33);
 
         // 自绘标题栏的关闭键
-        r["CaptionCloseHoverBrush"] = Solid(hc ? SystemColors.HighlightColor : Color.FromRgb(0xC4, 0x2B, 0x1C));
-        r["CaptionClosePressedBrush"] = Solid(hc ? SystemColors.HighlightColor : Color.FromRgb(0xB0, 0x27, 0x1A));
-        r["CaptionCloseGlyphBrush"] = Solid(hc ? SystemColors.HighlightTextColor : Colors.White);
+        map["CaptionCloseHoverBrush"] = hc ? SystemColors.HighlightColor : Color.FromRgb(0xC4, 0x2B, 0x1C);
+        map["CaptionClosePressedBrush"] = hc ? SystemColors.HighlightColor : Color.FromRgb(0xB0, 0x27, 0x1A);
+        map["CaptionCloseGlyphBrush"] = hc ? SystemColors.HighlightTextColor : Colors.White;
+
+        // 输入类控件（下拉框）：卡片上再叠一层的浅色底，深色下用白色低透明度而不是黑色
+        map["InputBrush"] = hc ? SystemColors.WindowColor
+            : dark ? Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF);
+        map["InputHoverBrush"] = hc ? SystemColors.WindowColor
+            : dark ? Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF);
+        map["InputStrokeBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00);
+        map["ChevronBrush"] = hc ? SystemColors.WindowTextColor
+            : dark ? Color.FromArgb(0xA6, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x66, 0x00, 0x00, 0x00);
+
+        var app = Application.Current?.Resources;
+        foreach (var (key, color) in map)
+        {
+            w.Resources[key] = new SolidColorBrush(color);
+            if (app != null) app[key] = new SolidColorBrush(color);
+        }
     }
 }
