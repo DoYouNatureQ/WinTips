@@ -1,5 +1,7 @@
 <div align="center">
 
+<sub>A Windows 11-style Caps / Num / Scroll Lock indicator with an acrylic flyout. <a href="README.en.md">Read in English</a></sub>
+
 # WinTips
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE) ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square) ![Windows](https://img.shields.io/badge/Windows-11-0078D4?style=flat-square) ![Dependencies](https://img.shields.io/badge/dependencies-none-4B5563?style=flat-square)

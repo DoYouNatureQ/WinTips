@@ -38,11 +38,11 @@ public sealed class AppSettings
     /// <summary>
     /// 浮窗是否启用"真毛玻璃"材质（抓屏模糊 + 底色 + 受光描边）。
     ///
-    /// 默认关闭：保持最初的样子——只有系统亚克力（DWMSBT_TRANSIENTWINDOW），
-    /// 它只带一点壁纸色温、透不出背后的内容，但零开销、零兼容风险。
-    /// 开启后才走自绘模糊，那才是和 Win11 任务栏一致的观感，代价是每次弹出多一次抓屏。
+    /// 默认开启：自绘模糊才是和 Win11 任务栏一致的观感，代价是每次弹出多一次抓屏。
+    /// 关闭后只剩系统亚克力（DWMSBT_TRANSIENTWINDOW）——零开销、零兼容风险，
+    /// 但只带一点壁纸色温，透不出背后的内容。
     /// </summary>
-    public bool TipGlass { get; set; }
+    public bool TipGlass { get; set; } = true;
 
     public const double MinGlassOpacity = 0.20;
     public const double MaxGlassOpacity = 0.90;
@@ -126,8 +126,10 @@ public sealed class AppSettings
         }
     }
 
-    /// <summary>设置文件结构版本；V1.1 及以前没有该字段（AnimationSpeed 为整数档位）。</summary>
-    public int SettingsVersion { get; set; } = 2;
+    /// <summary>设置文件结构版本；V1.1 及以前没有该字段（AnimationSpeed 为整数档位），V3 起玻璃材质默认开启。</summary>
+    public int SettingsVersion { get; set; } = CurrentSettingsVersion;
+
+    private const int CurrentSettingsVersion = 3;
 
     /// <summary>浮现动画速度倍率：0 无动画，否则动画时长 = 300ms × 倍率（0.1–3.0，步进 0.1）。</summary>
     public double AnimationSpeed { get; set; } = 1.0;
@@ -163,7 +165,9 @@ public sealed class AppSettings
                     s.TipScale = NormalizeScale(s.TipScale);
                     s.TipGlassOpacity = NormalizeGlassOpacity(s.TipGlassOpacity);
                     NormalizeCustomPosition(s);
-                    if (MigrateFromV1(s, text)) s.Save();
+                    bool migrated = MigrateFromV1(s, text);
+                    migrated |= MigrateGlassDefault(s);
+                    if (migrated) s.Save();
                     Instance = s;
                     return s;
                 }
@@ -196,6 +200,19 @@ public sealed class AppSettings
             return true;
         }
         catch { return false; }
+    }
+
+    /// <summary>
+    /// V3 起玻璃材质改为默认开启：旧版设置文件里 TipGlass 为 false 的绝大多数只是
+    /// 沿用了当时的默认值（要显式关掉得先开一次），所以这里统一扳到 true 并升版本，
+    /// 让升级后的观感和新装一致。升到 V3 之后用户的开关不再被改写。
+    /// </summary>
+    private static bool MigrateGlassDefault(AppSettings s)
+    {
+        if (s.SettingsVersion >= CurrentSettingsVersion) return false;
+        s.TipGlass = true;
+        s.SettingsVersion = CurrentSettingsVersion;
+        return true;
     }
 
     public void Save()
