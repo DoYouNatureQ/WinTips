@@ -43,14 +43,7 @@ Just run `WinTips.exe` — once the tray icon appears, it is working.
 
 ## License
 
-WinTips is released under the **GNU General Public License v3.0** (or any later version); the full text is in [LICENSE](LICENSE).
-
-- You may use, modify and redistribute it, including commercially — but **redistributing a modified version requires providing the complete corresponding source under the GPL**, and derivative works must also be GPL.
-- Unlike the AGPL, the GPL has no network clause: offering the program to others as an online service does not trigger the source requirement (and a local desktop tool like this never would anyway).
-- Copyright notices and the license text must be preserved when redistributing.
-- **Versions 0.5 and earlier were released under the MIT License**: those already-published versions remain usable under the MIT terms (a granted license cannot be revoked); the MIT text is in those releases' git history.
-- For closed-source integration or a commercial exemption, open an issue to request a separate license.
-- The UI font HarmonyOS Sans is **not covered by this project's GPL license**; it has its own agreement (see Credits below).
+WinTips is released under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) for the full text.
 
 ## Credits
 
