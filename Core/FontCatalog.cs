@@ -6,8 +6,28 @@ using System.Windows.Media;
 
 namespace WinTips.Core;
 
-public sealed record FontChoice(string Name, bool IsDefault)
+/// <summary>
+/// 字体下拉框里的一项：内置默认字体（<see cref="IsDefault"/>），或系统里已装的某个字族。
+///
+/// 这里必须是**引用相等**的 class，不能用 record：切换界面语言时会重建整个列表，
+/// 而 WPF 的 Selector 在重新设 ItemsSource 时是按 Equals 去找「原选中项」的。record 是
+/// 值相等，新旧两个「默认字体」项必然相等，于是选中项被还原成**旧的那个实例**，
+/// ComboBox.SelectionBoxItem 的引用一直不变，选中的 ContentPresenter 也就不会重新
+/// 计算 ToString —— 下拉框收起时显示的文字会冻结在第一次渲染时的语言（切英文后仍显示
+/// 「默认字体」）。改成 class 后每次重建都是新实例，选中项会真正变化，文字才会跟着语言走。
+/// </summary>
+public sealed class FontChoice
 {
+    public FontChoice(string name, bool isDefault)
+    {
+        Name = name;
+        IsDefault = isDefault;
+    }
+
+    public string Name { get; }
+
+    public bool IsDefault { get; }
+
     public string Display => IsDefault ? Loc.T("FontChoiceDefault") : Name;
 
     public override string ToString() => Display;

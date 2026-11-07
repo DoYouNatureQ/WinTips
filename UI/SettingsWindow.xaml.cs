@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Navigation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using WinTips.Core;
 using WinTips.Native;
 
@@ -331,7 +333,8 @@ public partial class SettingsWindow : Window
             if (_syncingLanguage) return;
             if (LangCombo.SelectedItem is LanguageOption option) SetLanguage(option.Language);
         };
-        LangCombo.DropDownOpened += (_, _) => LeaveSystemLanguage();
+        // 打开下拉只是浏览，不改变语言设置；只有真正点选某一项才提交（见 HookLanguageItemClicks）。
+        LangCombo.DropDownOpened += (_, _) => HookLanguageItemClicks();
         LangCombo.SelectionChanged += (_, _) =>
         {
             if (_syncingLanguage) return;
@@ -418,17 +421,33 @@ public partial class SettingsWindow : Window
         finally { _syncingLanguage = false; }
     }
 
-    private void LeaveSystemLanguage()
+    /// <summary>
+    /// 下拉项容器在打开后才生成，这里挂一次点击处理，兜住「点了当前已选中的那一项」
+    /// 这种 SelectionChanged 不会触发的情况——此时也应退出「跟随系统」。
+    /// </summary>
+    private void HookLanguageItemClicks()
     {
-        if (Loc.Language != AppLanguage.System) return;
-        if (LangCombo.SelectedItem is not LanguageOption option) return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (!LangCombo.IsDropDownOpen) return;
 
-        Save(v => v.Language = Loc.ToSetting(option.Language));
-        Loc.Apply(option.Language);
+            foreach (LanguageOption option in LangCombo.Items)
+            {
+                if (LangCombo.ItemContainerGenerator.ContainerFromItem(option) is not ComboBoxItem container) continue;
+                container.PreviewMouseLeftButtonUp -= OnLanguageItemClick;
+                container.PreviewMouseLeftButtonUp += OnLanguageItemClick;
+            }
+        }));
+    }
 
-        _syncingLanguage = true;
-        try { LangSystemToggle.IsChecked = false; }
-        finally { _syncingLanguage = false; }
+    private void OnLanguageItemClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ComboBoxItem { DataContext: LanguageOption option }) return;
+        if (LangCombo.SelectedItem is not LanguageOption current) return;
+        if (!ReferenceEquals(current, option)) return;
+
+        // 等下拉收起后再提交，避免在弹出层内部改动界面语言
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => SetLanguage(option.Language)));
     }
 
     private void SetLanguage(AppLanguage language)
