@@ -1,5 +1,7 @@
 using System.Threading;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using WinTips.Core;
@@ -13,6 +15,7 @@ public partial class App : Application
     private bool _ownsMutex;
     private KeyboardHook? _hook;
     private OsdController? _osd;
+    private InputStateWatcher? _input;
     private TrayService? _tray;
     private SettingsWindow? _settings;
 
@@ -20,34 +23,28 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        if (Environment.GetEnvironmentVariable("WINTIPS_GPU") != "1")
+        {
+            RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+        }
+
         DispatcherUnhandledException += (_, args) =>
         {
-            try
-            {
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(AppSettings.LogPath)!);
-                System.IO.File.AppendAllText(AppSettings.LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {args.Exception}\n\n");
-            }
-            catch { }
+            LogException(args.Exception);
             args.Handled = true;
         };
 
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            try
-            {
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(AppSettings.LogPath)!);
-                System.IO.File.AppendAllText(AppSettings.LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] FATAL: {args.ExceptionObject}\n\n");
-            }
-            catch { }
+            LogException(args.ExceptionObject as Exception
+                         ?? new Exception(args.ExceptionObject?.ToString() ?? "unknown"), fatal: true);
         };
 
         _mutex = new Mutex(true, @"Local\WinTips.SingleInstance", out bool createdNew);
         _ownsMutex = createdNew;
 
-        // 读配置并确定界面语言：任何窗口（含下面的单实例提示窗）创建前必须完成
         var settings = AppSettings.Load();
         Loc.Apply(Loc.Parse(settings.Language));
-        // 界面字体同理：空串 = 内嵌的 HarmonyOS Sans SC，否则按用户选的字族解析
         AppFont.Apply(settings.UiFont);
 
         if (!createdNew)
@@ -57,19 +54,21 @@ public partial class App : Application
             return;
         }
 
-        // 只作为镜像写回设置文件；真实状态每次由 StartupManager 现查（注册表或 WinRT 启动任务）
         settings.LaunchAtStartup = StartupManager.IsEnabled();
 
         _osd = new OsdController();
+        _input = new InputStateWatcher();
+        _input.LanguageChanged += hkl => _osd!.OnLanguageChanged(hkl);
+        _input.ImeModeChanged += native => _osd!.OnImeModeChanged(native);
         _hook = new KeyboardHook();
         _hook.ToggleChanged += k => _osd!.OnToggleChanged(k);
         _hook.Pressed += k => _osd!.OnInsertPressed(k);
         _hook.ClipboardPressed += k => _osd!.OnClipboardPressed(k);
+        _hook.SwitchKeyDown += s => _input!.Touch(s);
         _hook.Install();
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));
 
-        // 跟随系统主题 / 高对比度：切换后让已打开的窗口重刷配色与材质
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
 
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
@@ -77,16 +76,40 @@ public partial class App : Application
             _osd?.PreWarm();
 
             if (e.Args.Length > 0 && e.Args[0] == "--test")
+            {
                 RunTest(e.Args.Skip(1).ToArray());
-            else if (e.Args.Contains("--settings"))
-                ShowSettings();
+                return;
+            }
+
+            if (e.Args.Contains("--settings")) ShowSettings();
+
+            ShowWelcomeIfFirstRun(settings);
         }));
     }
 
-    /// <summary>
-    /// 系统主题 / 对比度变化回调。SystemEvents 在独立的系统线程触发，
-    /// 必须切回 UI 线程再广播，否则会在非创建线程操作控件资源。
-    /// </summary>
+    private void ShowWelcomeIfFirstRun(AppSettings settings)
+    {
+        if (settings.WelcomeShown) return;
+
+        settings.WelcomeShown = true;
+        settings.Save();
+
+        try { _osd?.ShowWelcome(); }
+        catch (Exception ex) { LogException(ex); }
+    }
+
+    private static void LogException(Exception ex, bool fatal = false)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(AppSettings.LogPath)!);
+            string tag = fatal ? "FATAL: " : "";
+            System.IO.File.AppendAllText(AppSettings.LogPath,
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {tag}{ex}\n\n");
+        }
+        catch { }
+    }
+
     private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
     {
         if (e.Category is not (UserPreferenceCategory.General
@@ -95,7 +118,7 @@ public partial class App : Application
             return;
 
         try { Current?.Dispatcher.BeginInvoke(new Action(ThemeHelper.RaiseChanged)); }
-        catch { /* 退出过程中可能已无 Dispatcher */ }
+        catch {  }
     }
 
     private void RunTest(string[] args)
@@ -125,8 +148,9 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-        AppSettings.FlushPendingSave(); // 滑杆的延迟保存可能还没到点，退出前补写一次
+        AppSettings.FlushPendingSave();
         _hook?.Dispose();
+        _input?.Dispose();
         _tray?.Dispose();
         if (_ownsMutex)
         {

@@ -9,30 +9,14 @@ using WinTips.Native;
 
 namespace WinTips.UI;
 
-/// <summary>
-/// 左侧挂锁图标（锁扣随开/关旋转+回弹）、中间“大写锁定 开启/关闭”、
-/// 强调色指示条（开=60px 全不透明，关=36px 20% 不透明）；指示条默认在卡片下缘，
-/// 浮窗挂在屏幕顶部区域时镜像到文字上方，始终贴近它所挂靠的那条屏幕边。
-/// 锁扣与指示条共用同一时长与缓动，且在窗口可见后才同帧启动，保证同步起落。
-/// 显示位置：默认主显示器；开启「跟随焦点显示器」后落在焦点窗口所在的那块屏，
-/// 并按该屏自己的 DPI 缩放与任务栏形态摆放。垂直可贴屏幕顶部或任务栏上方，
-/// 水平可设为左侧/居中/右侧（默认居中、任务栏上方）；点击穿透、不抢焦点。
-/// 预热分两步：EnsureHandle() 只建句柄不显示窗口（原地 Show() 会带出一帧
-/// DWM 背景）；随后把窗口移到屏幕外真实渲染一帧再隐藏，暖起冷启动的
-/// 渲染管线。句柄与管线就绪后首次 ShowTip 无创建迟滞，也不会看到内容
-/// “初始化”的过程。
-/// </summary>
 public partial class OsdWindow : Window
 {
-    /// <summary>跟随轮询间隔（ms）。任务栏滑出动画约 200ms，60ms 一次足够跟手。</summary>
     private const int FollowIntervalMs = 60;
 
-    /// <summary>跟随挪动的缓动时长（ms）：比弹出动画短，避免慢吞吞地追。</summary>
     private const int FollowMs = 140;
 
     private readonly DispatcherTimer _hideTimer = new();
 
-    /// <summary>可见期间跟随任务栏滑出/收起；只在需要时运行（见 StartFollow）。</summary>
     private readonly DispatcherTimer _followTimer = new();
 
     private bool _visible;
@@ -42,37 +26,31 @@ public partial class OsdWindow : Window
     private DispatcherTimer? _warmGuard;
     private TipKind _currentKind;
 
-    /// <summary>当前提示的状态（锁键的开/关；剪贴板类为 null）。仅供重铺外观时按原样重弹。</summary>
     private bool? _currentState;
+
+    private string _languageText = string.Empty;
+
+    private bool _welcome;
+    private string _welcomeTitle = string.Empty;
+    private string _welcomeSubtitle = string.Empty;
+
     private double _lastLeft;
     private double _lastTop;
     private double _followLeft;
     private double _followTop;
     private int _moveGen;
 
-    /// <summary>
-    /// 本次显示的目标显示器（DIP 矩形 + 该屏缩放），每次 <see cref="ShowTip"/> 时按当时的焦点屏重定；
-    /// 一轮显示内的重排（改状态、跟任务栏、DPI 变化）都沿用同一个目标，不会自己乱跑。
-    /// </summary>
     private MonitorArea _target = MonitorArea.Primary();
 
-    /// <summary>系统剪贴板更新（WM_CLIPBOARDUPDATE），由 OsdController 订阅。</summary>
     public event Action? ClipboardUpdated;
 
     private int _clipCount;
     private bool _countIncreased;
 
-    /// <summary>指示条贴在文字上方（浮窗挂靠屏幕顶边）而非下方。</summary>
     private bool _barOnTop;
 
     private static bool IsClip(TipKind k) => TipInfo.IsClipboard(k);
 
-    /// <summary>
-    /// 当前字族与它的两个字重。FormattedText 每次测量都要用到，构造一次缓存住；
-    /// 必须与窗口 XAML 上那个 <c>{DynamicResource AppUiFont}</c> 同源（都来自
-    /// <see cref="AppFont.Ui"/>），否则测出来的是另一个字体的宽度，浮窗会偏宽或裁字。
-    /// 用户换字体时由 <see cref="OnUiFontChanged"/> 整体重建。
-    /// </summary>
     private FontFamily _osdFont = AppFont.Ui;
     private Typeface _mediumFace = CreateFace(AppFont.Ui, FontWeights.Medium);
     private Typeface _semiBoldFace = CreateFace(AppFont.Ui, FontWeights.SemiBold);
@@ -80,42 +58,23 @@ public partial class OsdWindow : Window
     private static Typeface CreateFace(FontFamily family, FontWeight weight) =>
         new(family, FontStyles.Normal, weight, FontStretches.Normal);
 
-    /// <summary>
-    /// 文案宽度缓存。提示文案是有限集合（7 种提示 × 开/关 × ×N），命中率极高；
-    /// 原先每次弹出都要重新走一遍 FormattedText 的字体匹配与字形布局。
-    /// 非静态：换字体后整表作废，而窗口是常驻复用的。
-    /// </summary>
     private readonly Dictionary<(string Text, double Size, FontWeight Weight), double> _widthCache = new();
 
-    /// <summary>当前外观键（深浅色 / 高对比度 / 强调色）：变化时才重建画刷。</summary>
     private (bool Dark, bool HighContrast, Color Accent) _chromeKey;
     private bool _chromeReady;
 
-    /// <summary>当前是否走玻璃路径。只有它为真才值得抓屏——降级成纯色卡片时抓了也没地方用。</summary>
     private bool _glassActive;
 
-    /// <summary>玻璃底色层（叠在模糊图之上）：抓屏失败时窗口还剩它，不会变成透明空洞。</summary>
     private SolidColorBrush? _glassVeilBrush;
 
-    /// <summary>模糊半径（物理像素）。太小像没对上焦，太大糊成一块无特征的灰。</summary>
+    private ImageBrush? _glassBrush;
+
     private const int GlassBlurRadius = 16;
 
-    /// <summary>抓屏时向四周多抓的一圈，模糊完裁掉：不给足边界，窗口边缘会因为卷积取样不足而发暗。</summary>
     private const int GlassBlurPadding = 24;
 
-    /// <summary>
-    /// 卡片圆角（DIP）。这个值必须锁定，不能跟着"浮窗大小"放大。
-    ///
-    /// 窗口本身的圆角是 DWM 裁的（DWMWCP_ROUND），半径是系统固定值（约 8 DIP，
-    /// 与窗口尺寸无关）；而玻璃那两层是 WPF 自绘的。两者原本同为 8，1.0 倍时严丝合缝；
-    /// 一旦倍率把它放大（它们挂在 Root 的 LayoutTransform 下），就会出现两条弧打架——
-    /// 放大时自绘弧 16 DIP 被 DWM 的 8 DIP 弧硬切，角上的 1px 描边直接断掉、角变形；
-    /// 缩小时自绘弧又比窗口小，角外侧多露一圈系统材质。所以圆角与描边一律按 1/倍率
-    /// 反向补偿（见 <see cref="ApplyGlassMetrics"/>），让屏幕上的实际量恒定。
-    /// </summary>
     private const double GlassCornerRadius = 8;
 
-    /// <summary>玻璃描边宽度（DIP），同样不随倍率变粗变细。</summary>
     private const double GlassStrokeThickness = 1;
 
     private SolidColorBrush _surfaceBrush = Brushes.White;
@@ -123,7 +82,6 @@ public partial class OsdWindow : Window
     private SolidColorBrush _accentBrush = Brushes.DodgerBlue;
     private SolidColorBrush _onAccentBrush = Brushes.White;
 
-    /// <summary>画刷冻结后可跨线程共享，也免掉每次赋值时的变更通知链。</summary>
     private static SolidColorBrush Frozen(Color c)
     {
         var b = new SolidColorBrush(c);
@@ -141,7 +99,6 @@ public partial class OsdWindow : Window
         _followTimer.Tick += (_, _) => FollowTaskbar();
     }
 
-    /// <summary>按当前字族重建字重对象；<see cref="_widthCache"/> 里的宽度也随之作废。</summary>
     private void ReloadFont()
     {
         _osdFont = AppFont.Ui;
@@ -150,10 +107,6 @@ public partial class OsdWindow : Window
         _widthCache.Clear();
     }
 
-    /// <summary>
-    /// 用户在设置里换了界面字体：窗口里的文字由 DynamicResource 自己刷新，这里只负责
-    /// 换掉测量用的字重、清空宽度缓存，再把正显示着的浮窗按新字宽重排一次。
-    /// </summary>
     private void OnUiFontChanged()
     {
         ReloadFont();
@@ -172,8 +125,6 @@ public partial class OsdWindow : Window
             ex | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE |
             NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOPMOST);
 
-        // 扩展边框在两条路径上都要保留：这是 AllowsTransparency=false 时拿到逐像素透明的
-        // 唯一办法。Win10 上没有 Mica，下面这层“玻璃”会被 ApplyChrome 铺的不透明卡片完全盖住
         DwmChrome.SetFrameExtended(hwnd, true);
 
         src.AddHook(WndProc);
@@ -198,34 +149,18 @@ public partial class OsdWindow : Window
             ClipboardUpdated?.Invoke();
         else if (msg == NativeMethods.WM_DISPLAYCHANGE || msg == NativeMethods.WM_SETTINGCHANGE)
         {
-            // 切换显示器/主屏、改缩放、改分辨率、改排列：目标屏本身可能已经搬走或消失，
-            // 先把它的几何与缩放按系统最新值重取（见 RefreshTarget），再按新值重排一次。
-            // 隐藏窗口收不到系统 WM_DPICHANGED，不主动对齐的话下次弹出会按旧缩放渲染。
             RefreshTarget();
             Reposition();
         }
         return IntPtr.Zero;
     }
 
-    /// <summary>
-    /// 显示配置变了：优先沿用当前这块屏（用户正看着它），但矩形与缩放一律按系统最新值重取；
-    /// 只有当这块屏已经不存在（拔线、关闭内置屏）时才重新按焦点/光标挑选。
-    /// <c>_target</c> 是弹出那一刻的快照，不重取就会继续按"已经不存在的屏幕"和旧缩放摆位——
-    /// 这是插拔显示器、改完缩放后浮窗跑到屏外或只露半截的直接原因。
-    /// </summary>
     private void RefreshTarget() =>
         _target = MonitorArea.FromHandle(_target.Handle) ?? ResolveTarget();
 
-    /// <summary>
-    /// 本次提示要落在哪台显示器：开启「跟随焦点显示器」时取焦点窗口所在屏（见
-    /// <see cref="MonitorArea.Focused"/>，取不到时逐级退回鼠标所在屏、主屏），否则固定主屏。
-    /// </summary>
     private static MonitorArea ResolveTarget()
     {
 #if DEBUG
-        // 调试用：给一个物理坐标点，把提示强制投到该点所在显示器。
-        // 跨屏验证时不必真去抢焦点，设环境变量 WINTIPS_DEBUG_MONITOR_POINT="-2000,500" 即可；
-        // 再加 WINTIPS_DEBUG_MONITOR_FILE=<文件> 可在进程运行期间改文件内容动态切换目标屏。
         if (DebugTargetPoint() is { } xy &&
             MonitorArea.FromHandle(NativeMethods.MonitorFromPoint(
                 xy, NativeMethods.MONITOR_DEFAULTTONEAREST)) is { } area)
@@ -235,10 +170,6 @@ public partial class OsdWindow : Window
     }
 
 #if DEBUG
-    /// <summary>
-    /// 调试钩子：解析「强制目标显示器」的物理坐标点。文件优先于环境变量，
-    /// 这样运行中的实例也能通过改写文件切换目标屏，做跨屏/跨缩放的自动化验证。
-    /// </summary>
     private static NativeMethods.POINT? DebugTargetPoint()
     {
         string? spec = Environment.GetEnvironmentVariable("WINTIPS_DEBUG_MONITOR_POINT");
@@ -256,7 +187,6 @@ public partial class OsdWindow : Window
     }
 #endif
 
-    /// <summary>WPF 当前认为的窗口缩放（物理像素 → DIP），取自渲染变换。</summary>
     private double CurrentScale()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
@@ -265,13 +195,6 @@ public partial class OsdWindow : Window
         return m > 0 ? m : 1.0;
     }
 
-    /// <summary>
-    /// 让 WPF 的缩放对齐目标显示器，并顺手把窗口摆到 (left, top)（DIP，目标屏坐标系）。
-    /// 做法不是自己造一条 WM_DPICHANGED，而是按目标屏的物理矩形把窗口真搬过去——
-    /// 这和用户拖动窗口走同一条路径，系统会主动投递真实的 DPI 变化消息，WPF 的
-    /// TransformToDevice 随之更新（隐藏窗口同样有效，实测如此）。
-    /// 系统万一没跟上，再补发一条合成消息兜底。
-    /// </summary>
     private void SyncDpi(double left, double top)
     {
         try
@@ -282,11 +205,9 @@ public partial class OsdWindow : Window
             double want = _target.Scale > 0 ? _target.Scale : 1.0;
             if (Math.Abs(CurrentScale() - want) <= 0.01) return;
 
-            PlacePhysical(left, top); // 真实移动：让系统自己发现窗口换了屏
+            PlacePhysical(left, top);
             if (Math.Abs(CurrentScale() - want) <= 0.01) return;
 
-            // 查不到这块屏的 DPI 就用 _target 上已经记下的缩放反推（它本身也有系统 DPI 兜底），
-            // 之前这里直接 return，窗口的缩放会一直停在上一条屏，落位就差一个缩放比。
             uint dpiX = 0, dpiY = 0;
             if (NativeMethods.GetDpiForMonitor(_target.Handle, NativeMethods.MDT_EFFECTIVE_DPI,
                     out dpiX, out dpiY) != 0 || dpiX == 0)
@@ -303,21 +224,11 @@ public partial class OsdWindow : Window
         catch { }
     }
 
-    /// <summary>
-    /// 窗口的 DPI 变了（被搬到另一块缩放不同的屏上，或用户改了缩放）。
-    /// WPF 会按"物理尺寸守恒"把 Left/Top/Width/Height 一并按比例改写（实测 Width 会被乘上
-    /// 新/旧缩放比，160 → 240 或 240 → 160），沿用下去浮窗就会忽大忽小、位置也偏。
-    /// 浮窗内容是固定 DIP 设计（160×50 基准，再乘用户设定的"浮窗大小"倍率），
-    /// 所以这里按目标屏重算尺寸与位置，把窗口摆回该在的地方。
-    /// </summary>
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
     {
         base.OnDpiChanged(oldDpi, newDpi);
-        _widthCache.Clear(); // 字形宽度随 DPI 的舍入略有差异，换 DPI 后缓存作废
+        _widthCache.Clear();
 
-        // WPF 处理 WM_DPICHANGED 时会先套用系统给的建议矩形（按物理尺寸守恒缩放），
-        // 那个矩形往往不是浮窗该在的位置/尺寸；这里紧跟着按目标屏重排一次，把窗口摆正。
-        // 隐藏时也照做：下次弹出若沿用这个错尺寸，会出现一整轮大小不对的提示。
         UpdateSize();
         PositionOnTarget();
     }
@@ -330,8 +241,6 @@ public partial class OsdWindow : Window
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
-        // 只有外观真的变了才重建画刷并重新赋予控件：Foreground 每次赋值都会
-        // 触发整棵可视树的继承值重算，而 ApplyChrome 在每次弹窗时都会被调用。
         var key = (dark, ThemeHelper.HighContrast, ThemeHelper.AccentColor);
         if (!_chromeReady || !key.Equals(_chromeKey))
         {
@@ -347,16 +256,13 @@ public partial class OsdWindow : Window
             LockIndicator.Fill = _accentBrush;
             CountBadge.Background = _accentBrush;
             CountText.Foreground = _onAccentBrush;
+            WelcomeBadge.Fill = _accentBrush;
+            WelcomeCheck.Stroke = _onAccentBrush;
         }
 
-        // 系统不支持亚克力时退回纯色卡片（Win10、高对比度、系统关掉透明效果、
-        // 节电模式都必须走这条分支，否则 -1 扩展边框会让浮窗变成 Win7 Aero 式的实心色块）。
-        // 节电模式/透明开关不会通知窗口，所以这一项每次弹出都得现查。
         bool acrylic = ThemeHelper.AcrylicAllowed &&
                        DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW);
 
-        // 玻璃材质是"可选增强"：关着就保持最初的样子——只有系统亚克力，不铺任何自绘层。
-        // 开了才往上叠抓屏模糊图与底色（见 UpdateBackdrop），代价是每次弹出一次抓屏。
         bool glass = acrylic && AppSettings.Instance.TipGlass;
 
         Root.Background = acrylic ? Brushes.Transparent : _surfaceBrush;
@@ -365,12 +271,6 @@ public partial class OsdWindow : Window
         _glassActive = glass;
     }
 
-    /// <summary>
-    /// 玻璃两层一起铺或一起撤。
-    ///
-    /// 撤的时候还要清掉 GlassImage.Fill：那张位图是窗口尺寸的完整截图，留着会让
-    /// 下一次开启玻璃时先用旧画面顶一帧（位置早就变了）。
-    /// </summary>
     private void ApplyGlassLayers(bool glass, bool dark)
     {
         if (!glass)
@@ -387,13 +287,6 @@ public partial class OsdWindow : Window
         GlassPlate.Visibility = Visibility.Visible;
     }
 
-    /// <summary>
-    /// 只换底色层——这是"材质透明度"滑杆唯一的落点。
-    ///
-    /// 叠一层半透明纯色在图上，与把颜色按同一 alpha 混进像素是等价的（同为
-    /// src·(1−a)+tint·a），所以拆成两层不会改变观感，却让调透明度变成改一个画刷：
-    /// 不必重新抓屏，拖动时每一格都能即时响应。
-    /// </summary>
     private void ApplyGlassVeil(bool dark)
     {
         var tint = ThemeHelper.GlassTintBase(dark);
@@ -404,13 +297,6 @@ public partial class OsdWindow : Window
         GlassPlate.Fill = _glassVeilBrush;
     }
 
-    /// <summary>
-    /// 抓一次背后的画面、模糊，铺成玻璃片的底图。
-    ///
-    /// 必须在 <see cref="Reposition"/> 之后调用——抓的是窗口"此刻"的物理矩形，
-    /// 位置还没定下来就会抓到上一处的画面。也必须在 Show() 之前：窗口一旦可见，
-    /// 截出来的就是自己（连续弹出时窗口本来就在，那条路径直接沿用上一次的模糊）。
-    /// </summary>
     private void UpdateBackdrop()
     {
         if (!_glassActive) return;
@@ -420,9 +306,15 @@ public partial class OsdWindow : Window
             GlassBlurPadding,
             GlassBlurRadius);
 
-        // 抓不到（远程桌面、受保护内容）：这层留空，窗口退回系统亚克力的原始观感，
-        // 上面那层底色与描边还在，不会露出空洞
-        GlassImage.Fill = bitmap is null ? null : new ImageBrush(bitmap) { Stretch = Stretch.Fill };
+        if (bitmap is null)
+        {
+            GlassImage.Fill = null;
+            return;
+        }
+
+        _glassBrush ??= new ImageBrush { Stretch = Stretch.Fill };
+        if (!ReferenceEquals(_glassBrush.ImageSource, bitmap)) _glassBrush.ImageSource = bitmap;
+        if (!ReferenceEquals(GlassImage.Fill, _glassBrush)) GlassImage.Fill = _glassBrush;
     }
 
     public void PreWarm()
@@ -430,10 +322,6 @@ public partial class OsdWindow : Window
         try
         {
             _target = ResolveTarget();
-            // 先只创建句柄、不显示窗口。原地 Show/Hide 预热会让冷启动时两者
-            // 之间的帧被 DWM 合成出来：Root 全透明时系统背景（Mica）可见，
-            // 表现为开机首次启动闪现一个空窗口。EnsureHandle 同样会触发
-            // OnSourceInitialized，句柄就绪后首次 ShowTip 无创建迟滞。
             if (new WindowInteropHelper(this).EnsureHandle() == IntPtr.Zero) return;
             ApplyChrome();
             Reposition();
@@ -443,16 +331,9 @@ public partial class OsdWindow : Window
         catch { }
     }
 
-    /// <summary>
-    /// 把窗口移到虚拟屏幕外，真实渲染一帧后再隐藏并复位。只建句柄不渲染时，
-    /// WPF 渲染线程、D3D 设备与字体光栅都要等到首次 ShowTip 才初始化：开机
-    /// 后第一次弹出，窗口已显示而内容帧迟到，表现为先见“空提示”、内容随后
-    /// 才出现。屏幕外的窗口不会被 DWM 合成，因此不会像原地 Show/Hide 预热
-    /// 那样闪现空窗口。
-    /// </summary>
     private void WarmRenderPipeline()
     {
-        if (_visible) return; // 真实提示已在显示（首弹早于预热），不能再挪动窗口
+        if (_visible) return;
 
         LockTextBlock.Text = TipInfo.Describe(TipKind.CapsLock, true);
         SetPoseInstant(true);
@@ -466,7 +347,6 @@ public partial class OsdWindow : Window
         _warmRendered = rendered;
         CompositionTarget.Rendering += rendered;
 
-        // 兜底：万一 Rendering 事件未按预期触发，也要把窗口收回并复位
         _warmGuard = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _warmGuard.Tick += (_, _) => FinishWarmRender();
         _warmGuard.Start();
@@ -479,24 +359,27 @@ public partial class OsdWindow : Window
         _warmRendered = null;
         _warmGuard?.Stop();
         _warmGuard = null;
-        if (_visible) return; // 真实提示已弹出，位置交给 ShowTip 管理
+        if (_visible) return;
         Hide();
         BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
-        // 不按"移出去之前的 Left/Top"手动复原：那段值此刻可能已经过期（DPI 或目标屏变了），
-        // 直接按目标屏重算一次落点，DIP 与物理矩形一起摆正。
         PositionOnTarget();
     }
 
-    public void ShowTip(TipKind kind, bool? state, double seconds)
+    public void ShowTip(TipKind kind, bool? state, double seconds) =>
+        ShowTipCore(kind, state, seconds, welcome: false);
+
+    public void ShowWelcome(string title, string subtitle, double seconds)
     {
-        // 目标显示器在弹出这一刻定下：跟随焦点时就是用户此刻正在操作的那块屏。
-        // DPI 对齐与落位统一在 Reposition 里做（它知道最终落点，能借这次移动顺带换屏）。
+        _welcomeTitle = title;
+        _welcomeSubtitle = subtitle;
+        ShowTipCore(TipKind.CapsLock, true, seconds, welcome: true);
+    }
+
+    private void ShowTipCore(TipKind kind, bool? state, double seconds, bool welcome)
+    {
         var target = ResolveTarget();
 
-        // 换屏弹出：上一轮提示还没收起就换到另一块屏（尤其两块屏缩放不同）时，
-        // WPF 改 DPI 会把 Width/Height 按比例改写再被我们改回来，可见状态下会闪一帧
-        // 错尺寸的卡片。这里直接按“重新弹出”处理——内容先透明，重排完再淡入。
         if (_visible && target.Handle != _target.Handle)
         {
             StopFollow();
@@ -511,16 +394,15 @@ public partial class OsdWindow : Window
 
         var prevKind = _currentKind;
         _currentKind = kind;
+        _welcome = welcome;
         _currentState = state;
         _generation++;
 
-        // 锁键提示 / 剪贴板提示共用同一浮窗，按类型切换内容与徽章可见性
         ApplyMode(kind);
         bool on = SetStatusText(kind, state);
 
         if (IsClip(kind))
         {
-            // 浮窗显示期间重复同一动作 → ×N 累加；切换动作或重新弹出 → 从 ×1 开始
             bool sameVisible = _visible && prevKind == kind &&
                                CountBadge.Visibility == Visibility.Visible;
             _countIncreased = sameVisible;
@@ -545,49 +427,47 @@ public partial class OsdWindow : Window
 
         bool ready = new WindowInteropHelper(this).Handle != IntPtr.Zero;
 
-        // 无论句柄是否就绪都先算一次落点：句柄未就绪时 Reposition 只写 Left/Top（物理钉位会跳过），
-        // 这样下面的 PlacePhysical 不会拿到尚未初始化的 NaN 坐标——NaN 转 int 会得到
-        // int.MinValue，窗口先被扔到虚拟屏外再由 Reposition 拉回，多屏下这一帧格外显眼。
         ApplyChrome();
         Reposition();
 
-        // 位置定下来后立刻抓背后的画面：此刻窗口还是隐藏的，截不到自己
         UpdateBackdrop();
 
         int ms = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
         if (ms <= 0)
         {
-            AnimateStatus(on); // 无动画：显示前直接落到目标状态，避免首帧闪旧值
+            AnimateStatus(on);
         }
         else
         {
             if (!_shownOnce)
-                SetPoseInstant(!on); // 首次弹出：先把锁具摆到按键前的真实状态（新状态取反），
-                                     // 过渡从真实旧状态起落，与后续弹窗一致，而非 XAML 默认值
+                SetPoseInstant(!on);
             Root.Opacity = 0;
         }
 
         Show();
-        // Show() 之后 WPF 可能按自己缓存的实际尺寸重设一次 HWND，再钉一次物理矩形
         PlacePhysical(_lastLeft, _lastTop);
         _visible = true;
         _shownOnce = true;
         if (!ready)
         {
-            ApplyChrome(); // 句柄刚建好：亚克力、深色标题栏都要求先有 HWND
+            ApplyChrome();
             Reposition();
         }
         AnimateIn();
-        // 动画时钟在窗口隐藏时也照常走表，提前启动会在显示前被消耗一段，
-        // 表现为锁扣先动完、指示条才“开始动”；显示后再启动才同步。
         if (ms > 0) AnimateStatus(on);
         RestartTimer();
         StartFollow();
     }
 
+    public void ShowLanguage(string text, double seconds)
+    {
+        _languageText = text;
+        ShowTip(TipKind.Language, true, seconds);
+    }
+
     public void UpdateState(TipKind kind, bool on)
     {
-        if (!_visible || kind != _currentKind) return;
+        if (!_visible || _welcome || kind != _currentKind) return;
         SetStatusText(kind, on);
         UpdateSize();
         Reposition();
@@ -595,11 +475,6 @@ public partial class OsdWindow : Window
         RestartTimer();
     }
 
-    /// <summary>
-    /// 设置里拖动“浮窗大小”滑杆时的实时预览：没有提示在显示就按当前外观弹一次（含入/出场动画），
-    /// 已经在显示就只按新尺寸重排并延长停留——刻意不重播开/关动效，否则滑杆每跨一格刻度
-    /// 锁扣都会回弹一次，看着像在抖。
-    /// </summary>
     public void PreviewSize(double seconds)
     {
         int ms = (int)Math.Clamp(seconds, 0.5, 10);
@@ -611,21 +486,12 @@ public partial class OsdWindow : Window
 
         UpdateSize();
         Reposition();
-        // 正好在退场淡出途中时接管回来，否则尺寸变了却仍在淡出，看不见预览
         Root.BeginAnimation(UIElement.OpacityProperty, null);
         Root.Opacity = 1;
         _hideTimer.Interval = TimeSpan.FromSeconds(ms);
         RestartTimer();
     }
 
-    /// <summary>
-    /// 设置里改动"玻璃材质"开关或"材质透明度"后的即时预览。
-    ///
-    /// 两条路分开走，是为了拖动滑杆时别闪：
-    /// - 材质档位没变（只是拖了透明度）：只换底色那层，不重新抓屏；
-    /// - 档位变了：抓屏必须趁窗口隐藏时进行（否则截到的是它自己），所以先瞬时收起
-    ///   再按当前内容重新弹出一次。开关是一次性动作，这一下重弹可以接受。
-    /// </summary>
     public void PreviewAppearance(double seconds)
     {
         bool wantGlass = AppSettings.Instance.TipGlass && ThemeHelper.AcrylicAllowed;
@@ -633,7 +499,6 @@ public partial class OsdWindow : Window
         if (_visible && wantGlass == _glassActive)
         {
             if (_glassActive) ApplyGlassVeil(ThemeHelper.IsDarkTheme);
-            // 拖滑杆时别让预览自己淡出：接管动画值并延长停留时间
             Root.BeginAnimation(UIElement.OpacityProperty, null);
             Root.Opacity = 1;
             _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(seconds, 0.5, 10));
@@ -642,13 +507,9 @@ public partial class OsdWindow : Window
         }
 
         if (_visible) HideInstantly();
-        ShowTip(_currentKind, _currentState, seconds);
+        ShowTipCore(_currentKind, _currentState, seconds, _welcome);
     }
 
-    /// <summary>
-    /// 不做淡出动画直接收起。设置窗口里切换材质要用它：这一下收起只是为了腾出
-    /// 干净的屏幕让抓屏抓到"真实背景"，走动画反而会让用户看见提示消失又出现的全过程。
-    /// </summary>
     private void HideInstantly()
     {
         StopFollow();
@@ -663,18 +524,31 @@ public partial class OsdWindow : Window
 
     private bool SetStatusText(TipKind kind, bool? state)
     {
-        LockTextBlock.Text = TipInfo.Describe(kind, state);
+        if (_welcome)
+        {
+            WelcomeTitle.Text = _welcomeTitle;
+            WelcomeSubtitle.Text = _welcomeSubtitle;
+            return true;
+        }
+
+        LockTextBlock.Text = kind == TipKind.Language ? _languageText : TipInfo.Describe(kind, state);
         return !TipInfo.IsToggle(kind) || state == true;
     }
 
-    /// <summary>按提示类型切换浮窗内容：锁具+指示条（锁键）或 对勾/剪刀+计数徽章（剪贴板）。</summary>
     private void ApplyMode(TipKind kind)
     {
-        bool clip = IsClip(kind);
-        LockSymbol.Visibility = clip ? Visibility.Collapsed : Visibility.Visible;
-        LockIndicator.Visibility = clip ? Visibility.Collapsed : Visibility.Visible;
+        bool clip = !_welcome && IsClip(kind);
+        bool lang = !_welcome && kind == TipKind.Language;
+        bool lockUi = !_welcome && !clip && !lang;
+
+        WelcomeSymbol.Visibility = _welcome ? Visibility.Visible : Visibility.Collapsed;
+        WelcomeText.Visibility = _welcome ? Visibility.Visible : Visibility.Collapsed;
+        LockTextBlock.Visibility = _welcome ? Visibility.Collapsed : Visibility.Visible;
+        LockSymbol.Visibility = lockUi ? Visibility.Visible : Visibility.Collapsed;
+        LockIndicator.Visibility = lockUi ? Visibility.Visible : Visibility.Collapsed;
         ClipSymbol.Visibility = clip ? Visibility.Visible : Visibility.Collapsed;
         CountBadge.Visibility = clip ? Visibility.Visible : Visibility.Collapsed;
+        LangSymbol.Visibility = lang ? Visibility.Visible : Visibility.Collapsed;
 
         bool cut = kind == TipKind.Cut;
         CheckMark.Visibility = cut ? Visibility.Collapsed : Visibility.Visible;
@@ -683,32 +557,31 @@ public partial class OsdWindow : Window
         ApplyBarSide();
     }
 
-    /// <summary>
-    /// 按指示条的贴边侧摆放内容区与指示条本体：指示条在卡片下缘时内容区上 6 / 下 10
-    /// （底部给指示条留空间），镜像到上缘时上下对调成上 10 / 下 6；剪贴板模式没有指示条，
-    /// 上下对称留 8。
-    /// </summary>
     private void ApplyBarSide()
     {
-        // 剪贴板模式：右侧只留 8px，让 ×N 徽章贴近卡片右缘，避免挤占文字空间。
+        if (_welcome)
+        {
+            ContentGrid.Margin = new Thickness(16, 10, 12, 10);
+            return;
+        }
+
         if (IsClip(_currentKind))
         {
             ContentGrid.Margin = new Thickness(16, 8, 8, 8);
             return;
         }
 
-        // 锁键模式：左 16 / 右 12（原设计）
+        if (_currentKind == TipKind.Language)
+        {
+            ContentGrid.Margin = new Thickness(16, 8, 12, 8);
+            return;
+        }
+
         ContentGrid.Margin = _barOnTop ? new Thickness(16, 10, 12, 6) : new Thickness(16, 6, 12, 10);
         LockIndicator.VerticalAlignment = _barOnTop ? VerticalAlignment.Top : VerticalAlignment.Bottom;
         LockIndicator.Margin = _barOnTop ? new Thickness(0, 7, 0, 0) : new Thickness(0, 0, 0, 7);
     }
 
-    /// <summary>
-    /// 浮窗挂在屏幕顶部区域时，把指示条从底部镜像到文字上方，让它始终贴近浮窗所挂靠的
-    /// 那条屏幕边（与滑入方向同侧），而不是夹在文字与屏幕内容之间。判据与滑入方向的
-    /// 中部回落一致：浮窗中心在上半屏即视为“顶部区域”，自定义位置同样适用。
-    /// 用落点 _lastTop 而非 Top：滑入/滑出动画期间 Top 是中间值，靠中轴时会被判反。
-    /// </summary>
     private void UpdateBarSide()
     {
         bool onTop = _lastTop + Height / 2 < _target.CenterY;
@@ -717,17 +590,17 @@ public partial class OsdWindow : Window
         ApplyBarSide();
     }
 
-    /// <summary>
-    /// 锁扣旋转/回弹与指示条宽度/透明度用同一时长、同一缓动，一齐起落。
-    /// 需在窗口可见后调用（窗口隐藏时动画时钟照常走表，会提前消耗）。
-    /// </summary>
     private void AnimateStatus(bool on)
     {
+        if (_welcome) return;
+
         if (IsClip(_currentKind))
         {
             AnimateClipStatus(instant: false);
             return;
         }
+
+        if (_currentKind == TipKind.Language) return;
 
         int baseMs = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
         if (baseMs <= 0)
@@ -760,10 +633,6 @@ public partial class OsdWindow : Window
         ShackleBounce.BeginAnimation(TranslateTransform.YProperty, bounceAnim);
     }
 
-    /// <summary>
-    /// 剪贴板提示动效：对勾一笔描出（StrokeDashOffset），剪切图标淡入；
-    /// 计数徽章首次淡入、累加时缩放弹跳。
-    /// </summary>
     private void AnimateClipStatus(bool instant)
     {
         int baseMs = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed);
@@ -797,7 +666,6 @@ public partial class OsdWindow : Window
 
         if (_countIncreased)
         {
-            // 连续操作：徽章缩放弹跳 1.0 → 1.3 → 1.0（两个属性各需独立的动画实例）
             DoubleAnimationUsingKeyFrames MakePop() =>
                 new()
                 {
@@ -820,12 +688,13 @@ public partial class OsdWindow : Window
         }
     }
 
-    /// <summary>不做过渡，直接把锁扣与指示条摆到指定开/关姿态。</summary>
     private void SetPoseInstant(bool on)
     {
+        if (_welcome) return;
+        if (_currentKind == TipKind.Language) return;
+
         if (IsClip(_currentKind))
         {
-            // 剪贴板提示的“起始姿态”：对勾未描出（等显示后再动画画出）
             CheckMark.BeginAnimation(System.Windows.Shapes.Shape.StrokeDashOffsetProperty, null);
             CheckMark.StrokeDashOffset = 8.75;
             CountBadge.BeginAnimation(OpacityProperty, null);
@@ -845,36 +714,34 @@ public partial class OsdWindow : Window
         ShackleBounce.Y = 0;
     }
 
-    /// <summary>
-    /// 浮窗基准高度（DIP）：内容按这套 1.0 倍基准布局，用户改大小只缩放这套基准，
-    /// 所以 UpdateSize / 徽章居中这类像素计算一律留在基准坐标系里，不掺缩放倍率。
-    /// </summary>
     private const double BaseHeight = 50;
+
+    private const double WelcomeBaseHeight = 60;
 
     private void UpdateSize()
     {
         double scale = AppSettings.NormalizeScale(AppSettings.Instance.TipScale);
         ApplyScale(scale);
 
+        if (_welcome)
+        {
+            UpdateWelcomeSize(scale);
+            return;
+        }
+
         double textWidth = MeasureText(LockTextBlock.Text);
         bool clip = CountBadge.Visibility == Visibility.Visible;
         double extra = clip
-            ? MeasureText(CountText.Text, 12.5, FontWeights.SemiBold) + 22 // 徽章宽 + 右缘留白
+            ? MeasureText(CountText.Text, 12.5, FontWeights.SemiBold) + 22
             : 0;
-        // 基准宽度：下面所有坐标与 MeasureText 的结果都在这套基准里，最后统一乘缩放倍率
         double baseWidth = Math.Max(160, Math.Ceiling(16 + 22 + 18 + textWidth + 12 + extra));
 
         if (clip)
         {
-            // 剪贴板模式：文字在“对勾图标 ↔ ×N 徽章”之间均匀居中（两侧间距相等），
-            // 视觉上不再偏向徽章；该中点与卡片中线几乎重合。
-            // 注意：TextBlock 的 Margin 是相对内容区（窗口左边距 16）的坐标，
-            // 而 iconEnd/badgeStart 是窗口坐标，需先减去 16 换算，否则文字整体右偏 16px。
-            // 这里必须用基准宽度而非窗口 Width：内容整体挂在缩放变换下，Margin 也是基准单位。
-            double pillWidth = MeasureText(CountText.Text, 12.5, FontWeights.SemiBold) + 14; // 徽章内边距 7+7
-            const double gridLeft = 16;                // 内容区原点（窗口坐标）
-            const double iconEnd = 22;                 // 图标右缘（内容区坐标）
-            double badgeStart = baseWidth - gridLeft - 8 - pillWidth; // 徽章左缘（内容区坐标，距窗口右 8px）
+            double pillWidth = MeasureText(CountText.Text, 12.5, FontWeights.SemiBold) + 14;
+            const double gridLeft = 16;
+            const double iconEnd = 22;
+            double badgeStart = baseWidth - gridLeft - 8 - pillWidth;
             double mid = (iconEnd + badgeStart) / 2;
             double left = Math.Max(iconEnd + 8, mid - textWidth / 2);
             LockTextBlock.HorizontalAlignment = HorizontalAlignment.Left;
@@ -882,22 +749,25 @@ public partial class OsdWindow : Window
         }
         else
         {
-            // 锁键模式保持原版：居中 + 18px 左边距补偿图标
             LockTextBlock.HorizontalAlignment = HorizontalAlignment.Center;
             LockTextBlock.Margin = new Thickness(18, 0, 0, 2);
         }
 
-        // 窗口尺寸 = 基准尺寸 × 倍率：变换只改渲染，窗口本身必须同步放大，
-        // 否则内容会被裁在窗口外、贴边与居中计算也全按未缩放的尺寸走。
         Width = Math.Ceiling(baseWidth * scale);
         Height = Math.Ceiling(BaseHeight * scale);
     }
 
-    /// <summary>
-    /// 内容根节点的等比缩放变换：字形、矢量图标、指示条一起跟随，无需逐控件调字号。
-    /// 玻璃那两层的圆角/描边例外——它们跟着放大就会和 DWM 裁窗口的固定圆角打架，
-    /// 因此在 <see cref="ApplyGlassMetrics"/> 里按同一倍率反向抵消。
-    /// </summary>
+    private void UpdateWelcomeSize(double scale)
+    {
+        double textWidth = Math.Max(
+            MeasureText(WelcomeTitle.Text, 14, FontWeights.Medium),
+            MeasureText(WelcomeSubtitle.Text, 11.5, FontWeights.Medium));
+        double baseWidth = Math.Max(200, Math.Ceiling(16 + 22 + 18 + textWidth + 16));
+
+        Width = Math.Ceiling(baseWidth * scale);
+        Height = Math.Ceiling(WelcomeBaseHeight * scale);
+    }
+
     private ScaleTransform? _rootScale;
 
     private void ApplyScale(double scale)
@@ -912,17 +782,9 @@ public partial class OsdWindow : Window
             _rootScale.ScaleX = _rootScale.ScaleY = scale;
         }
 
-        // 不能像别的地方那样"倍率没变就直接返回"：首次调用时变换刚建好，
-        // 玻璃层的补偿量还没写过，那一次必须落下去（XAML 里的 8 只在 1.0 倍时正确）。
         ApplyGlassMetrics(scale);
     }
 
-    /// <summary>
-    /// 玻璃两层的几何量按倍率反向补偿：Root 上的 LayoutTransform 会把子元素的一切
-    /// 尺寸一起放大（圆角、描边、内缩），而这三样在屏幕上必须是恒定的——圆角要跟
-    /// DWM 裁窗口的那条弧对齐（固定 ~8 DIP），描边要维持 1px 细线。乘上 1/倍率
-    /// 抵消掉变换后，落到屏幕上就还是 8 DIP 圆角、1 DIP 描边。
-    /// </summary>
     private void ApplyGlassMetrics(double scale)
     {
         double inv = scale > 0 ? 1 / scale : 1;
@@ -932,7 +794,6 @@ public partial class OsdWindow : Window
         GlassImage.RadiusX = GlassImage.RadiusY = radius;
         GlassPlate.RadiusX = GlassPlate.RadiusY = radius;
         GlassPlate.StrokeThickness = stroke;
-        // 描边画在矩形轮廓线上，内缩半个线宽才能让它整个落在卡片内侧
         GlassPlate.Margin = new Thickness(stroke / 2);
     }
 
@@ -947,19 +808,16 @@ public partial class OsdWindow : Window
         double pixelsPerDip = 1.0;
         try { pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip; } catch { }
 
-        // 字号必须用调用方给的 size：之前这里写死 14，导致 ×N 徽章（12.5pt）按 14pt 量宽
         var ft = new FormattedText(
             text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
             face == FontWeights.SemiBold ? _semiBoldFace : _mediumFace, size, Brushes.Black, pixelsPerDip);
         double width = ft.Width;
 
-        // 文案集合有限，攒到上限直接清空即可（不清会随语言/DPI 切换缓慢增长）
         if (_widthCache.Count >= 256) _widthCache.Clear();
         _widthCache[key] = width;
         return width;
     }
 
-    /// <summary>浮窗该落在哪（DIP，目标显示器坐标系）：有自定义位置用自定义偏移，否则按预设（跟随任务栏当前形态）。</summary>
     private (double Left, double Top) TargetPosition()
     {
         var s = AppSettings.Instance;
@@ -971,28 +829,18 @@ public partial class OsdWindow : Window
 
     private void Reposition()
     {
-        // _target 是弹出那一刻的快照：句柄已失效（拔线、改排列）说明快照过期了，
-        // 继续用它算就会把浮窗摆到一块不存在的屏幕上。
         if (!_target.IsLive) _target = ResolveTarget();
 
         BeginAnimation(LeftProperty, null);
         BeginAnimation(TopProperty, null);
 
-        // 位置是 DIP，WPF 按窗口当前缩放换算物理像素：先算好落点，再借这次移动把
-        // 窗口搬到目标屏上让系统对齐缩放（跨屏不同缩放时，顺序反了就会整体偏出去）
         var (left, top) = TargetPosition();
         SyncDpi(left, top);
 
-        // 换屏时 WPF 会顺手改写 Width/Height（实测 160 → 160/1.5），必须按目标屏重算回来，
-        // 否则浮窗会带着放错比例的尺寸和落点一直显示（这就是跨屏后"大小不正常"的来源）
         UpdateSize();
         PositionOnTarget();
     }
 
-    /// <summary>
-    /// 按 <see cref="_target"/> 摆位（不碰 DPI，避免在 DPI 变化回调里重入）。
-    /// 落点先算成"目标屏坐标系里的 DIP"，再统一交给 <see cref="Place"/>。
-    /// </summary>
     private void PositionOnTarget()
     {
         var (left, top) = TargetPosition();
@@ -1002,30 +850,13 @@ public partial class OsdWindow : Window
         Place();
     }
 
-    /// <summary>
-    /// 唯一落位入口：按目标屏缩放钉一次物理矩形，再把落点换算成 WPF 的 DIP 写回 Left/Top。
-    /// 为什么不能只写 Left/Top：WPF 用"窗口此刻的缩放"把它们换成物理像素，而落点是按
-    /// "目标屏缩放"算出来的。窗口缩放没跟上目标屏时（系统没投递 WM_DPICHANGED、隐藏窗口、
-    /// 句柄刚建），两条换算比例不同，之后任意一次布局/Show/改尺寸引发的 SetWindowPos
-    /// 都会把窗口搬偏一整段 —— 表现就是"弹出来是对的，随后自己跳走"。
-    /// 也不能只钉物理矩形：WPF 不知道被挪过，下一次布局仍按旧 DIP 重算。
-    /// 两边都写、且写的是同一个物理点，才不会有谁覆盖谁的问题。
-    /// </summary>
     private void Place()
     {
-        // 顺序很关键：先钉物理矩形（这一步可能顺带触发系统投递 WM_DPICHANGED，
-        // 让窗口缩放跟上目标屏），再按"此刻"的缩放把 DIP 基值回写成同一个物理点。
-        // 反过来的话，回写用的还是旧缩放，而回写过程中触发的 DPI 变化会把基值再改一次，
-        // 之后任意一次布局回写就会把窗口搬偏。
         PlacePhysical(_lastLeft, _lastTop);
         Left = ToWindowDip(_lastLeft);
         Top = ToWindowDip(_lastTop);
     }
 
-    /// <summary>
-    /// 目标屏 DIP → WPF 窗口 DIP 的比例。窗口缩放与目标屏一致时恒为 1（绝大多数情况，
-    /// 此时所有落位/动画代码等价于直接使用目标屏 DIP）。
-    /// </summary>
     private double WindowDipRatio()
     {
         double want = _target.Scale > 0 ? _target.Scale : 1.0;
@@ -1033,17 +864,8 @@ public partial class OsdWindow : Window
         return cur <= 0 || Math.Abs(cur - want) < 0.0001 ? 1.0 : want / cur;
     }
 
-    /// <summary>目标屏坐标系的 DIP → WPF 窗口坐标系的 DIP（见 <see cref="WindowDipRatio"/>）。</summary>
     private double ToWindowDip(double targetDip) => targetDip * WindowDipRatio();
 
-    /// <summary>
-    /// 按目标屏的物理像素矩形把窗口钉死（DIP × 该屏缩放）。入参是**目标屏坐标系**的 DIP，
-    /// 不是 WPF 的 Left/Top（窗口缩放没跟上目标屏时两者不同，见 <see cref="Place"/>）。
-    /// 换屏换缩放时 WPF 会按"物理尺寸守恒"套用系统给的建议矩形，而 Width/Height 的 DIP 值
-    /// 前后一样，它就不会再把窗口改回 DIP×新缩放——从 150% 的屏切回 100% 的屏之后，
-    /// 浮窗会一直保持 1.5 倍的物理尺寸（实测 240×75 而非 160×50）。位置与尺寸因此不再
-    /// 依赖 WPF 的 DPI 时序，一律由这里按目标屏缩放直接换算。
-    /// </summary>
     private void PlacePhysical(double left, double top)
     {
         var hwnd = new WindowInteropHelper(this).Handle;
@@ -1055,12 +877,6 @@ public partial class OsdWindow : Window
             NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
     }
 
-    /// <summary>
-    /// 实时跟随任务栏：浮窗可见期间按 60ms 轮询任务栏的真实窗口矩形——单次约 7µs
-    /// （只走 MonitorFromPoint / FindWindow / GetWindowRect，刻意不碰约 365µs 的 ABM 查询），
-    /// 位置没变立刻返回；变了才用 140ms 缓动挪过去。
-    /// 任务栏收起时浮窗跟到屏幕边缘，滑出时自动让到它上方，不会再有“被滑出的任务栏压住”的窗口。
-    /// </summary>
     private void FollowTaskbar()
     {
         if (!_visible) return;
@@ -1072,17 +888,12 @@ public partial class OsdWindow : Window
         _followTop = top;
         _lastLeft = left;
         _lastTop = top;
-        UpdateBarSide(); // 跟随可能跨过半屏，指示条该不该镜像要跟着变
+        UpdateBarSide();
 
         bool animated = AppSettings.AnimationMs(AppSettings.Instance.AnimationSpeed) > 0;
         MoveContentTo(left, top, animated ? FollowMs : 0);
     }
 
-    /// <summary>
-    /// 启动跟随轮询：只在“开了自动隐藏 + 用的是预设位置”时才需要——任务栏不会滑出/收起，
-    /// 或者位置被用户钉死了，都没有可跟的东西，那就一次也不跑。
-    /// 副屏任务栏（Shell_SecondaryTrayWnd）同样会被跟随：可用区域每次现查，见 <see cref="TaskbarInfo.UsableRect"/>。
-    /// </summary>
     private void StartFollow()
     {
         _followTimer.Stop();
@@ -1096,10 +907,9 @@ public partial class OsdWindow : Window
     private void StopFollow()
     {
         _followTimer.Stop();
-        _moveGen++; // 让在途跟随动画的收尾回调失效，别去抢收起动画对 Left/Top 的控制
+        _moveGen++;
     }
 
-    /// <summary>把浮窗平滑挪到目标位置（跟随任务栏时用）。入参是目标屏坐标系的 DIP。</summary>
     private void MoveContentTo(double left, double top, int ms)
     {
         double toLeft = ToWindowDip(left), toTop = ToWindowDip(top);
@@ -1120,8 +930,6 @@ public partial class OsdWindow : Window
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
 
         var animTop = new DoubleAnimation(fromTop, toTop, span) { EasingFunction = ease };
-        // 动画结束后把基值落到目标：否则之后任何一次 BeginAnimation(Left/Top, null)
-        // 都会把窗口弹回动画前的旧基值
         animTop.Completed += (_, _) =>
         {
             if (gen != _moveGen || !_visible) return;
@@ -1136,10 +944,6 @@ public partial class OsdWindow : Window
         BeginAnimation(TopProperty, animTop);
     }
 
-    /// <summary>
-    /// 入场/退场滑动偏移：贴边方向决定滑动轴（左右 15% 区横向滑入、上下 15% 区竖向滑入、
-    /// 四角对角滑入），落在屏幕中部时回落到竖向。始终朝最近的屏幕边缘收起。
-    /// </summary>
     private (double Dx, double Dy) SlideOffset(double left, double top) =>
         OsdPlacement.SlideOffset(left, top, Width, Height, _target);
 
@@ -1160,7 +964,6 @@ public partial class OsdWindow : Window
         };
         Root.BeginAnimation(UIElement.OpacityProperty, fade);
 
-        // 滑动偏移按落点（目标屏坐标系）算，写回 Left/Top 时再换算成窗口 DIP
         var (dx, dy) = SlideOffset(_lastLeft, _lastTop);
         var span = TimeSpan.FromMilliseconds(ms);
 
@@ -1185,7 +988,7 @@ public partial class OsdWindow : Window
     private void HideAnimated()
     {
         if (!_visible) return;
-        StopFollow(); // 收起动画期间不再跟随，免得跟随动画和滑出动画抢 Left/Top
+        StopFollow();
         int gen = _generation;
         double targetLeft = _lastLeft;
         double targetTop = _lastTop;
@@ -1195,14 +998,14 @@ public partial class OsdWindow : Window
         {
             Hide();
             _visible = false;
-            _clipCount = 0; // 浮窗收起后连续计数归零
+            _clipCount = 0;
             Root.BeginAnimation(UIElement.OpacityProperty, null);
             BeginAnimation(LeftProperty, null);
             BeginAnimation(TopProperty, null);
             Root.Opacity = 1;
             Left = ToWindowDip(targetLeft);
             Top = ToWindowDip(targetTop);
-            PlacePhysical(targetLeft, targetTop); // 收起后把物理矩形也留在落点上，下次弹出直接从这儿起步
+            PlacePhysical(targetLeft, targetTop);
         }
 
         if (ms <= 0)

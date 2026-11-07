@@ -4,16 +4,6 @@ using WinTips.Native;
 
 namespace WinTips.UI;
 
-/// <summary>
-/// 托盘图标：原生 Shell_NotifyIcon 实现。
-///
-/// 取代原来的 WinForms NotifyIcon —— 这一处替换把 System.Windows.Forms（13.1MB）、
-/// Forms.Primitives（3.4MB）、System.Drawing 与 GDI+ 从常驻内存里整体去掉，只为一个图标。
-///
-/// 托盘消息需要一个真实窗口承载：这里用一个不可见的顶层窗口（WS_POPUP，不带 WS_VISIBLE）
-/// 而不是 message-only 窗口，因为 Explorer 重启后的 <c>TaskbarCreated</c> 是广播消息，
-/// message-only 窗口收不到，托盘图标就会一去不回。
-/// </summary>
 internal sealed class TrayService : IDisposable
 {
     private const uint TrayIconId = 1;
@@ -52,7 +42,6 @@ internal sealed class TrayService : IDisposable
         AddIcon();
     }
 
-    /// <summary>托盘悬停提示：应用名 + 版本号。szTip 上限 127 字符，超长会被截断保护。</summary>
     private static string TooltipText
     {
         get
@@ -72,7 +61,6 @@ internal sealed class TrayService : IDisposable
         szInfoTitle = string.Empty,
     };
 
-    /// <summary>添加图标并切到 V4 行为（回调更可靠，lParam 直接给出是哪种鼠标消息）。</summary>
     private void AddIcon()
     {
         (_icon, _iconOwned) = AppIcons.TrayIcon();
@@ -94,7 +82,6 @@ internal sealed class TrayService : IDisposable
     {
         if (_taskbarCreated != 0 && (uint)msg == _taskbarCreated)
         {
-            // Explorer 重启：旧图标随任务栏一起消失，必须重新注册
             _added = false;
             ReleaseIcon();
             AddIcon();
@@ -103,7 +90,6 @@ internal sealed class TrayService : IDisposable
 
         if ((uint)msg != WM_TRAYICON) return IntPtr.Zero;
 
-        // V4：lParam 低字是鼠标消息；键盘选中托盘图标时给的是 WM_CONTEXTMENU
         uint evt = (uint)(lParam.ToInt64() & 0xFFFF);
         switch (evt)
         {
@@ -132,7 +118,6 @@ internal sealed class TrayService : IDisposable
                 AppSettings.Instance.LaunchAtStartup = StartupManager.IsEnabled();
                 AppSettings.Instance.Save();
 
-                // 菜单已经关掉了，看不出开关有没有真的生效，必须明确告知
                 if (result != StartupChangeResult.Ok) ShowStartupFailure(result);
             },
             StartupManager.IsEnabled(),
@@ -140,10 +125,6 @@ internal sealed class TrayService : IDisposable
         menu.ShowMenuAtCursor();
     }
 
-    /// <summary>
-    /// 托盘菜单里切换自启失败时的提示。菜单点完即关，开关状态看不见了，
-    /// 必须给一句明确的话；用户手动关过的情况下再多走一步，直接把他送到系统设置页。
-    /// </summary>
     private static void ShowStartupFailure(StartupChangeResult result)
     {
         string key = result switch

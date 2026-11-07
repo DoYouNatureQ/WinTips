@@ -4,24 +4,19 @@ using WinTips.Native;
 
 namespace WinTips.Core;
 
-/// <summary>
-/// WH_KEYBOARD_LL 全局钩子。回调在安装线程（WPF UI 线程）上触发，
-/// 事件经 Dispatcher 最高优先级异步分发，不阻塞输入。
-/// </summary>
 public sealed class KeyboardHook : IDisposable
 {
     private IntPtr _hook;
     private readonly NativeMethods.LowLevelKeyboardProc _proc;
     private readonly HashSet<uint> _down = new();
 
-    /// <summary>Caps/Num/Scroll Lock 按下（系统随后会翻转状态）。</summary>
     public event Action<TipKind>? ToggleChanged;
 
-    /// <summary>Insert 按下（事件式，无系统级状态）。</summary>
     public event Action<TipKind>? Pressed;
 
-    /// <summary>Ctrl+C / Ctrl+V / Ctrl+X 按下（复制/粘贴/剪切意图）。</summary>
     public event Action<TipKind>? ClipboardPressed;
+
+    internal event Action<InputState>? SwitchKeyDown;
 
     public KeyboardHook() => _proc = HookProc;
 
@@ -41,9 +36,13 @@ public sealed class KeyboardHook : IDisposable
             var info = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
             if (msg is NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN)
             {
-                // 过滤按住不放的自动重复，只响应第一次 keydown
                 if (_down.Add(info.vkCode))
                 {
+                    if (IsSwitchCandidate(info.vkCode))
+                    {
+                        try { SwitchKeyDown?.Invoke(InputState.Current()); } catch { }
+                    }
+
                     TipKind? kind = info.vkCode switch
                     {
                         0x14 => TipKind.CapsLock,
@@ -52,15 +51,14 @@ public sealed class KeyboardHook : IDisposable
                         0x2D => TipKind.Insert,
                         _ => null,
                     };
-                    // 低级钩子里左右 Ctrl 分别是 0xA2/0xA3，0x11 仅作兜底
                     if (kind == null &&
                         (_down.Contains(0xA2) || _down.Contains(0xA3) || _down.Contains(0x11)))
                     {
                         kind = info.vkCode switch
                         {
-                            0x43 => TipKind.Copy,   // Ctrl+C
-                            0x56 => TipKind.Paste,  // Ctrl+V
-                            0x58 => TipKind.Cut,    // Ctrl+X
+                            0x43 => TipKind.Copy,
+                            0x56 => TipKind.Paste,
+                            0x58 => TipKind.Cut,
                             _ => null,
                         };
                     }
@@ -83,6 +81,22 @@ public sealed class KeyboardHook : IDisposable
             }
         }
         return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
+    }
+
+    private bool IsSwitchCandidate(uint vk)
+    {
+        bool ctrl = _down.Contains(0xA2) || _down.Contains(0xA3) || _down.Contains(0x11);
+        bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
+        bool alt = _down.Contains(0xA4) || _down.Contains(0xA5) || _down.Contains(0x12);
+
+        return vk switch
+        {
+            0x20 => ctrl || win || alt,
+            _ => vk is 0xA0 or 0xA1 or 0x10
+                      or 0xA2 or 0xA3 or 0x11
+                      or 0xA4 or 0xA5 or 0x12
+                      or 0x5B or 0x5C,
+        };
     }
 
     public void Dispose()

@@ -2,8 +2,6 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:core="clr-namespace:WinTips.Core">
 
-    <!-- 以下是浅色默认值，只作设计时兜底；运行时由 ThemeHelper.ApplyTemplateResources
-         按“深浅色 / 高对比度”整组覆盖到窗口级资源。模板内一律用 DynamicResource 引用。 -->
     <SolidColorBrush x:Key="AccentBrush" Color="#0067C0"/>
     <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="SliderRestBrush" Color="#3D000000"/>
@@ -14,10 +12,6 @@
     <SolidColorBrush x:Key="SegHoverBrush" Color="#0F000000"/>
     <SolidColorBrush x:Key="HoverBrush" Color="#1F000000"/>
     <SolidColorBrush x:Key="HoverTextBrush" Color="#191919"/>
-    <!-- 控件模板内的正文色：Button / RadioButton / ComboBox 自带主题样式里写死了
-         Foreground = SystemColors.ControlTextBrush（浅色系统下恒为黑），优先级高于
-         从窗口继承来的前景色，所以这些控件必须由自己的样式显式给色，否则深色模式下
-         会出现黑字压深底。 -->
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#191919"/>
     <SolidColorBrush x:Key="SecondaryTextBrush" Color="#C7000000"/>
     <SolidColorBrush x:Key="DividerBrush" Color="#1F000000"/>
@@ -35,10 +29,8 @@
     <SolidColorBrush x:Key="InputHoverBrush" Color="#99FFFFFF"/>
     <SolidColorBrush x:Key="InputStrokeBrush" Color="#1A000000"/>
     <SolidColorBrush x:Key="ChevronBrush" Color="#66000000"/>
-    <!-- 细滚动条滑块（许可弹窗的协议正文用）：默认 WPF 滚动条是带箭头的经典样式 -->
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#59000000"/>
 
-    <!-- Win11 风格开关 -->
     <Style x:Key="Win11Switch" TargetType="ToggleButton">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -83,7 +75,6 @@
         </Setter>
     </Style>
 
-    <!-- Win11 风格滑杆：细圆角轨道 + 强调色已填充段 + 圆形拇指 -->
     <Style x:Key="Win11Slider" TargetType="Slider">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Height" Value="22"/>
@@ -142,7 +133,6 @@
                         </Track>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <!-- 禁用态仅仅不给交互在观感上等于没禁用：压暗轨道，一眼能看出不可拖 -->
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="PART_Track" Property="Opacity" Value="0.35"/>
                         </Trigger>
@@ -151,12 +141,10 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- Win11 风格分段选择（RadioButton 组）：选中项为强调色胶囊，悬停微亮 -->
     <Style x:Key="SegRadio" TargetType="RadioButton">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="13.5"/>
-        <!-- 必须显式给前景色：主题样式里的 ControlTextBrush 会盖掉窗口继承的白色 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Template">
@@ -184,12 +172,10 @@
         </Setter>
     </Style>
 
-    <!-- Win11 风格标准按钮：细描边浅底，悬停微亮 -->
     <Style x:Key="Win11Button" TargetType="Button">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="13.5"/>
-        <!-- 同上：主题样式默认是黑色 ControlTextBrush，深色下按钮文字会看不见 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Padding" Value="12,5"/>
@@ -218,7 +204,6 @@
         </Setter>
     </Style>
 
-    <!-- Win11 风格强调色主按钮：强调色底 + 白字，悬停/按下整体微暗以示反馈 -->
     <Style x:Key="Win11AccentButton" TargetType="Button">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -249,7 +234,6 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- 自绘标题栏的关闭键（Win10 兜底用）：Win11 关闭键的红底悬停 -->
     <Style x:Key="CaptionCloseButton" TargetType="Button">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -278,13 +262,11 @@
         </Setter>
     </Style>
 
-    <!-- Win11 风格下拉框的选项行：悬停微亮，选中项左侧有强调色短条 -->
     <Style x:Key="Win11ComboBoxItem" TargetType="ComboBoxItem">
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="Padding" Value="15,7"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
-        <!-- 下拉项在独立弹出层里，既继承不到窗口前景色，主题样式又会给成黑色 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="Template">
@@ -312,13 +294,11 @@
         </Setter>
     </Style>
 
-    <!-- Win11 风格下拉框：圆角底 + 右侧折角箭头，弹出层用不透明表面色（弹窗不受 Mica 影响） -->
     <Style x:Key="Win11ComboBox" TargetType="ComboBox">
         <Setter Property="Focusable" Value="False"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="Height" Value="32"/>
-        <!-- 当前选项文本由模板里的 ContentPresenter 呈现，同样吃不到窗口继承色 -->
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
         <Setter Property="ItemContainerStyle" Value="{StaticResource Win11ComboBoxItem}"/>
@@ -355,7 +335,6 @@
                             </ToggleButton.Template>
                         </ToggleButton>
 
-                        <!-- 当前选项文本：压在按钮底上，不参与命中测试，点击仍落到 ToggleButton -->
                         <ContentPresenter x:Name="Selection" Margin="12,0,32,0" VerticalAlignment="Center"
                                           IsHitTestVisible="False"
                                           Content="{TemplateBinding SelectionBoxItem}"
@@ -387,8 +366,6 @@
         </Setter>
     </Style>
 
-    <!-- Win11 风格提示气泡（版本号悬停看字体许可用）：实色底 + 细描边，
-         默认 WPF 提示是方角白底，和这套 UI 放在一起像上个时代的控件 -->
     <Style x:Key="Win11ToolTip" TargetType="ToolTip">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
         <Setter Property="FontFamily" Value="{DynamicResource AppUiFont}"/>
@@ -409,7 +386,6 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- 细滚动条：只有一根圆角滑块，没有箭头与轨道底色，适合卡片里的长文 -->
     <Style x:Key="Win11ScrollBar" TargetType="ScrollBar">
         <Setter Property="Width" Value="10"/>
         <Setter Property="Background" Value="Transparent"/>

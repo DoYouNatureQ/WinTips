@@ -10,26 +10,13 @@ using WinTips.Native;
 
 namespace WinTips.UI;
 
-/// <summary>
-/// 自定义位置模式：全屏半透明遮罩（置于浮窗与拖动提示之下）压暗桌面并挡住桌面点击；
-/// 提示浮窗与真实 OSD 同尺寸同外观（所见即所得），按住拖动；操作条（提示文字 + 取消/保存）
-/// 跟随浮窗，下方优先、贴近工作区底边时翻到浮窗上方。遮罩窗口铺满主显示器，
-/// 保存的是相对该屏左上角的偏移——开启「跟随焦点显示器」后，同一偏移会套到浮窗
-/// 实际所在的那块屏上（屏更小时自动收回屏内）。
-/// 辅助线：屏幕四边各 15% 的贴边判定区用虚线框出，按生效方向高亮对应的一条边缘带
-/// （左右优先于上下，与真实提示的滑入方向一致）；浮窗中心靠近屏幕中轴时自动吸附对齐。
-/// 定位方式：按住浮窗拖动，或用方向键逐像素微调（长按连发）。
-/// </summary>
 public partial class PlacementPickerWindow : Window
 {
-    /// <summary>中轴吸附距离（DIP）：浮窗中心距屏幕中轴在此范围内即对齐到正中心。</summary>
     private const double SnapDistance = 8;
 
-    /// <summary>方向键连发：按住多久后开始连发、连发间隔（毫秒）。</summary>
     private const int RepeatDelayMs = 350;
     private const int RepeatIntervalMs = 40;
 
-    /// <summary>点击“保存位置”时触发，参数为钳制后的提示左上角坐标（DIP）。</summary>
     public event Action<double, double>? Saved;
 
     private bool _dragging;
@@ -38,7 +25,6 @@ public partial class PlacementPickerWindow : Window
 
     private bool _snapX, _snapY;
 
-    // 辅助线元素，下标与 OsdPlacement.PopSide 一一对应（Top=0 / Bottom=1 / Left=2 / Right=3）
     private readonly Rectangle[] _bands = new Rectangle[4];
     private readonly Line[] _zoneLines = new Line[4];
     private Line? _snapV;
@@ -48,7 +34,6 @@ public partial class PlacementPickerWindow : Window
     private Brush _accentBrush = Brushes.DodgerBlue;
     private Brush _bandBrush = Brushes.Transparent;
 
-    /// <summary>方向键连发计时器：首次按下立即走 1 像素，按住 RepeatDelayMs 后按 RepeatIntervalMs 持续移动。</summary>
     private readonly DispatcherTimer _repeat = new() { Interval = TimeSpan.FromMilliseconds(RepeatDelayMs) };
     private Key _repeatKey = Key.None;
 
@@ -57,15 +42,9 @@ public partial class PlacementPickerWindow : Window
         InitializeComponent();
         ApplyTheme();
 
-        // 预览卡片跟着用户的“浮窗大小”一起缩放：设置里已经调过大小的话，
-        // 这里拖动的必须是真实尺寸，否则保存下来的位置在浮窗变大后会贴出屏外。
         double scale = AppSettings.NormalizeScale(AppSettings.Instance.TipScale);
         if (Math.Abs(scale - 1) > 0.001) TipCard.LayoutTransform = new ScaleTransform(scale, scale);
 
-        // 遮罩只盖主显示器（与 OSD 的显示范围一致），几何直接用 MonitorArea 的 DIP 矩形：
-        // SystemParameters.PrimaryScreenWidth/Height 走的是"系统 DPI"派生值，主屏缩放改过、
-        // 或它与系统 DPI 不一致时会和 OSD 落位用的换算差一截——这里差多少，拖出来的
-        // 位置就存歪多少（表现为"设置里拖到右下角，实际浮窗出现在别处"）。
         Left = _area.Left;
         Top = _area.Top;
         Width = _area.Width;
@@ -76,7 +55,7 @@ public partial class PlacementPickerWindow : Window
         Loaded += (_, _) => LayoutInitial();
         SizeChanged += (_, _) =>
         {
-            if (!IsLoaded) return; // 尺寸随显示配置变化时重算辅助线几何
+            if (!IsLoaded) return;
             MoveCard(Canvas.GetLeft(TipCard), Canvas.GetTop(TipCard), allowSnap: true);
         };
         CancelBtn.Click += (_, _) => Close();
@@ -101,11 +80,6 @@ public partial class PlacementPickerWindow : Window
     private double ScreenW => ActualWidth > 0 ? ActualWidth : Width;
     private double ScreenH => ActualHeight > 0 ? ActualHeight : Height;
 
-    /// <summary>
-    /// 摆放画布永远铺在主显示器上（自定义位置存的是“相对显示器左上角的偏移”，
-    /// 开启「跟随焦点显示器」后同一偏移会套到浮窗实际所在的那块屏），
-    /// 因此这里的参照物固定为主屏，与实际弹出时的换算无关。
-    /// </summary>
     private MonitorArea _area = MonitorArea.Primary();
 
     private void ApplyTheme()
@@ -117,8 +91,6 @@ public partial class PlacementPickerWindow : Window
         HintText.Foreground = secondary;
         ZoneHint.Foreground = secondary;
 
-        // 遮罩上的卡片无法用 DWM 亚克力，改用高不透明度纯色模拟同款质感；
-        // 高对比度下改为完全不透明的系统窗口色，避免半透明把对比度拉低
         var card = new SolidColorBrush(ThemeHelper.PickerSurface(dark));
         var stroke = new SolidColorBrush(ThemeHelper.PickerStroke(dark));
         TipCard.Background = card;
@@ -136,10 +108,6 @@ public partial class PlacementPickerWindow : Window
         ApplyGuideBrushes();
     }
 
-    /// <summary>
-    /// 创建辅助线：4 条贴边判定区边界虚线、4 条边缘高亮带（同一时刻只亮一条）、2 条中轴吸附辅助线。
-    /// 高亮带铺满整条边缘，卡片摆在四角时相邻的那条边也能被高亮覆盖。
-    /// </summary>
     private void BuildGuides()
     {
         if (_zoneLines[0] != null) return;
@@ -185,12 +153,10 @@ public partial class PlacementPickerWindow : Window
             if (band != null) band.Fill = _bandBrush;
         foreach (var line in _zoneLines)
             if (line != null) line.Stroke = _guideBrush;
-        // 中轴线的描边在 UpdateGuides 里按是否吸附逐条设置，这里只兜底初始色
         if (_snapV != null) _snapV.Stroke = _guideBrush;
         if (_snapH != null) _snapH.Stroke = _guideBrush;
     }
 
-    /// <summary>布局浮窗与操作条的初始位置：已有自定义用自定义值，否则模拟当前预设位置。</summary>
     private void LayoutInitial()
     {
         var s = AppSettings.Instance;
@@ -208,7 +174,6 @@ public partial class PlacementPickerWindow : Window
         HintBar.Opacity = 1;
     }
 
-    /// <summary>落位：钳制进屏内 → 中轴吸附 → 移动浮窗与操作条 → 刷新高亮带与辅助线。</summary>
     private void MoveCard(double left, double top, bool allowSnap)
     {
         double w = TipCard.ActualWidth, h = TipCard.ActualHeight;
@@ -225,10 +190,6 @@ public partial class PlacementPickerWindow : Window
         UpdateGuides(left, top, w, h);
     }
 
-    /// <summary>
-    /// 预览卡片跟随真实浮窗：挂靠屏幕顶部区域（中心在上半屏）时，把强调色指示条从卡片下缘
-    /// 镜像到文字上方，并同步把内容区的上下留白对调，保证“拖到哪就看到什么”。
-    /// </summary>
     private void MirrorPreviewBar(double top, double h)
     {
         bool onTop = top + h / 2 < ScreenH / 2;
@@ -237,7 +198,6 @@ public partial class PlacementPickerWindow : Window
         TipBar.Margin = onTop ? new Thickness(0, 6, 0, 0) : new Thickness(0, 0, 0, 6);
     }
 
-    /// <summary>中轴吸附：浮窗中心与屏幕水平/垂直中轴的距离在 SnapDistance 内时对齐到正中心。</summary>
     private (double Left, double Top, bool SnapX, bool SnapY) SnapToCenter(double left, double top, double w, double h)
     {
         double centerLeft = (ScreenW - w) / 2;
@@ -247,7 +207,6 @@ public partial class PlacementPickerWindow : Window
         return (snapX ? centerLeft : left, snapY ? centerTop : top, snapX, snapY);
     }
 
-    /// <summary>重算辅助线几何，并按浮窗当前位置高亮生效的贴边方向。</summary>
     private void UpdateGuides(double left, double top, double w, double h)
     {
         if (_zoneLines[0] == null) return;
@@ -257,26 +216,22 @@ public partial class PlacementPickerWindow : Window
         double zw = sw * OsdPlacement.ZoneRatio;
         double zh = sh * OsdPlacement.ZoneRatio;
 
-        // 四边判定区的内边界虚线（外侧边界与屏幕边框重合，不画）
         SetLine(_zoneLines[(int)OsdPlacement.PopSide.Top], 0, zh, sw, zh);
         SetLine(_zoneLines[(int)OsdPlacement.PopSide.Bottom], 0, sh - zh, sw, sh - zh);
         SetLine(_zoneLines[(int)OsdPlacement.PopSide.Left], zw, 0, zw, sh);
         SetLine(_zoneLines[(int)OsdPlacement.PopSide.Right], sw - zw, 0, sw - zw, sh);
 
-        // 高亮带铺满整条边缘（含四角）：卡片摆在角落时高亮仍与它相邻；同一时刻只亮一条，不会叠色
         SetRect(_bands[(int)OsdPlacement.PopSide.Top], 0, 0, sw, zh);
         SetRect(_bands[(int)OsdPlacement.PopSide.Bottom], 0, sh - zh, sw, zh);
         SetRect(_bands[(int)OsdPlacement.PopSide.Left], 0, 0, zw, sh);
         SetRect(_bands[(int)OsdPlacement.PopSide.Right], sw - zw, 0, zw, sh);
 
-        // 只高亮真正生效的那一条边（左右优先于上下，与真实提示的滑动方向一致）
         var active = OsdPlacement.ActiveSide(left, top, w, h, _area);
         Show(_bands[(int)OsdPlacement.PopSide.Left], active == OsdPlacement.PopSide.Left);
         Show(_bands[(int)OsdPlacement.PopSide.Right], active == OsdPlacement.PopSide.Right);
         Show(_bands[(int)OsdPlacement.PopSide.Top], active == OsdPlacement.PopSide.Top);
         Show(_bands[(int)OsdPlacement.PopSide.Bottom], active == OsdPlacement.PopSide.Bottom);
 
-        // 中轴辅助线：平时淡显，吸附成功时转为强调色
         if (_snapV != null) SetLine(_snapV, sw / 2, 0, sw / 2, sh);
         if (_snapH != null) SetLine(_snapH, 0, sh / 2, sw, sh / 2);
         StyleSnapLine(_snapV, _snapX);
@@ -309,17 +264,15 @@ public partial class PlacementPickerWindow : Window
         rect.Height = h;
     }
 
-    /// <summary>操作条跟随浮窗：下方留 8px；贴近可用区底边放不下时翻到浮窗上方；水平居中并钳制在屏内。</summary>
     private void PlaceHintBar(double tipLeft, double tipTop)
     {
-        // 用本屏的可用区而不是 SystemParameters.WorkArea：后者只描述主屏，且是系统 DPI 派生值
         double workBottom = _area.Usable().Bottom;
         double hintW = HintBar.ActualWidth, hintH = HintBar.ActualHeight;
         double tipH = TipCard.ActualHeight;
 
-        double top = tipTop + tipH + 8; // 优先放浮窗下方
+        double top = tipTop + tipH + 8;
         if (top + hintH > workBottom - 8)
-            top = Math.Max(8, tipTop - 8 - hintH);   // 底边放不下 → 翻到上方
+            top = Math.Max(8, tipTop - 8 - hintH);
         double left = tipLeft + TipCard.ActualWidth / 2 - hintW / 2;
         left = Math.Clamp(left, 8, Math.Max(8, ScreenW - hintW - 8));
 
@@ -330,7 +283,7 @@ public partial class PlacementPickerWindow : Window
     private void Tip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragging = true;
-        StopRepeat(); // 拖动期间停掉方向键连发，避免两个来源同时改坐标
+        StopRepeat();
         _dragOrigin = e.GetPosition(this);
         _startLeft = Canvas.GetLeft(TipCard);
         _startTop = Canvas.GetTop(TipCard);
@@ -354,10 +307,6 @@ public partial class PlacementPickerWindow : Window
         e.Handled = true;
     }
 
-    /// <summary>
-    /// 方向键像素级微调：按一下移动 1 像素（按住 Shift 为 10 像素），按住不放先等 RepeatDelayMs
-    /// 再按 RepeatIntervalMs 连发。系统自身的按键重复（e.IsRepeat）忽略掉，节奏统一由计时器控制。
-    /// </summary>
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape) { Close(); e.Handled = true; return; }
@@ -385,7 +334,6 @@ public partial class PlacementPickerWindow : Window
     private static bool IsArrow(Key key) =>
         key is Key.Left or Key.Right or Key.Up or Key.Down;
 
-    /// <summary>单次步长：默认 1 像素，按住 Shift 为 10 像素。</summary>
     private static double StepSize() =>
         (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 10 : 1;
 
@@ -402,7 +350,6 @@ public partial class PlacementPickerWindow : Window
             case Key.Down: top += step; break;
             default: return;
         }
-        // 键盘微调不参与中轴吸附：否则贴着中轴时怎么按都还在吸附范围内，挪不开 1 像素
         MoveCard(left, top, allowSnap: false);
     }
 
@@ -423,6 +370,5 @@ public partial class PlacementPickerWindow : Window
 
         var m = new NativeMethods.MARGINS { cxLeftWidth = -1, cxRightWidth = -1, cyTopHeight = -1, cyBottomHeight = -1 };
         NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref m);
-        // 不用系统 backdrop：整屏窗口不适用亚克力，遮罩与卡片质感全部由 WPF 元素绘制
     }
 }

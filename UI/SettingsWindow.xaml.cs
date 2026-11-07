@@ -13,24 +13,20 @@ namespace WinTips.UI;
 
 public partial class SettingsWindow : Window
 {
-    /// <summary>测试提示回调（由 App 注入），保存自定义位置后预览真实效果。</summary>
     private readonly Action<TipKind, bool?>? _showTest;
 
-    /// <summary>浮窗大小预览回调（由 App 注入），拖动大小滑杆时实时弹出真实浮窗。</summary>
     private readonly Action<double>? _previewSize;
 
-    /// <summary>玻璃材质预览回调（由 App 注入），改材质开关或透明度时重铺真实浮窗。</summary>
     private readonly Action<double>? _previewAppearance;
 
-    /// <summary>正在拖拽大小滑杆：此时预览用较长的停留时间，避免用户中途停顿一下浮窗就消失。</summary>
     private bool _draggingScale;
 
-    /// <summary>正在拖拽材质透明度滑杆（与 <see cref="_draggingScale"/> 同理）。</summary>
     private bool _draggingGlass;
 
     private const double DragPreviewSeconds = 8;
 
-    /// <summary>上一次实际生效的玻璃状态，用于 WM_SETTINGCHANGE 时判断是否真的需要重铺材质。</summary>
+    private const double PreferredWidth = 800;
+
     private bool _glassApplied;
 
     public SettingsWindow(Action<TipKind, bool?>? showTest = null, Action<double>? previewSize = null,
@@ -47,7 +43,6 @@ public partial class SettingsWindow : Window
         WireEvents();
         TrySetIcon();
 
-        // 语言切换后 XAML 文案由绑定自动刷新，代码里拼好的数值标签需手动重算
         Loc.Changed += RefreshValueLabels;
         ThemeHelper.Changed += OnSystemThemeChanged;
         Closed += (_, _) =>
@@ -57,18 +52,12 @@ public partial class SettingsWindow : Window
         };
     }
 
-    /// <summary>系统深浅色 / 高对比度切换后重刷配色与窗口材质。</summary>
     private void OnSystemThemeChanged()
     {
         ApplyTheme();
         ApplyChrome();
     }
 
-    /// <summary>
-    /// Win11 保留系统标题栏（自带 Mica 与圆角，和系统设置页一致）；
-    /// Win10 拿不到 Mica/圆角，系统标题栏会露出 Aero 时代的方形边框，
-    /// 因此改为无边框 + 自绘标题栏，杜绝“Win7 样式窗口”。
-    /// </summary>
     private void ApplyPlatformChrome()
     {
         if (DwmChrome.SupportsFluent) return;
@@ -79,15 +68,11 @@ public partial class SettingsWindow : Window
     private void LegacyCaption_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState != MouseButtonState.Pressed) return;
-        try { DragMove(); } catch (InvalidOperationException) { /* 鼠标已抬起，忽略 */ }
+        try { DragMove(); } catch (InvalidOperationException) {  }
     }
 
     private void LegacyClose_Click(object sender, RoutedEventArgs e) => Close();
 
-    /// <summary>
-    /// 底部版本号：与托盘悬停提示同源（<see cref="AppInfo"/> 读 csproj 的 &lt;Version&gt;），
-    /// 发版只改 csproj，两处自动同步。
-    /// </summary>
     private void ApplyVersionText() => VersionRun.Text = $"WinTips {AppInfo.DisplayVersion}";
 
     private void RefreshValueLabels()
@@ -95,9 +80,7 @@ public partial class SettingsWindow : Window
         UpdateDurationText(DurationSlider.Value);
         UpdateAnimSpeedText(AnimSpeedSlider.Value);
         UpdateTipScaleText(TipScaleSlider.Value);
-        // 提示文案是代码里按结果拼的，语言切换后需要重刷（XAML 绑定管不到）
         if (StartupHint.Visibility == Visibility.Visible) ShowStartupHint(_lastStartupResult);
-        // 字体下拉框的「内置（HarmonyOS Sans SC）」也要跟着换词
         RebuildFontChoices();
     }
 
@@ -118,17 +101,17 @@ public partial class SettingsWindow : Window
         GlassOpacityText.Foreground = secondary;
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
+        LanguageDesc.Foreground = secondary;
         FocusMonitorDesc.Foreground = secondary;
         FontDesc.Foreground = secondary;
         StartupHint.Foreground = secondary;
         FooterText.Foreground = secondary;
-        // Hyperlink 的默认前景是强调色蓝，这里跟上页脚那行的次要色，只在悬停时靠光标和提示区分
         VersionLink.Foreground = secondary;
         LblKeys.Foreground = secondary;
         LblBehavior.Foreground = secondary;
 
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK8b, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6 })
             sep.Background = divider;
     }
 
@@ -143,14 +126,13 @@ public partial class SettingsWindow : Window
         PasteToggle.IsChecked = s.ShowPaste;
         CutToggle.IsChecked = s.ShowCut;
         AnyCopyToggle.IsChecked = s.ShowAnyCopy;
+        LanguageToggle.IsChecked = s.ShowLanguageTip;
         DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 0.5, 5);
         UpdateDurationText(DurationSlider.Value);
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
         UpdateAnimSpeedText(s.AnimationSpeed);
-        // 滑杆刻度是 0.1 步长，回填值先归一到合法区间与刻度，避免出现 0.63 这种落不到格上的值
         TipScaleSlider.Value = Math.Round(AppSettings.NormalizeScale(s.TipScale), 1);
         UpdateTipScaleText(TipScaleSlider.Value);
-        // 回填材质开关与透明度；刻度是 0.05，先把值吸附到格上，避免滑杆停在两格之间
         GlassToggle.IsChecked = s.TipGlass;
         GlassOpacitySlider.Value = Math.Round(AppSettings.NormalizeGlassOpacity(s.TipGlassOpacity) / 0.05) * 0.05;
         UpdateGlassOpacityText(GlassOpacitySlider.Value);
@@ -164,7 +146,6 @@ public partial class SettingsWindow : Window
         RebuildFontChoices();
     }
 
-    /// <summary>位置行 UI 状态：自定义生效时禁用预设单选并启用「还原默认」。</summary>
     private void RefreshPlacementUi()
     {
         bool custom = AppSettings.Instance.HasCustomPosition;
@@ -184,16 +165,14 @@ public partial class SettingsWindow : Window
         {
             Save(v => { v.CustomLeft = left; v.CustomTop = top; });
             RefreshPlacementUi();
-            _showTest?.Invoke(TipKind.CapsLock, true); // 保存后弹出真实提示，直观确认位置
+            _showTest?.Invoke(TipKind.CapsLock, true);
         };
         picker.ShowDialog();
         RefreshPlacementUi();
     }
 
-    /// <summary>程序化回填单选态时置位，避免触发 Checked 里的保存与预览提示。</summary>
     private bool _syncingPlacement;
 
-    /// <summary>回填预设位置：垂直（顶部/底部）与水平（左/中/右）两组单选各自独立。</summary>
     private void LoadPlacement()
     {
         var s = AppSettings.Instance;
@@ -212,10 +191,6 @@ public partial class SettingsWindow : Window
         finally { _syncingPlacement = false; }
     }
 
-    /// <summary>
-    /// 预设位置变更（顶部/底部与左/中/右可自由组合）：写入设置后弹一次真实提示，
-    /// 让用户直观看到落点。只传需要改动的那个轴，另一轴保持当前值。
-    /// </summary>
     private void OnPresetChecked(string? horizontal, string? vertical)
     {
         if (_syncingPlacement) return;
@@ -227,10 +202,6 @@ public partial class SettingsWindow : Window
         _showTest?.Invoke(TipKind.CapsLock, true);
     }
 
-    /// <summary>
-    /// 跟随焦点显示器。开关后立即弹一次真实提示：此时设置窗口就是前台窗口，
-    /// 提示会落在它所在的这块屏上——用户一眼就能确认自己刚开的是什么东西。
-    /// </summary>
     private void ApplyFollowFocus(bool enable)
     {
         Save(v => v.TipFollowFocus = enable);
@@ -246,22 +217,15 @@ public partial class SettingsWindow : Window
 
     private void UpdateAnimSpeedText(double speed) => AnimSpeedText.Text = AnimSpeedLabel(speed);
 
-    /// <summary>浮窗大小标签：直接显示百分比（100% = 原始尺寸），两种语言通用，不走词条表。</summary>
     private void UpdateTipScaleText(double scale)
     {
         TipScaleText.Text = $"{(int)Math.Round(scale * 100)}%";
-        // 已在 100% 时没有可还原的东西，按钮置灰（与「自定义位置」那行的行为一致）
         ResetScaleBtn.IsEnabled = Math.Abs(scale - 1) > 0.001;
     }
 
-    /// <summary>材质透明度标签：百分比，与大小那条同款、不走词条表。</summary>
     private void UpdateGlassOpacityText(double opacity) =>
         GlassOpacityText.Text = $"{(int)Math.Round(AppSettings.NormalizeGlassOpacity(opacity) * 100)}%";
 
-    /// <summary>
-    /// 材质开关决定透明度滑杆是否可用：关掉玻璃材质后没有可调的对象，
-    /// 留着一条能拖但毫无反应的滑杆比把它灰掉更让人困惑。
-    /// </summary>
     private void RefreshGlassUi()
     {
         bool on = GlassToggle.IsChecked == true;
@@ -270,10 +234,6 @@ public partial class SettingsWindow : Window
         GlassOpacityText.Opacity = on ? 1 : 0.45;
     }
 
-    /// <summary>
-    /// 材质开关：写入设置后让真实浮窗按新外观重铺一次。开关会改变浮窗走不走
-    /// 抓屏路径，所以那边会先收起再重新弹出（抓屏不能在自己可见时进行）。
-    /// </summary>
     private void ApplyGlass(bool enable)
     {
         Save(v => v.TipGlass = enable);
@@ -289,7 +249,6 @@ public partial class SettingsWindow : Window
         _previewAppearance?.Invoke(AppSettings.Instance.DisplaySeconds);
     }
 
-    /// <summary>材质透明度变更：只换浮窗那层底色，不重新抓屏，所以拖动时每一格都能即时响应。</summary>
     private void ApplyGlassOpacity(double value)
     {
         double opacity = AppSettings.NormalizeGlassOpacity(value);
@@ -298,19 +257,13 @@ public partial class SettingsWindow : Window
         _previewAppearance?.Invoke(_draggingGlass ? DragPreviewSeconds : AppSettings.Instance.DisplaySeconds);
     }
 
-    /// <summary>拖动大小滑杆期间用较长停留时间：用户中途停顿一下浮窗也不该消失。</summary>
     private void TipScaleSlider_DragStarted(object sender, DragStartedEventArgs e) => _draggingScale = true;
     private void TipScaleSlider_DragCompleted(object sender, DragCompletedEventArgs e)
     {
         _draggingScale = false;
-        // 松手后回到正常的停留时长，别让预览赖在屏幕上不动
         _previewSize?.Invoke(AppSettings.Instance.DisplaySeconds);
     }
 
-    /// <summary>
-    /// 浮窗大小变更：写入设置后立刻弹（或就地重排）真实浮窗做预览——所见即所得，
-    /// 不必先关掉设置窗口才能看到效果。
-    /// </summary>
     private void ApplyTipScale(double value)
     {
         double scale = AppSettings.NormalizeScale(value);
@@ -337,6 +290,8 @@ public partial class SettingsWindow : Window
         CutToggle.Unchecked += (_, _) => Save(v => v.ShowCut = false);
         AnyCopyToggle.Checked += (_, _) => Save(v => v.ShowAnyCopy = true);
         AnyCopyToggle.Unchecked += (_, _) => Save(v => v.ShowAnyCopy = false);
+        LanguageToggle.Checked += (_, _) => Save(v => v.ShowLanguageTip = true);
+        LanguageToggle.Unchecked += (_, _) => Save(v => v.ShowLanguageTip = false);
 
         DurationSlider.ValueChanged += (_, e) =>
         {
@@ -351,15 +306,12 @@ public partial class SettingsWindow : Window
             SaveSoon(v => v.AnimationSpeed = speed);
         };
 
-        // 大小滑杆：每跨一格刻度才触发一次（控件已开启吸附刻度），刷新标签、落盘并实时预览
         TipScaleSlider.ValueChanged += (_, e) => ApplyTipScale(e.NewValue);
 
         GlassToggle.Checked += (_, _) => ApplyGlass(true);
         GlassToggle.Unchecked += (_, _) => ApplyGlass(false);
         GlassOpacitySlider.ValueChanged += (_, e) => ApplyGlassOpacity(e.NewValue);
 
-        // 还原默认：把滑杆拨回 100%，ValueChanged 负责落盘与预览；万一值本来就等于 1.0
-        // （浮点残留），ValueChanged 不会触发，这里直接补一次，保证按钮永远有反应
         ResetScaleBtn.Click += (_, _) =>
         {
             TipScaleSlider.Value = 1.0;
@@ -377,11 +329,8 @@ public partial class SettingsWindow : Window
         LangSystemToggle.Unchecked += (_, _) =>
         {
             if (_syncingLanguage) return;
-            // 从「跟随系统」切到具体语言：默认沿用当前生效的那一种，避免用户再点一次下拉框
             if (LangCombo.SelectedItem is LanguageOption option) SetLanguage(option.Language);
         };
-        // 用户主动点开 / 用键盘展开下拉框 = 想自己指定语言：先把「跟随系统」摘掉，
-        // 下拉框本身永远可点（旧做法是跟随系统时置灰，用户点了没反应，像坏了）
         LangCombo.DropDownOpened += (_, _) => LeaveSystemLanguage();
         LangCombo.SelectionChanged += (_, _) =>
         {
@@ -395,7 +344,6 @@ public partial class SettingsWindow : Window
             if (FontCombo.SelectedItem is FontChoice choice) ApplyUiFont(choice);
         };
 
-        // 切换预设位置后弹一次真实提示，让用户直观看到落点
         PosTop.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementTop);
         PosBottom.Checked += (_, _) => OnPresetChecked(null, AppSettings.PlacementBottom);
         PosLeft.Checked += (_, _) => OnPresetChecked(AppSettings.PlacementLeft, null);
@@ -415,17 +363,10 @@ public partial class SettingsWindow : Window
         };
     }
 
-    /// <summary>程序化回填开关时置位，避免再触发一次写入。</summary>
     private bool _syncingStartup;
 
-    /// <summary>最近一次开关操作的结果，供切换语言后重刷提示文案。</summary>
     private StartupChangeResult _lastStartupResult = StartupChangeResult.Ok;
 
-    /// <summary>
-    /// 开机自启开关。写入后一律回读系统真实状态再回填 UI：
-    /// 被任务管理器关过（DisabledByUser）或被组策略拦下时，开启会失败，
-    /// 开关必须弹回原位并说明原因 —— 挂个假开关比没有开关更糟。
-    /// </summary>
     private void ApplyStartup(bool enable)
     {
         if (_syncingStartup) return;
@@ -463,14 +404,8 @@ public partial class SettingsWindow : Window
         StartupHint.Visibility = Visibility.Visible;
     }
 
-    /// <summary>程序化回填语言控件时置位，避免触发 Checked / SelectionChanged 里的保存。</summary>
     private bool _syncingLanguage;
 
-    /// <summary>
-    /// 回填语言控件：跟随系统时下拉框仍显示系统识别出的那一种，
-    /// 用户一眼就能看出「跟随系统」此刻实际用的是哪门语言。
-    /// 下拉框不置灰 —— 点它就是要自己指定语言，见 <see cref="LeaveSystemLanguage"/>。
-    /// </summary>
     private void SyncLanguageUi()
     {
         _syncingLanguage = true;
@@ -483,12 +418,6 @@ public partial class SettingsWindow : Window
         finally { _syncingLanguage = false; }
     }
 
-    /// <summary>
-    /// 用户点开下拉框时摘掉「跟随系统」：默认停在当前生效的那一种语言，
-    /// 用户接着选别的即可，不必先回上面把开关关掉。
-    /// 这里刻意不走 <see cref="SetLanguage"/>：它末尾的 <see cref="SyncLanguageUi"/>
-    /// 会重设 SelectedItem，而事件发生在列表刚展开的瞬间，动选中项容易把下拉顶掉。
-    /// </summary>
     private void LeaveSystemLanguage()
     {
         if (Loc.Language != AppLanguage.System) return;
@@ -502,7 +431,6 @@ public partial class SettingsWindow : Window
         finally { _syncingLanguage = false; }
     }
 
-    /// <summary>切换界面语言：写入设置并立即生效（XAML 文案由绑定自动刷新，无需重启）。</summary>
     private void SetLanguage(AppLanguage language)
     {
         Save(v => v.Language = Loc.ToSetting(language));
@@ -510,13 +438,8 @@ public partial class SettingsWindow : Window
         SyncLanguageUi();
     }
 
-    /// <summary>程序化回填字体下拉框时置位，避免触发保存与预览。</summary>
     private bool _syncingFont;
 
-    /// <summary>
-    /// 重建字体下拉框：第一项固定是「默认字体」（随包分发的 HarmonyOS Sans SC），其后是系统里已装的字族。
-    /// 打开窗口与切换界面语言（「默认字体」这词的文案要跟着换）都会走这里。
-    /// </summary>
     private void RebuildFontChoices()
     {
         var choices = FontCatalog.BuildChoices();
@@ -535,10 +458,6 @@ public partial class SettingsWindow : Window
         finally { _syncingFont = false; }
     }
 
-    /// <summary>
-    /// 换界面字体：立即生效（样式与各窗口都吃 <see cref="AppFont"/> 写的那个动态资源），
-    /// 再弹一次真实提示——浮窗宽度按实测文字算，不亲眼看一眼很难判断换完合不合适。
-    /// </summary>
     private void ApplyUiFont(FontChoice choice)
     {
         string setting = choice.IsDefault ? "" : choice.Name;
@@ -553,7 +472,6 @@ public partial class SettingsWindow : Window
         AppSettings.Instance.Save();
     }
 
-    /// <summary>滑杆专用：内存里立刻生效，落盘合并到 400ms 后（见 <see cref="AppSettings.SaveSoon"/>）。</summary>
     private void SaveSoon(Action<AppSettings> apply)
     {
         apply(AppSettings.Instance);
@@ -569,11 +487,17 @@ public partial class SettingsWindow : Window
     {
         base.OnSourceInitialized(e);
         ApplyChrome();
-        // 系统“透明效果”开关会改变玻璃可用性（见 ThemeHelper.TransparencyEnabled），
-        // 切换时 Windows 只广播 WM_SETTINGCHANGE，SystemEvents 不一定能及时送到，
-        // 这里直接挂消息钩子：用户一边开着本窗口一边拨系统开关也能立刻重铺材质。
+        FitToScreen();
         var hwnd = new WindowInteropHelper(this).Handle;
         HwndSource.FromHwnd(hwnd)?.AddHook(ChromeWndProc);
+    }
+
+    private void FitToScreen() => WindowFit.ClampToScreen(this, PreferredWidth);
+
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        FitToScreen();
     }
 
     private IntPtr ChromeWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -586,11 +510,6 @@ public partial class SettingsWindow : Window
         return IntPtr.Zero;
     }
 
-    /// <summary>
-    /// 窗口材质：只有真正拿到 Mica 才让客户区透明。Win10 / 高对比度 / 合成关闭 /
-    /// 系统关掉透明效果时，半透明卡片会露出 DWM 的实心填充色（Win7 Aero 式色带、
-    /// 整窗偏灰或偏黑），因此必须退回“整窗不透明纯色”。可重复调用，用于运行时切换。
-    /// </summary>
     private void ApplyChrome()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
@@ -616,17 +535,11 @@ public partial class SettingsWindow : Window
 
         DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_NONE);
         DwmChrome.SetFrameExtended(hwnd, false);
-        // 合成目标也要跟着落回实色：从玻璃态切过来时它还是 Transparent，
-        // 首帧会在面板与标题栏之间闪一下旧底色
         src.CompositionTarget.BackgroundColor = surface.Color;
         Background = surface;
         Panel.Background = surface;
     }
 
-    /// <summary>
-    /// 点底部版本号打开「许可与致谢」：字体出处、外观参考与协议全文都在那里。
-    /// 单独一行的字体注记撤掉后，许可要求的「软件内注明」由这个弹窗承担（见 <see cref="LicenseWindow"/>）。
-    /// </summary>
     private void VersionLink_Click(object sender, RoutedEventArgs e) =>
         new LicenseWindow { Owner = this }.ShowDialog();
 

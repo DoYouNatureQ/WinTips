@@ -4,7 +4,6 @@ namespace WinTips.Native;
 
 internal static partial class NativeMethods
 {
-    // ---- 低级键盘钩子 ----
     public const int WH_KEYBOARD_LL = 13;
     public const uint WM_KEYDOWN = 0x0100;
     public const uint WM_KEYUP = 0x0101;
@@ -38,11 +37,36 @@ internal static partial class NativeMethods
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr GetModuleHandleW(string? lpModuleName);
 
-    // ---- 键状态 ----
     [DllImport("user32.dll")]
     public static extern short GetKeyState(int nVirtKey);
 
-    // ---- 剪贴板更新监听 ----
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetKeyboardLayout(uint idThread);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern int LCIDToLocaleName(uint Locale, System.Text.StringBuilder lpName, int cchName, uint dwFlags);
+
+    public const uint LOCALE_SNATIVEDISPLAYNAME = 0x00000073;
+
+    public const uint LOCALE_SLOCALIZEDDISPLAYNAME = 0x00000002;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetLocaleInfoEx(string lpLocaleName, uint LCType, System.Text.StringBuilder lpLCData, int cchData);
+
+    [DllImport("imm32.dll")]
+    public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+
+    public const uint WM_IME_CONTROL = 0x0283;
+    public const int IMC_GETCONVERSIONMODE = 0x0001;
+
+    public const int IME_CMODE_NATIVE = 0x0001;
+
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessageTimeoutW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
+        uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
     public const uint WM_CLIPBOARDUPDATE = 0x031D;
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -51,8 +75,6 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
-    // 判断剪贴板当前是否有内容。IsClipboardFormatAvailable 无需 OpenClipboard，
-    // 不会与正在写入剪贴板的程序发生打开冲突；延迟渲染的格式也按“存在”返回。
     public const uint CF_BITMAP = 2;
     public const uint CF_METAFILEPICT = 3;
     public const uint CF_DIB = 8;
@@ -63,7 +85,6 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool IsClipboardFormatAvailable(uint format);
 
-    // ---- 窗口扩展样式 ----
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TOOLWINDOW = 0x00000080;
     public const int WS_EX_NOACTIVATE = 0x08000000;
@@ -82,20 +103,18 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
-    // ---- DWM 系统材质 ----
-    // 深色标题栏的属性号随版本变化：1809–1903 为 19，2004(19041)+ 才是 20
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE_LEGACY = 19;
-    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;   // Win11 22000+
-    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;        // Win11 22621+
+    public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
 
     public const int DWMWCP_DONOTROUND = 1;
     public const int DWMWCP_ROUND = 2;
 
     public const int DWMSBT_AUTO = 0;
     public const int DWMSBT_NONE = 1;
-    public const int DWMSBT_MAINWINDOW = 2;   // Mica
-    public const int DWMSBT_TRANSIENTWINDOW = 3; // Acrylic（浮窗同款）
+    public const int DWMSBT_MAINWINDOW = 2;
+    public const int DWMSBT_TRANSIENTWINDOW = 3;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct MARGINS
@@ -112,18 +131,15 @@ internal static partial class NativeMethods
     [DllImport("dwmapi.dll")]
     public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
 
-    /// <summary>桌面合成是否开启：关闭时（安全模式/无 DWM/远程会话）所有玻璃效果都会退化成经典样式。</summary>
     [DllImport("dwmapi.dll")]
     public static extern int DwmIsCompositionEnabled(out bool enabled);
 
-    // ---- 电源状态（节电模式会关掉亚克力） ----
     [StructLayout(LayoutKind.Sequential)]
     public struct SYSTEM_POWER_STATUS
     {
         public byte ACLineStatus;
         public byte BatteryFlag;
         public byte BatteryLifePercent;
-        /// <summary>1 = 节电模式开启（Win10 起）。其余位保留，不要按布尔直接用。</summary>
         public byte SystemStatusFlag;
         public int BatteryLifeTime;
         public int BatteryFullLifeTime;
@@ -132,7 +148,6 @@ internal static partial class NativeMethods
     [DllImport("kernel32.dll")]
     public static extern bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS status);
 
-    // ---- 鼠标钩子（菜单外点击关闭） ----
     public const int WH_MOUSE_LL = 14;
     public const uint WM_LBUTTONDOWN = 0x0201;
     public const uint WM_RBUTTONDOWN = 0x0204;
@@ -166,7 +181,6 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
-    /// <summary>前台窗口属于哪个进程：判断前台是不是本进程自己的窗口（设置页、托盘菜单）。</summary>
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -179,7 +193,6 @@ internal static partial class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindowExW(IntPtr hWndParent, IntPtr hWndChildAfter, string? lpszClass, string? lpszWindow);
 
-    // ---- 任务栏 ----
     public const uint ABM_GETSTATE = 0x0004;
     public const uint ABM_GETTASKBARPOS = 0x0005;
     public const uint ABE_LEFT = 0;
@@ -188,10 +201,8 @@ internal static partial class NativeMethods
     public const uint ABE_BOTTOM = 3;
     public const uint ABS_AUTOHIDE = 0x1;
 
-    /// <summary>主任务栏窗口类名（副屏任务栏是 Shell_SecondaryTrayWnd）。</summary>
     public const string TaskbarClassName = "Shell_TrayWnd";
 
-    /// <summary>副屏任务栏窗口类名：每台额外显示器各有一个，用来算该屏的可用区域。</summary>
     public const string SecondaryTaskbarClassName = "Shell_SecondaryTrayWnd";
 
     [StructLayout(LayoutKind.Sequential)]
@@ -229,11 +240,6 @@ internal static partial class NativeMethods
     [DllImport("shell32.dll")]
     public static extern IntPtr SHAppBarMessage(uint dwMessage, ref APPBARDATA pData);
 
-    // ---- Per-Monitor DPI（跨显示器自适应）----
-    // 浮窗会在多台显示器之间来回弹（「跟随焦点显示器」），各屏缩放可能不同。窗口真被搬到
-    // 另一块屏上时系统会主动投递 WM_DPICHANGED（隐藏窗口也一样，实测），WPF 自己会跟进；
-    // 这里额外提供 MonitorFromPoint / GetDpiForMonitor 供浮窗主动查询目标屏 DPI、
-    // 必要时补发 WM_DPICHANGED 兜底。
     public const uint WM_DPICHANGED = 0x02E0;
     public const uint WM_DISPLAYCHANGE = 0x007E;
     public const uint WM_SETTINGCHANGE = 0x001A;
@@ -268,14 +274,9 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, ref RECT lParam);
 
-    /// <summary>窗口当前所在显示器的有效 DPI（由系统维护，与 WPF 内部缩放可能不同步）。</summary>
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(IntPtr hWnd);
 
-    /// <summary>
-    /// 系统 DPI（1607+）。<see cref="GetDpiForMonitor"/> 拿不到某块屏的 DPI 时用它兜底：
-    /// 总比按 1.0 换算好——在 150% 的屏上按 1.0 算会把浮窗整体摆偏三分之一。
-    /// </summary>
     [DllImport("user32.dll")]
     public static extern uint GetDpiForSystem();
 
@@ -289,10 +290,6 @@ internal static partial class NativeMethods
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
         int X, int Y, int cx, int cy, uint uFlags);
 
-    // ---- 托盘图标（Shell_NotifyIcon）----
-    // 用原生托盘替代 WinForms 的 NotifyIcon：后者会把 System.Windows.Forms（13.1MB）、
-    // Forms.Primitives（3.4MB）、System.Drawing 与 GDI+（约 1.3MB）一并拖进进程常驻内存，
-    // 而这里只需要一个图标、一条提示文字和几次鼠标消息。
     public const uint NIM_ADD = 0x00000000;
     public const uint NIM_MODIFY = 0x00000001;
     public const uint NIM_DELETE = 0x00000002;
@@ -303,7 +300,6 @@ internal static partial class NativeMethods
     public const uint NIF_TIP = 0x00000004;
     public const uint NIF_SHOWTIP = 0x00000080;
 
-    /// <summary>V4 行为：回调 lParam 低字是鼠标消息，wParam 里带光标坐标。</summary>
     public const uint NOTIFYICON_VERSION_4 = 4;
 
     public const uint WM_APP = 0x8000;
@@ -329,7 +325,6 @@ internal static partial class NativeMethods
         public uint dwStateMask;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string szInfo;
-        /// <summary>与 uTimeout 共用同一块内存：设置版本时写这里。</summary>
         public uint uVersion;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
         public string szInfoTitle;
@@ -341,13 +336,9 @@ internal static partial class NativeMethods
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, EntryPoint = "Shell_NotifyIconW")]
     public static extern bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATAW lpData);
 
-    /// <summary>Explorer 重启后广播的消息名，收到后必须重新 NIM_ADD，否则图标消失。</summary>
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "RegisterWindowMessageW")]
     public static extern uint RegisterWindowMessageW(string lpString);
 
-    // ---- 图标句柄 ----
-    // ExtractIconEx 拿到的 HICON 由调用方 DestroyIcon 释放；
-    // LoadIcon 拿到的系统图标是共享资源，绝对不能销毁。
     public const int SM_CXICON = 11;
     public const int SM_CYICON = 12;
     public const int SM_CXSMICON = 49;

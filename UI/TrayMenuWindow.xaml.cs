@@ -27,7 +27,6 @@ public partial class TrayMenuWindow : Window
     private double _taskbarTopPx = double.MaxValue;
     private static TrayMenuWindow? _active;
 
-    /// <summary>字体族解析结果缓存：每次右键都新建 FontFamily 会重复解析候选字体串。正文族见 <see cref="AppFont.Ui"/>。</summary>
     private static readonly FontFamily IconFont = AppFont.Icon;
 
     internal TrayMenuWindow(Action openSettings, Action exit, Action<bool> toggleStartup,
@@ -45,16 +44,14 @@ public partial class TrayMenuWindow : Window
         ApplyTheme();
         BuildItems();
 
+        WindowFit.ClampHeightToScreen(this);
+
         AddHandler(PreviewMouseDownEvent, new MouseButtonEventHandler((_, _) => _seenDown = true), true);
     }
 
     private bool InputAllowed() =>
         Environment.TickCount64 - _openedAt >= 300 && _seenDown;
 
-    /// <summary>
-    /// 主屏可用区域底边（DIP）：任务栏此刻的上沿。以任务栏为锚点，跟随它的当前形态——
-    /// 收起时菜单跟到屏幕底边，滑出时自动让到任务栏上方，不会被压住。
-    /// </summary>
     private static double UsableBottom(double scale) =>
         TaskbarInfo.PrimaryUsableRect() is { } usable
             ? usable.Bottom / (scale > 0 ? scale : 1.0)
@@ -76,23 +73,18 @@ public partial class TrayMenuWindow : Window
 
         var solid = new SolidColorBrush(ThemeHelper.MenuSurface(dark));
 
-        // 扩展边框是 AllowsTransparency=false 下保留硬件加速 + 逐像素透明的前提，两条路径都要
         DwmChrome.SetFrameExtended(hwnd, true);
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
         if (ThemeHelper.AcrylicAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW))
         {
-            // 亚克力只负责"透"，边界得自己画：浅色主题下材质亮度层吃掉约 85%，
-            // 缺了这道受光描边，菜单和一张白色卡片没有区别
             Root.BorderThickness = new Thickness(1);
             Root.BorderBrush = ThemeHelper.GlassStroke(dark);
             Root.Background = new SolidColorBrush(ThemeHelper.GlassTint(dark));
             return;
         }
 
-        // 没有亚克力（Win10 / 高对比度 / 系统关掉透明效果 / 节电模式）：
-        // 不透明直角卡片，圆角缺口与玻璃色带都不会出现；边界由卡片自身提供
         Root.CornerRadius = new CornerRadius(0);
         Root.BorderThickness = new Thickness(0);
         Root.Background = solid;
@@ -189,7 +181,6 @@ public partial class TrayMenuWindow : Window
         var testBorder = AddItem(Loc.T("MenuTest"), "\uE765", ToggleTestSection, isChevron: true, closeOnClick: false);
         _testSection = new StackPanel { Visibility = Visibility.Collapsed };
 
-        // 测试项文案即浮窗文案，直接复用 TipInfo.Describe，避免两处维护
         (TipKind Kind, bool? State)[] tests =
         {
             (TipKind.CapsLock, true), (TipKind.CapsLock, false),
@@ -197,6 +188,7 @@ public partial class TrayMenuWindow : Window
             (TipKind.ScrollLock, true), (TipKind.ScrollLock, false),
             (TipKind.Insert, null), (TipKind.Copy, null),
             (TipKind.Paste, null), (TipKind.Cut, null),
+            (TipKind.Language, null),
         };
         foreach (var (kind, state) in tests)
             _testSection.Children.Add(MakeTestItem(TipInfo.Describe(kind, state), kind, state));
@@ -291,8 +283,6 @@ public partial class TrayMenuWindow : Window
     private void InstallOutsideClickHook()
     {
         _hwnd = new WindowInteropHelper(this).Handle;
-        // 任务栏当前那条带内的点击一律放过（收起时只剩 2px 唤出条，不影响点菜单），
-        // 否则点托盘图标/任务栏就会把菜单当“外部点击”关掉
         _taskbarTopPx = TaskbarInfo.PrimaryUsableRect() is { } usable
             ? usable.Bottom
             : SystemParameters.WorkArea.Bottom *
@@ -311,6 +301,7 @@ public partial class TrayMenuWindow : Window
 
     public void ShowMenuAtCursor()
     {
+        WindowFit.ClampHeightToScreen(this);
         Left = -200000;
         Top = -200000;
         Opacity = 0;

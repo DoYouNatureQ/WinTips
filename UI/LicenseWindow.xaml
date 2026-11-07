@@ -5,16 +5,12 @@
         Title="{loc:Tr LicenseTitle}" Width="580" SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False" FontFamily="{DynamicResource AppUiFont}">
-    <!-- 许可与致谢：点设置页版本号打开。默认只显示出处，协议全文收在「查看协议全文」后面
-         （字号小、没人愿意读；但许可 2(4) 要求随副本保留协议，所以不能只给一个外链——
-         离线、链接失效时都得读得到，外链只作为「官方原文」的旁证） -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Win10 兜底标题栏：Win11 上系统自带标题栏，这一行整行折叠（高度 0 不占位） -->
         <Grid x:Name="LegacyCaption" Grid.Row="0" Height="36" Visibility="Collapsed"
               MouseLeftButtonDown="LegacyCaption_MouseLeftButtonDown">
             <TextBlock Text="{loc:Tr LicenseTitle}" FontSize="12" Margin="16,0,56,0"
@@ -23,68 +19,71 @@
                     Click="Close_Click" AutomationProperties.Name="Close"/>
         </Grid>
 
-        <Grid x:Name="Panel" Grid.Row="1" Margin="24,18,24,18">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+        <ScrollViewer x:Name="Scroller" Grid.Row="1" Focusable="False"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer.Resources>
+                <Style TargetType="ScrollBar" BasedOn="{StaticResource Win11ScrollBar}"/>
+            </ScrollViewer.Resources>
 
-            <StackPanel Grid.Row="0">
-                <TextBlock Text="{loc:Tr LicenseTitle}" FontSize="20" FontWeight="SemiBold"/>
-                <TextBlock x:Name="Subtitle" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
-            </StackPanel>
+            <Grid x:Name="Panel" Margin="24,18,24,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-            <!-- 出处卡片：字体（随包分发）与外观参考，两行同一张卡，避免两条细边框叠在一起 -->
-            <Border x:Name="CreditCard" Grid.Row="1" Margin="0,16,0,0" CornerRadius="8" BorderThickness="1"
-                    Padding="16,4,16,4"
-                    Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource CardStrokeBrush}">
-                <StackPanel>
-                    <StackPanel Margin="0,10,0,10">
-                        <TextBlock Text="HarmonyOS Sans SC" FontSize="14" FontWeight="Medium"/>
-                        <TextBlock x:Name="FontDesc" Text="{loc:Tr LicenseFontDesc}" FontSize="11.5"
-                                   Margin="0,3,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <Border x:Name="Sep1" Height="1" Margin="0,2" Opacity="0.5"/>
-                    <TextBlock x:Name="Credit" Text="{loc:Tr LicenseCredit}" FontSize="11.5"
-                               Margin="0,10,0,10" TextWrapping="Wrap"/>
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="{loc:Tr LicenseTitle}" FontSize="20" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="Subtitle" FontSize="12.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
-            </Border>
 
-            <!-- 左：展开/收起内置全文；右：官方（OpenHarmony 仓库）原文，联网时用来核对 -->
-            <Grid Grid.Row="2" Margin="0,14,0,0">
-                <TextBlock FontSize="12.5" Margin="17,0,0,0">
-                    <Hyperlink x:Name="AgreementToggle" Click="AgreementToggle_Click" TextDecorations="{x:Null}"/>
-                </TextBlock>
-                <TextBlock HorizontalAlignment="Right" FontSize="12.5" Margin="0,0,17,0">
-                    <Hyperlink x:Name="OfficialLink" TextDecorations="{x:Null}"
-                               ToolTip="https://gitcode.com/openharmony/global_system_resources/blob/master/LICENSE_Fonts"
-                               NavigateUri="https://gitcode.com/openharmony/global_system_resources/blob/master/LICENSE_Fonts"
-                               RequestNavigate="OfficialLink_RequestNavigate"><Run Text="{loc:Tr LicenseOfficialLink}"/></Hyperlink>
-                </TextBlock>
-            </Grid>
+                <Border x:Name="CreditCard" Grid.Row="1" Margin="0,16,0,0" CornerRadius="8" BorderThickness="1"
+                        Padding="16,4,16,4"
+                        Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource CardStrokeBrush}">
+                    <StackPanel>
+                        <StackPanel Margin="0,10,0,10">
+                            <TextBlock Text="HarmonyOS Sans SC" FontSize="14" FontWeight="Medium"/>
+                            <TextBlock x:Name="FontDesc" Text="{loc:Tr LicenseFontDesc}" FontSize="11.5"
+                                       Margin="0,3,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border x:Name="Sep1" Height="1" Margin="0,2" Opacity="0.5"/>
+                        <TextBlock x:Name="Credit" Text="{loc:Tr LicenseCredit}" FontSize="11.5"
+                                   Margin="0,10,0,10" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
 
-            <!-- 协议原文：只读 TextBox 而不是 TextBlock——用户可以选中复制，滚轮也能滚 -->
-            <Border x:Name="TextCard" Grid.Row="3" Margin="0,10,0,0" Height="300" Visibility="Collapsed"
-                    CornerRadius="8" BorderThickness="1" Padding="8,6,4,6"
-                    Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource CardStrokeBrush}">
-                <TextBox x:Name="AgreementText" IsReadOnly="True" IsTabStop="False"
-                         BorderThickness="0" Background="Transparent" Padding="4,2,10,2"
-                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Disabled" FontSize="11.5">
-                    <!-- 只换掉内部这根滚动条：默认样式带上下箭头与轨道底色，压在卡片上很突兀 -->
-                    <TextBox.Resources>
-                        <Style TargetType="ScrollBar" BasedOn="{StaticResource Win11ScrollBar}"/>
-                    </TextBox.Resources>
-                </TextBox>
-            </Border>
+                <Grid Grid.Row="2" Margin="0,14,0,0">
+                    <TextBlock FontSize="12.5" Margin="17,0,0,0">
+                        <Hyperlink x:Name="AgreementToggle" Click="AgreementToggle_Click" TextDecorations="{x:Null}"/>
+                    </TextBlock>
+                    <TextBlock HorizontalAlignment="Right" FontSize="12.5" Margin="0,0,17,0">
+                        <Hyperlink x:Name="OfficialLink" TextDecorations="{x:Null}"
+                                   ToolTip="https://gitcode.com/openharmony/global_system_resources/blob/master/LICENSE_Fonts"
+                                   NavigateUri="https://gitcode.com/openharmony/global_system_resources/blob/master/LICENSE_Fonts"
+                                   RequestNavigate="OfficialLink_RequestNavigate"><Run Text="{loc:Tr LicenseOfficialLink}"/></Hyperlink>
+                    </TextBlock>
+                </Grid>
 
-            <Button x:Name="CloseBtn" Grid.Row="4" Content="{loc:Tr LicenseClose}"
-                    Style="{StaticResource Win11AccentButton}" IsDefault="True"
-                    HorizontalAlignment="Right" Margin="0,14,0,0" MinWidth="88"
-                    Click="Close_Click"/>
+                <Border x:Name="TextCard" Grid.Row="3" Margin="0,10,0,0" Height="300" Visibility="Collapsed"
+                        CornerRadius="8" BorderThickness="1" Padding="8,6,4,6"
+                        Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource CardStrokeBrush}">
+                    <TextBox x:Name="AgreementText" IsReadOnly="True" IsTabStop="False"
+                             BorderThickness="0" Background="Transparent" Padding="4,2,10,2"
+                             TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Disabled" FontSize="11.5">
+                        <TextBox.Resources>
+                            <Style TargetType="ScrollBar" BasedOn="{StaticResource Win11ScrollBar}"/>
+                        </TextBox.Resources>
+                    </TextBox>
+                </Border>
+
+                <Button x:Name="CloseBtn" Grid.Row="4" Content="{loc:Tr LicenseClose}"
+                        Style="{StaticResource Win11AccentButton}" IsDefault="True"
+                        HorizontalAlignment="Right" Margin="0,14,0,0" MinWidth="88"
+                        Click="Close_Click"/>
         </Grid>
+        </ScrollViewer>
     </Grid>
 </Window>

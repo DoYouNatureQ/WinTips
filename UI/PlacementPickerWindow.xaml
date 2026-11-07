@@ -10,16 +10,12 @@
         FontFamily="{DynamicResource AppUiFont}"
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal">
-    <!-- 自定义位置模式：全屏半透明遮罩压暗桌面，浮窗与拖动提示浮于其上 -->
     <Grid x:Name="Root">
-        <!-- 半透明背景：置于浮窗与拖动提示之下（最底层），形成摆放模式并挡住桌面点击 -->
         <Border x:Name="Scrim" Background="{DynamicResource ScrimBrush}"/>
 
-        <!-- 贴边 15% 判定区虚线 + 中轴吸附辅助线 + 当前生效方向高亮带（元素由代码创建，不参与命中测试） -->
         <Canvas x:Name="GuideLayer" IsHitTestVisible="False" Opacity="0"/>
 
         <Canvas x:Name="DragLayer">
-            <!-- 1:1 复刻真实提示卡片（正常尺寸、开启态外观），按住即可拖动 -->
             <Border x:Name="TipCard" CornerRadius="8" BorderThickness="1"
                     Cursor="SizeAll" Opacity="0" Height="50">
                 <Grid x:Name="TipContent" Margin="16,4,12,8">
@@ -36,14 +32,12 @@
                     </Viewbox>
                     <TextBlock Text="{loc:Tr SampleTipOn}" FontSize="14" FontWeight="Medium"
                                HorizontalAlignment="Center" VerticalAlignment="Center" Margin="18,0,0,2"/>
-                    <!-- 强调色指示条：默认贴卡片下缘，拖到屏幕顶部区域时镜像到文字上方（见 MirrorPreviewBar） -->
                     <Rectangle x:Name="TipBar" Height="3" Width="60" RadiusX="2" RadiusY="2"
                                VerticalAlignment="Bottom" Margin="0,0,0,6"
                                Fill="{DynamicResource AccentBrush}"/>
                 </Grid>
             </Border>
 
-            <!-- 拖动提示 + 操作按钮：跟随浮窗（下方优先，贴底时翻到上方） -->
             <Border x:Name="HintBar" CornerRadius="8" BorderThickness="1" Padding="14,8" Opacity="0">
                 <Grid>
                     <Grid.ColumnDefinitions>

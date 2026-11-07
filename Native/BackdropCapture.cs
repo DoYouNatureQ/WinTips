@@ -1,30 +1,29 @@
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace WinTips.Native;
 
-/// <summary>
-/// 自绘毛玻璃的唯一来源：抓取窗口正后方的屏幕像素，做高斯近似模糊，再把 tint 混进去。
-///
-/// 为什么非得自己画：系统材质给不出任务栏那个观感。
-/// - Mica（DWMSBT_MAINWINDOW）只采样桌面壁纸，背后窗口根本不会出现在材质里；
-/// - Desktop Acrylic（DWMSBT_TRANSIENTWINDOW）的亮度层吃掉约 85%，透上来的只剩色温；
-/// - Win11 的任务栏用的是系统内部特权实现（Composition backdrop），第三方 Win32 窗口
-///   没有对等 API；而 Win10 时代那条 ACCENT_ENABLE_ACRYLICBLURBEHIND 后门，
-///   在 Win11 24H2 之后已被 DWM 静默忽略（本机实测：调用返回成功，画面毫无变化）。
-///
-/// 所以"和任务栏一样"只有一个办法——照着任务栏的做法自己算：抓屏 + 模糊 + 叠加底色。
-/// 浮窗只在弹出瞬间抓一次（位置固定、不拖动），代价是毫秒级的一次 BitBlt 与几万像素的模糊。
-/// </summary>
 internal static class BackdropCapture
 {
     private const int SRCCOPY = 0x00CC0020;
+    private const uint DIB_RGB_COLORS = 0;
+    private const uint BI_RGB = 0;
 
-    /// <summary>模糊重复次数。三次盒式模糊已足够逼近高斯，再多对 160×50 的小图没有可见收益。</summary>
     private const int BlurPasses = 3;
+
+    private static IntPtr _memDc;
+    private static IntPtr _hBitmap;
+    private static IntPtr _previousObject;
+
+    private static int _bufferWidth;
+    private static int _bufferHeight;
+
+    private static byte[] _pixels = Array.Empty<byte>();
+    private static byte[] _scratch = Array.Empty<byte>();
+
+    private static WriteableBitmap? _output;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT
@@ -33,6 +32,29 @@ internal static class BackdropCapture
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFOHEADER
+    {
+        public uint Size;
+        public int Width;
+        public int Height;
+        public ushort Planes;
+        public ushort BitCount;
+        public uint Compression;
+        public uint SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public uint ClrUsed;
+        public uint ClrImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAPINFO
+    {
+        public BITMAPINFOHEADER Header;
+        public uint Color;
     }
 
     [DllImport("user32.dll")]
@@ -63,19 +85,10 @@ internal static class BackdropCapture
     private static extern bool BitBlt(IntPtr hdcDest, int x, int y, int width, int height,
         IntPtr hdcSrc, int srcX, int srcY, int rop);
 
-    /// <summary>
-    /// 抓取 <paramref name="hwnd"/> 背后的画面，返回**只做了模糊、没有上色**的位图。
-    /// 调用前窗口必须处于隐藏状态（或整体 Opacity=0），否则会把自己也抓进去。
-    ///
-    /// 底色刻意不在这里混：混进像素就等于把不透明度焊死在这张图上，用户拖动
-    /// "材质透明度"滑杆时只能重新抓屏重算——那既会闪，又抓不到自己背后的画面
-    /// （窗口正显示着）。留给上层当独立图层叠，改 alpha 就是改一个画刷。
-    /// </summary>
-    /// <param name="padding">
-    /// 向窗口四周额外抓取的像素。模糊是卷积，边界像素需要窗口外的真实内容才不会发黑；
-    /// 算完后这一圈会被裁掉，不参与显示。
-    /// </param>
-    /// <param name="radius">盒式模糊半径（物理像素）。</param>
+    [DllImport("gdi32.dll")]
+    private static extern int GetDIBits(IntPtr hdc, IntPtr hBitmap, uint start, uint lines,
+        byte[] bits, ref BITMAPINFO info, uint usage);
+
     public static BitmapSource? CaptureBlurred(IntPtr hwnd, int padding, int radius)
     {
         if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var box)) return null;
@@ -84,79 +97,112 @@ internal static class BackdropCapture
         int height = box.Bottom - box.Top;
         if (width <= 0 || height <= 0) return null;
 
-        // 多屏时窗口可能有一半在屏幕外：BitBlt 对超出屏幕的部分会填黑，
-        // 但模糊之后那点黑只在边缘、且会被裁掉，不值得为此单独处理。
         int grabX = box.Left - padding;
         int grabY = box.Top - padding;
         int grabW = width + padding * 2;
         int grabH = height + padding * 2;
 
+        if (!EnsureBuffers(grabW, grabH, width, height)) return null;
+
         IntPtr screenDc = GetDC(IntPtr.Zero);
         if (screenDc == IntPtr.Zero) return null;
-
-        IntPtr memDc = IntPtr.Zero;
-        IntPtr hBitmap = IntPtr.Zero;
-        IntPtr previous = IntPtr.Zero;
-
         try
         {
-            memDc = CreateCompatibleDC(screenDc);
-            hBitmap = CreateCompatibleBitmap(screenDc, grabW, grabH);
-            if (memDc == IntPtr.Zero || hBitmap == IntPtr.Zero) return null;
-
-            previous = SelectObject(memDc, hBitmap);
-            if (!BitBlt(memDc, 0, 0, grabW, grabH, screenDc, grabX, grabY, SRCCOPY)) return null;
-
-            var raw = Imaging.CreateBitmapSourceFromHBitmap(
-                hBitmap, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            raw.Freeze();
-
-            var pixels = ReadPixels(raw, grabW, grabH);
-            if (pixels is null) return null;
-
-            Blur(pixels, grabW, grabH, radius);
-
-            var composed = BitmapSource.Create(
-                grabW, grabH, 96, 96, PixelFormats.Bgra32, null, pixels, grabW * 4);
-            composed.Freeze();
-
-            // 裁掉外扩的一圈，只留窗口自己那块
-            var cropped = new CroppedBitmap(composed, new Int32Rect(padding, padding, width, height));
-            cropped.Freeze();
-            return cropped;
-        }
-        catch
-        {
-            return null;
+            if (!BitBlt(_memDc, 0, 0, grabW, grabH, screenDc, grabX, grabY, SRCCOPY)) return null;
+            if (!ReadPixels(grabW, grabH)) return null;
         }
         finally
         {
-            if (previous != IntPtr.Zero) SelectObject(memDc, previous);
-            if (hBitmap != IntPtr.Zero) DeleteObject(hBitmap);
-            if (memDc != IntPtr.Zero) DeleteDC(memDc);
             ReleaseDC(IntPtr.Zero, screenDc);
         }
+
+        Blur(_pixels, _scratch, grabW, grabH, radius);
+
+        _output!.WritePixels(
+            new Int32Rect(0, 0, width, height),
+            _pixels,
+            grabW * 4,
+            (padding * grabW + padding) * 4);
+
+        return _output;
     }
 
-    private static byte[]? ReadPixels(BitmapSource source, int width, int height)
+    private static bool EnsureBuffers(int grabW, int grabH, int width, int height)
     {
-        // CreateBitmapSourceFromHBitmap 拿到的不一定是 Bgra32（可能是 Bgr32 或带调色板），
-        // 统一转一次，后面才能按 4 字节像素直接算。
-        BitmapSource normalized = source.Format == PixelFormats.Bgra32
-            ? source
-            : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+        if (_output is not null && _bufferWidth == grabW && _bufferHeight == grabH) return true;
 
-        int stride = width * 4;
-        var buffer = new byte[stride * height];
-        normalized.CopyPixels(buffer, stride, 0);
-        return buffer;
+        ReleaseBuffers();
+
+        IntPtr screenDc = GetDC(IntPtr.Zero);
+        if (screenDc == IntPtr.Zero) return false;
+        try
+        {
+            _memDc = CreateCompatibleDC(screenDc);
+            _hBitmap = CreateCompatibleBitmap(screenDc, grabW, grabH);
+            if (_memDc == IntPtr.Zero || _hBitmap == IntPtr.Zero)
+            {
+                ReleaseBuffers();
+                return false;
+            }
+            _previousObject = SelectObject(_memDc, _hBitmap);
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, screenDc);
+        }
+
+        _bufferWidth = grabW;
+        _bufferHeight = grabH;
+        _pixels = new byte[grabW * grabH * 4];
+        _scratch = new byte[_pixels.Length];
+        _output = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+        return true;
     }
 
-    /// <summary>三次水平+垂直盒式模糊。小图上比 WPF 的 BlurEffect 快得多，也不占渲染线程。</summary>
-    private static void Blur(byte[] pixels, int width, int height, int radius)
+    private static void ReleaseBuffers()
+    {
+        if (_memDc != IntPtr.Zero && _previousObject != IntPtr.Zero)
+        {
+            SelectObject(_memDc, _previousObject);
+        }
+        if (_hBitmap != IntPtr.Zero) DeleteObject(_hBitmap);
+        if (_memDc != IntPtr.Zero) DeleteDC(_memDc);
+
+        _memDc = IntPtr.Zero;
+        _hBitmap = IntPtr.Zero;
+        _previousObject = IntPtr.Zero;
+        _bufferWidth = 0;
+        _bufferHeight = 0;
+        _pixels = Array.Empty<byte>();
+        _scratch = Array.Empty<byte>();
+        _output = null;
+    }
+
+    private static bool ReadPixels(int width, int height)
+    {
+        var info = new BITMAPINFO
+        {
+            Header = new BITMAPINFOHEADER
+            {
+                Size = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
+                Width = width,
+                Height = -height,
+                Planes = 1,
+                BitCount = 32,
+                Compression = BI_RGB,
+            },
+        };
+
+        if (GetDIBits(_memDc, _hBitmap, 0, (uint)height, _pixels, ref info, DIB_RGB_COLORS) == 0)
+            return false;
+
+        for (int i = 3; i < _pixels.Length; i += 4) _pixels[i] = 255;
+        return true;
+    }
+
+    private static void Blur(byte[] pixels, byte[] scratch, int width, int height, int radius)
     {
         if (radius <= 0) return;
-        var scratch = new byte[pixels.Length];
 
         for (int pass = 0; pass < BlurPasses; pass++)
         {
@@ -176,7 +222,6 @@ internal static class BackdropCapture
 
             for (int channel = 0; channel < 4; channel++)
             {
-                // 起始窗口：左侧越界的部分用第 0 列补齐（钳位），避免边缘被"平均成透明"
                 int sum = 0;
                 for (int i = -radius; i <= radius; i++)
                     sum += source[row + Math.Clamp(i, 0, last) * 4 + channel];

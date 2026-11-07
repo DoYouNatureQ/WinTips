@@ -27,8 +27,13 @@
             </Style.Triggers>
         </Style>
     </Window.Resources>
-    <!-- 布局与质感对齐 Win11 原生上下文菜单：圆角亚克力卡片 + 4px 圆角悬停项 -->
     <Border x:Name="Root" CornerRadius="8" Padding="5" Background="Transparent">
-        <StackPanel x:Name="ItemsHost" MinWidth="236"/>
+        <ScrollViewer x:Name="Scroller" Focusable="False"
+                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer.Resources>
+                <Style TargetType="ScrollBar" BasedOn="{StaticResource Win11ScrollBar}"/>
+            </ScrollViewer.Resources>
+            <StackPanel x:Name="ItemsHost" MinWidth="236"/>
+        </ScrollViewer>
     </Border>
 </Window>

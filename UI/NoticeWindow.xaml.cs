@@ -22,10 +22,6 @@ public partial class NoticeWindow : Window
         TrySetIcon();
     }
 
-    /// <summary>
-    /// Win11 沿用系统标题栏（Mica + 圆角）；Win10 上系统标题栏是 Aero 式方形边框，
-    /// 改用无边框 + 自绘标题栏保持观感一致。
-    /// </summary>
     private void ApplyPlatformChrome()
     {
         if (DwmChrome.SupportsFluent) return;
@@ -36,7 +32,7 @@ public partial class NoticeWindow : Window
     private void LegacyCaption_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState != MouseButtonState.Pressed) return;
-        try { DragMove(); } catch (InvalidOperationException) { /* 鼠标已抬起，忽略 */ }
+        try { DragMove(); } catch (InvalidOperationException) {  }
     }
 
     private void LegacyClose_Click(object sender, RoutedEventArgs e) => Close();
@@ -68,7 +64,6 @@ public partial class NoticeWindow : Window
 
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
 
-        // 拿不到 Mica（Win10 / 高对比度 / 系统关掉透明效果）就不做“整窗玻璃”：扩展边框只会变成实心色带
         bool mica = ThemeHelper.MicaAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_MAINWINDOW);
         if (mica)
         {

@@ -10,13 +10,14 @@
 
 </div>
 
-A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scroll Lock** (or copy / paste / cut) and an acrylic flyout with Win11 polish appears just above the taskbar.
+A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scroll Lock** (or copy / paste / cut, or switch the input language or Chinese/English mode) and an acrylic flyout with Win11 polish appears just above the taskbar.
 
 ## Features
 
 - **Lock-key hints**: Caps / Num / Scroll Lock and Insert — a padlock icon spins and springs back on each toggle, with an accent bar (mirrored above the label when the flyout hugs the top edge) and a fade plus slide toward the nearest screen edge.
 - **Edge-aware slide**: inside the 15% zone along any screen edge the flyout slides in from (and back toward) that edge — Left/Right outrank Top/Bottom, so corners slide horizontally too — and falls back to a vertical slide when it sits mid-screen.
 - **Clipboard hints**: Ctrl+C / V / X shows a checkmark or scissors icon, with an "×N" badge counting consecutive actions; the flyout only appears when the clipboard actually changes. "Notify on any copy method" is on by default — non-keyboard copies (context menu, an app's own Copy button, etc.) trigger it too, while clearing the clipboard does not.
+- **Input language & Chinese/English hints** (off by default; turn it on in Settings): after switching the input language with Win+Space, Ctrl+Shift or Alt+Shift, the flyout names the current language the way Windows' own language settings do; toggling Chinese/English *inside* an IME (Shift in Microsoft Pinyin, Ctrl in Sogou) shows "Chinese input" / "English input". These are two layers — the former changes the keyboard layout (HKL), the latter leaves it untouched and can only be read from the IME window's conversion mode. Windows broadcasts neither, so the app samples the state the instant Shift / Ctrl / Alt / Win / Space goes down and opens a short observation window right after. The baseline has to be taken on the spot: once you switch with the mouse on the language bar, any "last seen state" is already stale and the next hotkey press lands one step out of sync. Nothing shows unless the state really changed, and layout differences picked up by changing windows never produce a false tip.
 - **Native materials**: DWM acrylic, system rounded corners, light/dark theme and accent color follow the system, high-DPI aware. On Windows 10, in high contrast, with composition disabled, when system "Transparency effects" is off, or while Battery Saver is active, the app falls back to the opaque colors from the design spec instead of overlaying translucent cards on DWM's solid fallback (Mica ignores Battery Saver, so the settings window keeps its material).
 - **Unobtrusive**: click-through, never steals focus, hidden from the taskbar and Alt+Tab, auto-dismisses after 1–5 seconds (adjustable).
 - **Settings window**: Win11 Settings styling, applied and saved instantly. Flyout position is two independent axes — Top/Bottom plus Left/Center/Right (Top + Center, Top + Right, Bottom + Center, …) — or choose "Custom position" and drag the flyout anywhere, then save (one click restores the default).
@@ -30,8 +31,9 @@ A Windows 11-style keyboard state indicator: press **Caps Lock / Num Lock / Scro
 
 Just run `WinTips.exe` — once the tray icon appears, it is working.
 
+- The very first launch shows a one-time "is running" flyout: the app has no main window, so this both confirms it is working in the background and points at the tray icon (it never appears again).
 - Tray left-click → Settings; right-click → menu (including test notifications).
-- Command line: `--settings` opens Settings; `--test caps on 4` previews a notification; `--test menu` previews the menu.
+- Command line: `--settings` opens Settings; `--test caps on 4` previews a notification (the key name can also be `lang`); `--test menu` previews the menu.
 - Settings are stored in `%APPDATA%\WinTips\settings.json`.
 
 ## Known Limitations
@@ -40,6 +42,8 @@ Just run `WinTips.exe` — once the tray icon appears, it is working.
 - With several displays the flyout follows the active window's display by default; turn off "Follow the focused display" in the settings to keep it on the primary display.
 - A low-level keyboard hook cannot see keys sent to elevated (administrator) windows.
 - Cuts from non-keyboard sources (e.g. the "Cut" context-menu item) cannot be told apart from copies and are shown with the copy style.
+- The Chinese/English hint relies on the IME reporting its conversion mode: mainstream IMEs such as Microsoft Pinyin and Sogou work, while a few third-party IMEs do not respond (their mode switch shows no hint).
+- Switching with the **mouse** (the language bar or the IME status bar) shows no hint: that kind of change has no keystroke to hang on and sends no system notification.
 
 ## License
 

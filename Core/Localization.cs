@@ -5,7 +5,6 @@ using System.Windows.Markup;
 
 namespace WinTips.Core;
 
-/// <summary>界面语言：跟随系统 / 简体中文 / 繁體中文 / English / Deutsch / 日本語 / Русский / Español / Português。</summary>
 public enum AppLanguage
 {
     System,
@@ -19,23 +18,13 @@ public enum AppLanguage
     Portuguese,
 }
 
-/// <summary>下拉框里的一个语言选项：显示名一律用该语言自己的写法（与 Windows 语言设置一致）。</summary>
 public sealed record LanguageOption(AppLanguage Language, string NativeName)
 {
-    /// <summary>下拉框与选中项都直接取这个字符串，模板里不必再配 DisplayMemberPath。</summary>
     public override string ToString() => NativeName;
 }
 
-/// <summary>
-/// 运行时本地化：一张多语言对照词条表 + 语言切换通知。
-/// XAML 用 <c>Text="{loc:Tr SettingsTitle}"</c>（见 <see cref="TrExtension"/>）绑定到索引器，
-/// 切换语言时以 "Item[]" 通知让所有绑定在同一帧刷新，无需重建窗口；
-/// 代码里用 <see cref="T"/> / <see cref="Format"/> 取词。
-/// 某语言缺词条时回落英文，再缺则原样返回键名（便于发现漏翻）。
-/// </summary>
 public static class Loc
 {
-    /// <summary>词条行内各语言的固定下标，与 <see cref="IndexOf"/> 一一对应。</summary>
     private const int ZhHans = 0, ZhHant = 1, En = 2, De = 3, Ja = 4, Ru = 5, Es = 6, Pt = 7;
     private const int ColumnCount = 8;
 
@@ -43,7 +32,6 @@ public static class Loc
 
     static Loc()
     {
-        // —— 设置窗口 ——
         Add("SettingsTitle",
             "WinTips 设置", "WinTips 設定", "WinTips Settings",
             "WinTips-Einstellungen", "WinTips の設定", "Настройки WinTips",
@@ -107,6 +95,20 @@ public static class Loc
             "Также уведомлять при копировании через контекстное меню и кнопки в приложениях (нужно включить уведомление о копировании)",
             "También avisa al usar menús contextuales o botones Copiar de las aplicaciones (requiere el aviso de copiar)",
             "Também avisa em menus de contexto e botões Copiar dos aplicativos (requer o aviso de cópia)");
+        Add("RowLanguageTip",
+            "输入法语言与中英文提示", "輸入法語言與中英文提示", "Input language & Chinese/English tip",
+            "Hinweis zu Eingabesprache und Chinesisch/Englisch", "入力言語と中英文の通知",
+            "Уведомление о языке и режиме ввода",
+            "Aviso de idioma de entrada y de chino/inglés", "Aviso de idioma de entrada e de chinês/inglês");
+        Add("RowLanguageTipDesc",
+            "Shift 切中英文、Win+Space 换输入语言后，浮窗显示当前状态",
+            "Shift 切中英文、Win+Space 換輸入語言後，浮動視窗顯示目前狀態",
+            "Show the current state after toggling Chinese/English (Shift) or switching language (Win+Space)",
+            "Zeigt den aktuellen Zustand nach Umschalten Chinesisch/Englisch (Shift) oder Spracheingabe (Win+Space)",
+            "Shift で中英文、Win+Space で入力言語を切り替えると、現在の状態を表示します",
+            "Показывать текущее состояние после переключения 中/EN (Shift) или языка ввода (Win+Space)",
+            "Muestra el estado actual al alternar chino/inglés (Shift) o cambiar de idioma (Win+Space)",
+            "Mostra o estado atual ao alternar chinês/inglês (Shift) ou trocar de idioma (Win+Space)");
 
         Add("SectionGeneral",
             "通用", "一般", "General",
@@ -138,12 +140,12 @@ public static class Loc
             "Zurücksetzen", "既定値に戻す", "Сбросить",
             "Restablecer", "Redefinir");
         Add("RowGlass",
-            "玻璃材质", "玻璃材質", "Glass material",
-            "Glasmaterial", "ガラス素材", "Стеклянный материал",
-            "Material de cristal", "Material de vidro");
+            "模糊效果", "模糊效果", "Blur effect",
+            "Unschärfeeffekt", "ぼかし効果", "Эффект размытия",
+            "Efecto de desenfoque", "Efeito de desfoque");
         Add("RowGlassDesc",
-            "抓取浮窗背后的画面实时模糊，观感接近 Win11 任务栏；关闭则只用系统亚克力",
-            "擷取浮動視窗背後的畫面即時模糊，觀感接近 Win11 工作列；關閉則只用系統壓克力",
+            "实时模糊浮窗背后的画面，观感接近 Win11 任务栏；关闭则只用系统亚克力",
+            "即時模糊浮動視窗背後的畫面，觀感接近 Win11 工作列；關閉則只用系統壓克力",
             "Blurs what is actually behind the flyout, like the Windows 11 taskbar; off keeps the system acrylic only",
             "Zeichnet den echten Hintergrund unscharf, ähnlich der Windows 11-Taskleiste; aus = nur System-Acryl",
             "背後の画面をリアルタイムでぼかし、Windows 11 のタスクバーに近い見た目にします（オフ時はシステムのアクリルのみ）",
@@ -248,13 +250,11 @@ public static class Loc
             "语言", "語言", "Language",
             "Sprache", "言語", "Язык",
             "Idioma", "Idioma");
-        // 开关标签，尽量短：它和语言下拉框同处一行
         Add("LangSystem",
             "跟随系统", "跟隨系統", "Follow system",
             "Systemsprache", "システムに合わせる", "Как в системе",
             "Seguir al sistema", "Seguir o sistema");
 
-        // —— 界面字体 ——
         Add("RowUiFont",
             "界面字体", "介面字型", "UI font",
             "Schrift der Oberfläche", "画面のフォント", "Шрифт интерфейса",
@@ -268,13 +268,11 @@ public static class Loc
             "Шрифт по умолчанию входит в состав приложения и не требует установки. Установленный шрифт применяется сразу.",
             "La fuente predeterminada se incluye con la aplicación, así que no hay que instalar nada. Una fuente instalada se aplica al instante.",
             "A fonte padrão acompanha o aplicativo, sem precisar de instalação. Uma fonte instalada passa a valer na hora.");
-        // 下拉框第一项：内置字体，名字由程序填
         Add("FontChoiceDefault",
             "默认字体", "預設字型", "Default font",
             "Standardschrift", "既定のフォント", "Шрифт по умолчанию",
             "Fuente predeterminada", "Fonte padrão");
 
-        // —— 数值标签 ——
         Add("ValueSeconds",
             "{0} 秒", "{0} 秒", "{0} s",
             "{0} s", "{0} 秒", "{0} с",
@@ -288,7 +286,6 @@ public static class Loc
             "Keine Animation", "アニメーションなし", "Без анимации",
             "Sin animación", "Sem animação");
 
-        // —— 浮窗文案 ——
         Add("KeyCapsLock",
             "大写锁定", "大寫鎖定", "Caps Lock",
             "Feststelltaste", "Caps Lock", "Caps Lock",
@@ -329,12 +326,23 @@ public static class Loc
             "已剪切", "已剪下", "Cut",
             "Ausgeschnitten", "切り取りました", "Вырезано",
             "Cortado", "Recortado");
+        Add("MenuTestLanguage",
+            "输入法语言 / 中英文", "輸入法語言 / 中英文", "Input language / IME mode",
+            "Eingabesprache / 中·EN", "入力言語 / 中・英", "Язык ввода / режим 中·EN",
+            "Idioma de entrada / modo", "Idioma de entrada / modo");
+        Add("ImeChinese",
+            "中文输入", "中文輸入", "Chinese input",
+            "Chinesische Eingabe", "中国語入力", "Ввод по-китайски",
+            "Entrada en chino", "Entrada em chinês");
+        Add("ImeEnglish",
+            "英文输入", "英文輸入", "English input",
+            "Englische Eingabe", "英語入力", "Ввод по-английски",
+            "Entrada en inglés", "Entrada em inglês");
         Add("SampleTipOn",
             "大写锁定 开启", "大寫鎖定 開啟", "Caps Lock On",
             "Feststelltaste An", "Caps Lock オン", "Caps Lock Вкл",
             "Bloq Mayús Activado", "Caps Lock Ativado");
 
-        // —— 托盘菜单 ——
         Add("MenuSettings",
             "设置", "設定", "Settings",
             "Einstellungen", "設定", "Параметры",
@@ -347,9 +355,7 @@ public static class Loc
             "退出", "結束", "Exit",
             "Beenden", "終了", "Выход",
             "Salir", "Sair");
-        // 托盘悬停提示不再走本地化：只显示「WinTips V<版本号>」（版本见 csproj）
 
-        // —— 自定义位置模式 ——
         Add("PickTitle",
             "自定义提示位置", "自訂提示位置", "Custom tip position",
             "Eigene Position", "通知のカスタム位置", "Своё положение уведомления",
@@ -381,7 +387,6 @@ public static class Loc
             "Position speichern", "位置を保存", "Сохранить положение",
             "Guardar posición", "Salvar posição");
 
-        // —— 单实例提示窗 ——
         Add("NoticeRunningTitle",
             "WinTips 已在运行", "WinTips 已在執行", "WinTips is already running",
             "WinTips läuft bereits", "WinTips は既に実行中です", "WinTips уже запущен",
@@ -395,12 +400,23 @@ public static class Loc
             "OK", "OK", "ОК",
             "Aceptar", "OK");
 
-        // —— 许可与致谢弹窗（点设置页版本号打开）——
+        Add("WelcomeTitle",
+            "WinTips 已启用", "WinTips 已啟用", "WinTips is running",
+            "WinTips ist aktiv", "WinTips を有効にしました", "WinTips включён",
+            "WinTips está activo", "O WinTips está ativo");
+        Add("WelcomeSubtitle",
+            "在任务栏托盘点击图标即可打开设置", "在工作列系統匣點擊圖示即可開啟設定",
+            "Click the tray icon to open settings",
+            "Klicken Sie auf das Taskleisten-Symbol, um die Einstellungen zu öffnen",
+            "タスクトレイのアイコンをクリックすると設定を開けます",
+            "Щёлкните значок в области уведомлений, чтобы открыть параметры",
+            "Haz clic en el icono de la bandeja para abrir la configuración",
+            "Clique no ícone da bandeja para abrir as configurações");
+
         Add("LicenseTitle",
             "许可与致谢", "授權與致謝", "Licenses & credits",
             "Lizenzen & Danksagung", "ライセンスと謝辞", "Лицензии и благодарности",
             "Licencias y créditos", "Licenças e créditos");
-        // {0} = 版本号
         Add("LicenseSubtitle",
             "WinTips {0}，以 GPL-3.0 许可发布。界面字体 HarmonyOS Sans 随程序原样分发。",
             "WinTips {0}，以 GPL-3.0 授權釋出。介面字型 HarmonyOS Sans 隨程式原樣分送。",
@@ -451,7 +467,6 @@ public static class Loc
             "Cerrar", "Fechar");
     }
 
-    /// <summary>登记一条词条：参数顺序固定为 简中、繁中、英、德、日、俄、西、葡。</summary>
     private static void Add(
         string key,
         string zhHans, string zhHant, string en,
@@ -469,7 +484,6 @@ public static class Loc
         Table[key] = row;
     }
 
-    /// <summary>下拉框选项：语言名称用它自己的写法，切语言时不需要重排。</summary>
     public static IReadOnlyList<LanguageOption> Options { get; } = new[]
     {
         new LanguageOption(AppLanguage.ChineseSimplified, "简体中文"),
@@ -482,16 +496,12 @@ public static class Loc
         new LanguageOption(AppLanguage.Portuguese, "Português"),
     };
 
-    /// <summary>当前语言设置（可能是 System）。</summary>
     public static AppLanguage Language { get; private set; } = AppLanguage.System;
 
-    /// <summary>实际生效的语言（System 时已按系统 UI 语言解析成具体一种）。</summary>
     public static AppLanguage Effective { get; private set; } = AppLanguage.ChineseSimplified;
 
-    /// <summary>语言切换后触发（用于刷新代码里临时拼好的文案，如滑杆数值标签）。</summary>
     public static event Action? Changed;
 
-    /// <summary>应用语言。必须在创建任何窗口之前调用一次。</summary>
     public static void Apply(AppLanguage language)
     {
         Language = language;
@@ -501,7 +511,6 @@ public static class Loc
         Changed?.Invoke();
     }
 
-    /// <summary>按系统 UI 语言挑最接近的一种；没有对应语言时回落英文。</summary>
     private static AppLanguage DetectSystemLanguage()
     {
         var culture = CultureInfo.CurrentUICulture;
@@ -527,7 +536,6 @@ public static class Loc
     private static bool Contains(string name, string value) =>
         name.Contains(value, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>设置值 → 枚举（非法值回落为跟随系统）。</summary>
     public static AppLanguage Parse(string? value) => value?.Trim().ToLowerInvariant() switch
     {
         "zh" or "cn" or "zh-cn" or "zh-hans" or "chs" or "chinese" or "chinese-simplified" => AppLanguage.ChineseSimplified,
@@ -541,7 +549,6 @@ public static class Loc
         _ => AppLanguage.System,
     };
 
-    /// <summary>枚举 → 设置值。</summary>
     public static string ToSetting(AppLanguage language) => language switch
     {
         AppLanguage.ChineseSimplified => "zh",
@@ -555,7 +562,6 @@ public static class Loc
         _ => "System",
     };
 
-    /// <summary>语言 → 词条行下标。</summary>
     private static int IndexOf(AppLanguage language) => language switch
     {
         AppLanguage.ChineseSimplified or AppLanguage.System => ZhHans,
@@ -569,7 +575,6 @@ public static class Loc
         _ => En,
     };
 
-    /// <summary>取词条：当前语言缺词条时回落英文，仍缺则原样返回键名。</summary>
     public static string T(string key)
     {
         if (!Table.TryGetValue(key, out var row)) return key;
@@ -581,14 +586,10 @@ public static class Loc
         return string.IsNullOrEmpty(text) ? key : text;
     }
 
-    /// <summary>取带占位符的词条并格式化。</summary>
     public static string Format(string key, params object?[] args) =>
         string.Format(CultureInfo.CurrentCulture, T(key), args);
 }
 
-/// <summary>
-/// XAML 绑定的数据源：索引器承担取词，切换语言时以 "Item[]" 通知刷新全部索引器绑定。
-/// </summary>
 public sealed class TrSource : INotifyPropertyChanged
 {
     public static TrSource Instance { get; } = new();
@@ -603,10 +604,6 @@ public sealed class TrSource : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
 }
 
-/// <summary>
-/// XAML 标记扩展：<c>Text="{loc:Tr SettingsTitle}"</c>。
-/// 返回绑定而非静态字符串，语言切换时文案随之更新，窗口无需重建。
-/// </summary>
 [MarkupExtensionReturnType(typeof(object))]
 public sealed class TrExtension : MarkupExtension
 {
