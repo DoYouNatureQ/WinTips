@@ -89,6 +89,9 @@ internal static class BackdropCapture
     private static extern int GetDIBits(IntPtr hdc, IntPtr hBitmap, uint start, uint lines,
         byte[] bits, ref BITMAPINFO info, uint usage);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
     public static BitmapSource? CaptureBlurred(IntPtr hwnd, int padding, int radius)
     {
         if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var box)) return null;
@@ -103,6 +106,10 @@ internal static class BackdropCapture
         int grabH = height + padding * 2;
 
         if (!EnsureBuffers(grabW, grabH, width, height)) return null;
+
+        // 上一块提示可能刚淡出隐藏，等一次桌面合成再抓，免得把自家卡片拍进快照
+        // （那样快照就是一片纯色，卡片看起来就成了纯色背景）。
+        try { DwmFlush(); } catch { }
 
         IntPtr screenDc = GetDC(IntPtr.Zero);
         if (screenDc == IntPtr.Zero) return null;

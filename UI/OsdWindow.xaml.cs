@@ -77,6 +77,9 @@ public partial class OsdWindow : Window
 
     private const double GlassStrokeThickness = 1;
 
+    /// <summary>缩回时卡片淡到的最低不透明度：留一层底子再随窗口消失，不淡成透明。</summary>
+    private const double HideOpacityFloor = 0.9;
+
     private SolidColorBrush _surfaceBrush = Brushes.White;
     private SolidColorBrush _textBrush = Brushes.Black;
     private SolidColorBrush _accentBrush = Brushes.DodgerBlue;
@@ -260,16 +263,25 @@ public partial class OsdWindow : Window
             WelcomeCheck.Stroke = _onAccentBrush;
         }
 
-        bool acrylic = ThemeHelper.AcrylicAllowed &&
+        // 实时模糊的卡片整块由桌面快照铺满，系统亚克力只会被压在快照底下。可那层是 DWM
+        // 画的，WPF 的 Opacity 带不动它：淡入淡出时亚克力矩形始终是满不透明度，卡片淡到
+        // 一半就露底、最后剩一块纯色再硬切消失。所以玻璃态下不叠亚克力，让整张卡片只走
+        // WPF 的透明度。
+        bool glass = GlassWanted;
+
+        bool acrylic = !glass && ThemeHelper.AcrylicAllowed &&
                        DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW);
 
-        bool glass = acrylic && AppSettings.Instance.TipGlass;
+        if (glass) DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_NONE);
 
-        Root.Background = acrylic ? Brushes.Transparent : _surfaceBrush;
+        Root.Background = acrylic || glass ? Brushes.Transparent : _surfaceBrush;
         ApplyGlassLayers(glass, dark);
 
         _glassActive = glass;
     }
+
+    private static bool GlassWanted =>
+        DwmChrome.SupportsBackdrop && ThemeHelper.AcrylicAllowed && AppSettings.Instance.TipGlass;
 
     private void ApplyGlassLayers(bool glass, bool dark)
     {
@@ -308,10 +320,13 @@ public partial class OsdWindow : Window
 
         if (bitmap is null)
         {
+            // 抓不到桌面就退回纯色卡片，别留一块只有薄纱的半透明浮动玻璃
+            Root.Background = _surfaceBrush;
             GlassImage.Fill = null;
             return;
         }
 
+        Root.Background = Brushes.Transparent;
         _glassBrush ??= new ImageBrush { Stretch = Stretch.Fill };
         if (!ReferenceEquals(_glassBrush.ImageSource, bitmap)) _glassBrush.ImageSource = bitmap;
         if (!ReferenceEquals(GlassImage.Fill, _glassBrush)) GlassImage.Fill = _glassBrush;
@@ -494,7 +509,7 @@ public partial class OsdWindow : Window
 
     public void PreviewAppearance(double seconds)
     {
-        bool wantGlass = AppSettings.Instance.TipGlass && ThemeHelper.AcrylicAllowed;
+        bool wantGlass = GlassWanted;
 
         if (_visible && wantGlass == _glassActive)
         {
@@ -1014,7 +1029,9 @@ public partial class OsdWindow : Window
             return;
         }
 
-        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(ms));
+        // 缩回时不淡到全透明：卡片一路留着底子（模糊快照 + 薄纱）滑出去，
+        // 淡到 0 会先看见底色「化掉」、只剩桌面，最后再硬切消失，反而不像一张卡片退场。
+        var fade = new DoubleAnimation(HideOpacityFloor, TimeSpan.FromMilliseconds(ms));
         fade.Completed += (_, _) =>
         {
             if (gen != _generation) return;
