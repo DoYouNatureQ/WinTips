@@ -71,17 +71,17 @@ public static class Loc
             "Einfg-Taste (nur Ereignis)", "Insert キー（イベントのみ）", "Клавиша Insert (только событие)",
             "Tecla Insert (solo evento)", "Tecla Insert (apenas evento)");
         Add("RowCopy",
-            "复制提示（Ctrl+C）", "複製提示（Ctrl+C）", "Copy tip (Ctrl+C)",
-            "Kopier-Hinweis (Strg+C)", "コピー通知（Ctrl+C）", "Уведомление о копировании (Ctrl+C)",
-            "Aviso de copiar (Ctrl+C)", "Aviso de cópia (Ctrl+C)");
+            "复制提示", "複製提示", "Copy tip",
+            "Kopier-Hinweis", "コピー通知", "Уведомление о копировании",
+            "Aviso de copiar", "Aviso de cópia");
         Add("RowPaste",
-            "粘贴提示（Ctrl+V）", "貼上提示（Ctrl+V）", "Paste tip (Ctrl+V)",
-            "Einfüge-Hinweis (Strg+V)", "貼り付け通知（Ctrl+V）", "Уведомление о вставке (Ctrl+V)",
-            "Aviso de pegar (Ctrl+V)", "Aviso de colagem (Ctrl+V)");
+            "粘贴提示", "貼上提示", "Paste tip",
+            "Einfüge-Hinweis", "貼り付け通知", "Уведомление о вставке",
+            "Aviso de pegar", "Aviso de colagem");
         Add("RowCut",
-            "剪切提示（Ctrl+X）", "剪下提示（Ctrl+X）", "Cut tip (Ctrl+X)",
-            "Ausschneide-Hinweis (Strg+X)", "切り取り通知（Ctrl+X）", "Уведомление о вырезании (Ctrl+X)",
-            "Aviso de cortar (Ctrl+X)", "Aviso de recorte (Ctrl+X)");
+            "剪切提示", "剪下提示", "Cut tip",
+            "Ausschneide-Hinweis", "切り取り通知", "Уведомление о вырезании",
+            "Aviso de cortar", "Aviso de recorte");
         Add("RowAnyCopy",
             "任意复制方式都提示", "任何複製方式都提示", "Tip for any copy method",
             "Hinweis bei jeder Kopiermethode", "あらゆるコピー方法で通知", "Уведомлять при любом способе копирования",

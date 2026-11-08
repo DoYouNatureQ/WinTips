@@ -43,16 +43,26 @@ public sealed class KeyboardHook : IDisposable
                         try { SwitchKeyDown?.Invoke(InputState.Current()); } catch { }
                     }
 
+                    bool ctrl = IsDown(0xA2, 0xA3, 0x11);
+                    bool shift = IsDown(0xA0, 0xA1, 0x10);
+
                     TipKind? kind = info.vkCode switch
                     {
+                        // Windows has always had a second set of clipboard keys
+                        // (Ctrl+Insert copies, Shift+Insert pastes, Shift+Delete
+                        // cuts). Two of them land on keys this hook reports by
+                        // itself, so the modifier is what tells a plain Insert —
+                        // the overwrite toggle — apart from a copy or a paste.
+                        0x2D when ctrl => TipKind.Copy,
+                        0x2D when shift => TipKind.Paste,
+                        0x2E when shift && !ctrl => TipKind.Cut,
                         0x14 => TipKind.CapsLock,
                         0x90 => TipKind.NumLock,
                         0x91 => TipKind.ScrollLock,
                         0x2D => TipKind.Insert,
                         _ => null,
                     };
-                    if (kind == null &&
-                        (_down.Contains(0xA2) || _down.Contains(0xA3) || _down.Contains(0x11)))
+                    if (kind == null && ctrl)
                     {
                         kind = info.vkCode switch
                         {
@@ -83,11 +93,14 @@ public sealed class KeyboardHook : IDisposable
         return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
+    private bool IsDown(uint left, uint right, uint generic) =>
+        _down.Contains(left) || _down.Contains(right) || _down.Contains(generic);
+
     private bool IsSwitchCandidate(uint vk)
     {
-        bool ctrl = _down.Contains(0xA2) || _down.Contains(0xA3) || _down.Contains(0x11);
+        bool ctrl = IsDown(0xA2, 0xA3, 0x11);
         bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
-        bool alt = _down.Contains(0xA4) || _down.Contains(0xA5) || _down.Contains(0x12);
+        bool alt = IsDown(0xA4, 0xA5, 0x12);
 
         return vk switch
         {

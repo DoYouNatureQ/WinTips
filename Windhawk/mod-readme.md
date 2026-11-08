@@ -24,7 +24,8 @@ Toggle **Caps Lock**, **Num Lock**, **Scroll Lock** or press **Insert** and a sm
 card slides in from the screen edge it sits closest to: a padlock icon that
 rotates and bounces, the state in words, and an accent bar along the bottom.
 **Ctrl+C / Ctrl+V / Ctrl+X** show a check mark or scissors with a `×N` badge that
-counts consecutive actions.
+counts consecutive actions — and so do the legacy **Ctrl+Insert**,
+**Shift+Insert** and **Shift+Delete** that terminal windows still rely on.
 
 ![Light theme, frosted card over a wallpaper](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-acrylic-light-en.png)
 
@@ -34,24 +35,27 @@ counts consecutive actions.
   Windows 11 OSD does, while keeping a per-pixel-alpha window so the whole card
   can still fade and slide. Switch *Card material* to Solid for an opaque card.
 - **Slides in from the nearest edge.** A card within 15% of the left or right
-  edge comes in horizontally (this wins over top/bottom), otherwise vertically
-  from whichever half of the screen it sits in.
+  edge comes in horizontally, which beats top/bottom; otherwise it comes in
+  vertically from whichever half of the screen it sits in.
 - **Follows the taskbar out of the way.** The card is anchored to the taskbar's
   live edge instead of the work area: with auto-hide on it lifts as the bar
   slides in and settles back to the screen edge as the bar retreats, so a
   taskbar that pops up mid-tip never covers it.
-- **Clipboard aware.** Copy tips only appear after the clipboard actually
-  changes, so `Ctrl+C` used to interrupt a console app doesn't pop a false
-  "Copied". Non-keyboard copies (context menu, in-app buttons) can be reported
-  too.
+- **Clipboard aware.** Copy and cut tips only appear after the clipboard
+  actually changes, so a `Ctrl+C` used to interrupt a console app doesn't pop a
+  false "Copied", and `Shift+Delete` in Explorer stays quiet because that is a
+  permanent delete, not a cut. Context-menu copies and in-app buttons can be
+  reported too.
 - **Elevated apps.** A 250 ms poll catches lock-key toggles made while an
   administrator window has focus, which a low-level keyboard hook can't see.
 - **Follows Windows.** Per-monitor DPI, light/dark theme and the system accent
   color.
+- **Windows 10 included.** The card is a layered window the mod paints itself
+  and its backdrop is a screen copy it blurs, so it needs neither acrylic nor
+  system rounded corners — the two things Windows 10 doesn't have.
 - **Speaks your Windows language.** The card follows the Windows display
-  language: simplified or traditional Chinese, English, German, Japanese,
-  Russian, Spanish and Portuguese, with English for anything else. *Language*
-  pins one of the eight instead.
+  language — eight UI languages are built in, with English for anything else.
+  *Language* pins one of them instead.
 - **Follows the focused display.** The card lands on the display with the
   window you are working in, positioned with that display's own DPI, work area
   and taskbar state, so a mixed-DPI setup still lines up. *Show on* can follow
@@ -63,43 +67,42 @@ counts consecutive actions.
   taskbar or Alt+Tab, fades out on its own.
 - **Light on resources.** Nothing runs while the card is hidden except the
   optional 250 ms elevated-app poll: idling costs no measurable CPU. A card
-  frame takes about 0.5 ms at 100% (0.9 ms at 200%) and the backdrop is captured
-  once per tip, roughly 7 ms.
+  frame takes about 0.5 ms at 100% and 0.9 ms at 200%, and the backdrop is
+  captured once per tip, roughly 7 ms.
 
 ![Paste tip with an ×3 badge](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-paste-en.png)
 
 ## Settings
 
-- **Language** — language of the text on the card. Follow Windows (the
-  default) matches the Windows display language across simplified and
-  traditional Chinese, English, German, Japanese, Russian, Spanish and
-  Portuguese; any other value pins the card to that language.
+- **Language** — language of the text on the card. The default, Follow Windows,
+  matches the Windows display language; any other value pins the card to that
+  language.
 - **Caps Lock / Num Lock / Scroll Lock / Insert / Copy / Paste / Cut** — turn
   each tip on or off.
 - **Also notify non-keyboard copies** — context menu copies, in-app "Copy"
   buttons and any other clipboard change that wasn't made with `Ctrl+C`.
 - **Display duration** — how long the card stays, 500 to 10000 ms.
-- **Animation speed** — 100 is normal (300 ms), 50 is twice as fast, 0 disables
-  the animation.
+- **Animation speed** — 100 is normal, 300 ms; 50 is twice as fast, and 0
+  disables the animation.
 - **Card size** — 60 to 200 percent; text, icon, accent bar and badge scale
   together. 100 is the Windows 11 size. The gap to the screen edge does not
   scale, so a bigger card still sits where a small one did.
-- **Vertical / horizontal position** — above the taskbar (tracked live, so a bar
-  that auto-hides never covers the card) or below the top edge; left, center or
-  right.
-- **Show on** — the display with the active window (the default), the display
-  that holds the mouse cursor, or always the primary display.
+- **Vertical / horizontal position** — above the taskbar or below the top edge;
+  the bar is tracked live, so one that auto-hides never covers the card. Left,
+  center or right.
+- **Show on** — the display with the active window, which is the default; the
+  display that holds the mouse cursor; or always the primary display.
 - **Horizontal / vertical offset** — pixel-level fine tuning.
 - **Theme** — follow Windows, dark or light.
-- **Card material** — acrylic (blurred backdrop) or solid.
-- **Tint opacity** — acrylic only: how much of the card is the tint painted
-  over the blurred backdrop. 20 to 90 percent, 55 by default — lower shows more
-  of the background, higher looks more solid.
+- **Card material** — acrylic, which blurs the backdrop, or solid.
+- **Tint opacity** — acrylic only. How much of the card is the tint painted over
+  the blurred backdrop: 20 to 90 percent, 55 by default. Lower shows more of the
+  background, higher looks more solid.
 - **Blur radius** — 0 to 40 pixels, acrylic material only.
 - **Accent color** — `#RRGGBB` for the status bar and the `×N` badge; leave
   empty to follow the system accent color.
-- **Detect toggles under elevated apps** — the 250 ms poll described above
-  (lock keys only).
+- **Detect toggles under elevated apps** — the 250 ms poll described above, lock
+  keys only.
 - **Skip while a fullscreen app is in front** — games, fullscreen video and
   presentation mode.
 
@@ -110,7 +113,8 @@ counts consecutive actions.
 - The standalone **WinTips.exe** does the same job. If it is already running,
   this mod stays quiet automatically, so both can be installed — but disable one
   of the two startup entries.
-- Insert is event-based: Windows doesn't keep a global Insert state.
+- Insert is event-based: Windows doesn't keep a global Insert state. Only a bare
+  Insert counts; with Ctrl or Shift held it is a copy or a paste instead.
 - The acrylic backdrop is a screen copy taken the moment the card appears. Behind
   an elevated window that copy can come back black, and the card falls back to
   solid for that tip instead of showing a black box.
@@ -146,6 +150,5 @@ clipboard tips, this mod is.
 GPL-3.0-or-later, the same license as the standalone WinTips app. The mod can be
 copied and modified, but redistributed versions must come with the complete
 corresponding source under the GPL. The look and motion take reference from the
-LockWindow design in FluentFlyout (GPL-3.0); the code here is an independent
+LockWindow design in FluentFlyout, also GPL-3.0; the code here is an independent
 implementation, and the two licenses are compatible.
-

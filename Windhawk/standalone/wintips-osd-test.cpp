@@ -7,6 +7,7 @@
 //
 //   --shot <kind> <on|off> <scale> <out.png> [light|dark] [lang] [bg.png] [top|bottom] [pct] [tint]
 //   --selftest                 exercise hook -> window -> animation
+//   --keymap                   check the key -> tip table on its own
 //   --bench [frames]           time one card frame and report the footprint
 //   --live [seconds]           run the overlay for real
 //   --grab <out.png>           capture the whole virtual desktop
@@ -611,6 +612,49 @@ int TaskbarBandChecks() {
     return failures;
 }
 
+// The key -> tip table the hook runs on. Two of the legacy clipboard keys land
+// on keys that have a tip of their own, so the modifier state is what decides
+// between "Insert" and "Copied"/"Pasted"; the table is pure, so it needs no
+// input injection to check.
+int KeyMapChecks() {
+    struct KeyCase {
+        const wchar_t* name;
+        DWORD vk;
+        bool ctrl;
+        bool shift;
+        int want;
+    };
+
+    KeyCase cases[] = {
+        {L"Insert", VK_INSERT, false, false, kInsert},
+        {L"Ctrl+Insert", VK_INSERT, true, false, kCopy},
+        {L"Shift+Insert", VK_INSERT, false, true, kPaste},
+        {L"Ctrl+Shift+Insert", VK_INSERT, true, true, kCopy},
+        {L"Ctrl+C", 'C', true, false, kCopy},
+        {L"Ctrl+V", 'V', true, false, kPaste},
+        {L"Ctrl+X", 'X', true, false, kCut},
+        {L"Ctrl+Shift+C", 'C', true, true, kCopy},
+        {L"Shift+Delete", VK_DELETE, false, true, kCut},
+        {L"Ctrl+Shift+Delete", VK_DELETE, true, true, -1},
+        {L"Delete", VK_DELETE, false, false, -1},
+        {L"c", 'C', false, false, -1},
+        {L"Ctrl+A", 'A', true, false, -1},
+        {L"Caps Lock", VK_CAPITAL, false, false, kCapsLock},
+    };
+
+    int failures = 0;
+    for (const KeyCase& c : cases) {
+        int got = TipKindForVk(c.vk, c.ctrl, c.shift);
+        bool ok = got == c.want;
+        if (!ok) {
+            failures++;
+        }
+        wprintf(L"  %-20s %s  tip %d (expected %d)\n", c.name,
+                ok ? L"ok  " : L"FAIL", got, c.want);
+    }
+    return failures;
+}
+
 // Exercises the real chain (hook -> window message -> animation) and reports
 // what the overlay actually did, so the logic can be checked without Windhawk.
 int RunSelfTest() {
@@ -667,6 +711,11 @@ int RunSelfTest() {
             bandFailures == 0 ? L"all passed" : L"FAILURES");
     wprintf(L"auto-hide                  : %s\n",
             TaskbarAutoHide() ? L"on" : L"off");
+
+    wprintf(L"\n--- key map ---\n");
+    int keyFailures = KeyMapChecks();
+    wprintf(L"key map cases              : %s\n",
+            keyFailures == 0 ? L"all passed" : L"FAILURES");
 
     g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE uiThread =
@@ -856,6 +905,12 @@ int wmain(int argc, wchar_t** argv) {
         result = RunBounds(argv[2]);
     } else if (argc > 1 && _wcsicmp(argv[1], L"--pick") == 0) {
         result = RunPick(argc, argv);
+    } else if (argc > 1 && _wcsicmp(argv[1], L"--keymap") == 0) {
+        wprintf(L"--- key map ---\n");
+        int failures = KeyMapChecks();
+        wprintf(L"key map cases              : %s\n",
+                failures == 0 ? L"all passed" : L"FAILURES");
+        result = failures == 0 ? 0 : 1;
     } else if (argc > 1 && _wcsicmp(argv[1], L"--tap") == 0) {
         TapKey(VK_CAPITAL);
         Sleep(120);
