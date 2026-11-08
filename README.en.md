@@ -14,18 +14,23 @@ A Windows 11-style keyboard state indicator. Press **Caps Lock / Num Lock / Scro
 
 ## Features
 
-- **Lock-key hints**: Caps / Num / Scroll Lock and Insert. A padlock icon spins and springs back on every toggle, an accent bar sits along the bottom — mirrored above the label when the flyout hugs the top edge — and the card fades and slides toward the nearest screen edge.
-- **Edge-aware slide**: within the 15% zone along any screen edge, the flyout arrives from that edge and leaves the same way. Left and right outrank top and bottom, so corners slide horizontally; mid-screen it slides vertically instead.
-- **Clipboard hints**: Ctrl+C / V / X, plus the legacy Ctrl+Insert / Shift+Insert / Shift+Delete, show a checkmark or scissors icon with an "×N" badge counting consecutive actions. Nothing appears until the clipboard really changes, which is why Shift+Delete in Explorer never claims a cut — it is a permanent delete and leaves the clipboard alone. "Notify on any copy method" is on by default: context-menu copies, an app's own Copy button and any other clipboard change trigger it too, while clearing the clipboard does not.
-- **Input language & IME mode hints**, off by default and switchable in Settings. After switching the input language with Win+Space, Ctrl+Shift or Alt+Shift, the flyout names the current language the way Windows' own language settings do. Switching the input mode inside an IME — the IME's own shortcut, Shift or Ctrl depending on the IME — shows a short card naming the mode it switched to, native or English. These are two layers: the first changes the keyboard layout, or HKL, the second leaves it untouched and can only be read from the IME window's conversion mode. Windows broadcasts neither, so the app samples the state the instant Shift / Ctrl / Alt / Win / Space goes down and watches for a moment afterwards. The baseline has to be taken on the spot: once you switch with the mouse on the language bar, any "last seen state" is already stale and the next hotkey press lands one step out of sync. Nothing shows unless the state really changed, and layout differences picked up by changing windows never produce a false tip.
-- **Native materials**: DWM acrylic, system rounded corners, light/dark theme and accent color follow the system, high-DPI aware. Windows 10 has no acrylic or Mica, so there the flyout and the tray menu use a self-made glass instead — a blurred snapshot of the desktop behind them — and the windows become layered windows drawing their own rounded corners, truly transparent and anti-aliased. In high contrast, with composition disabled, with "Transparency effects" off or while Battery Saver is active, the app falls back to the opaque colors from the design spec rather than overlaying translucent cards on DWM's solid fallback; Mica ignores Battery Saver, so the settings window keeps its material.
-- **Unobtrusive**: click-through, never steals focus, hidden from the taskbar and Alt+Tab, fades out on its own after 1–5 seconds, adjustable.
-- **Settings window**: Win11 Settings styling, applied and saved instantly. Position is two independent axes — Top/Bottom plus Left/Center/Right — or choose "Custom position", drag the flyout anywhere and save; one click restores the default.
-- **Multiple displays**: follows the focused display by default, so the flyout lands on the display with the active window, positioned with that display's own DPI and taskbar state; edge-aware slide, mirrored accent bar and auto-hide taskbar following all still apply. Turn "Follow the focused display" off to pin it back to the primary display.
-- **Visual placement**: in custom-position mode dashed guides mark the 15% edge zones and the zone the flyout center falls into lights up — that is the side it will slide from. The flyout snaps to the screen's center axes, and the arrow keys nudge it pixel by pixel: one press is 1 px, hold to repeat, Shift for 10 px.
-- **Multilingual UI**: eight UI languages built in. Follows the system language by default; another one can be pinned in Settings, effective immediately and without a restart.
-- **Font ships with the app**: the UI font **HarmonyOS Sans SC** is embedded inside `WinTips.exe` in three weights, Latin and CJK in one family, so it looks the same whether or not the font is installed and nothing is written to the system font table. The flyout is sized from measured text, so identical metrics mean identical layout, and a single-file publish still produces exactly one exe. Settings can switch the UI font to any installed family, applied immediately and re-laid out on the new metrics; if the embedded resource fails to load or the chosen font gets uninstalled, it falls back to Microsoft YaHei UI / Segoe UI.
-- Lives in the tray, single instance, no third-party dependencies — WPF + WinForms, .NET 10.
+### What it shows
+
+- **Lock keys & clipboard**: Caps / Num / Scroll Lock and Insert show on each press; copy, paste and cut get a checkmark or scissors icon, with an "×N" badge for repeats. The padlock spins and springs back, and an accent bar runs along the bottom edge.
+- **Input hints** (off by default): names the input language you switched to, or the IME mode you landed in.
+
+### Look & behavior
+
+- **Native Windows 11 look**: acrylic, system corners, theme and accent color all follow the system; Windows 10 gets self-blurred glass, and high contrast or transparency off falls back to solid colors.
+- **Edge-aware slide**: the flyout enters and leaves from the screen edge it hugs, left/right outranking top/bottom; mid-screen it slides vertically.
+- **Unobtrusive**: click-through, never steals focus, absent from the taskbar and Alt+Tab, fades after 1–5 seconds.
+
+### Settings & fit
+
+- **Settings window**: Win11 styling, saved as you change it. Place the flyout on two axes or drag it anywhere and save, with one click back to the default; dashed guides mark the edge zones and the arrow keys nudge it pixel by pixel.
+- **Multiple displays**: follows the focused display, positioned with that display's own DPI and taskbar state.
+- **Language & font**: eight UI languages follow the system or pin to one; **HarmonyOS Sans SC** is embedded in the exe, and any installed family can be swapped in.
+- Tray-resident, single instance, no third-party dependencies — WPF + WinForms, .NET 10.
 
 ## Usage
 
