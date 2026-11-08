@@ -77,6 +77,13 @@ public partial class OsdWindow : Window
 
     private const double GlassStrokeThickness = 1;
 
+    /// <summary>
+    /// 系统圆角（DWMWA_WINDOW_CORNER_PREFERENCE）只有 Win11 认，Win10 上 DWM 一定给直角。
+    /// 这种系统里把窗口换成 WPF 分层窗口，卡片自己画成圆角矩形：四角是真透明（透出桌面），
+    /// 边缘由 WPF 抗锯齿，观感和 Win11 的 DWM 圆角一致，也不必等 DWM 来裁。
+    /// </summary>
+    private static readonly bool OwnCorners = !DwmChrome.SupportsFluent;
+
     /// <summary>缩回时卡片淡到的最低不透明度：留一层底子再随窗口消失，不淡成透明。</summary>
     private const double HideOpacityFloor = 0.9;
 
@@ -95,6 +102,9 @@ public partial class OsdWindow : Window
     public OsdWindow()
     {
         InitializeComponent();
+        // 分层窗口的样式在窗口句柄一创建就定死了，必须在 InitializeComponent 之后、
+        // EnsureHandle 之前切换（WindowStyle 已经是 None，这一句才合法）。
+        if (OwnCorners) AllowsTransparency = true;
         ReloadFont();
         AppFont.Changed += OnUiFontChanged;
         _hideTimer.Tick += (_, _) => HideAnimated();
@@ -128,7 +138,9 @@ public partial class OsdWindow : Window
             ex | NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE |
             NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOPMOST);
 
-        DwmChrome.SetFrameExtended(hwnd, true);
+        // 分层窗口的透明四角由 WPF 自己的 alpha 负责；再让 DWM 扩展边框进来只会招来
+        // 一圈玻璃边框和发黑的角。
+        if (!AllowsTransparency) DwmChrome.SetFrameExtended(hwnd, true);
 
         src.AddHook(WndProc);
         NativeMethods.AddClipboardFormatListener(hwnd);
@@ -274,21 +286,28 @@ public partial class OsdWindow : Window
 
         if (glass) DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_NONE);
 
-        Root.Background = acrylic || glass ? Brushes.Transparent : _surfaceBrush;
-        ApplyGlassLayers(glass, dark);
+        // 有系统圆角（Win11）时底色可以直接铺满窗口，四角交给 DWM 裁；Win10 得留透明四角。
+        Root.Background = OwnCorners || acrylic || glass ? Brushes.Transparent : _surfaceBrush;
+        ApplyCardLayers(glass, dark);
 
         _glassActive = glass;
     }
 
+    /// 玻璃卡片有两套实现：Win11 上系统亚克力兜底，其余情况靠抓桌面快照自己模糊。
+    /// 后者纯 GDI，不需要 DWM，只要有逐像素 alpha 就能跑——Win11 是 DWM 给的，
+    /// Win10 是我们把窗口换成分层窗口换来的（见 OwnCorners），所以 Win10 也有模糊。
     private static bool GlassWanted =>
-        DwmChrome.SupportsBackdrop && ThemeHelper.AcrylicAllowed && AppSettings.Instance.TipGlass;
+        (DwmChrome.SupportsBackdrop || OwnCorners) &&
+        ThemeHelper.GlassAllowed && AppSettings.Instance.TipGlass;
 
-    private void ApplyGlassLayers(bool glass, bool dark)
+    private void ApplyCardLayers(bool glass, bool dark)
     {
         if (!glass)
         {
-            GlassImage.Fill = null;
-            GlassImage.Visibility = Visibility.Collapsed;
+            // 没有玻璃底时，纯色卡片要交给这张带圆角的矩形来画：它才是那个 8px 圆角，
+            // Root 是方的。系统圆角可用时照旧铺满窗口，省掉一层不必要的透明合成。
+            GlassImage.Fill = OwnCorners ? _surfaceBrush : null;
+            GlassImage.Visibility = OwnCorners ? Visibility.Visible : Visibility.Collapsed;
             GlassPlate.Visibility = Visibility.Collapsed;
             return;
         }
@@ -321,8 +340,8 @@ public partial class OsdWindow : Window
         if (bitmap is null)
         {
             // 抓不到桌面就退回纯色卡片，别留一块只有薄纱的半透明浮动玻璃
-            Root.Background = _surfaceBrush;
-            GlassImage.Fill = null;
+            Root.Background = OwnCorners ? Brushes.Transparent : _surfaceBrush;
+            GlassImage.Fill = OwnCorners ? _surfaceBrush : null;
             return;
         }
 

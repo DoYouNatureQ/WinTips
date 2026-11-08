@@ -27,6 +27,19 @@ public partial class TrayMenuWindow : Window
     private double _taskbarTopPx = double.MaxValue;
     private static TrayMenuWindow? _active;
 
+    /// <summary>
+    /// 系统圆角只有 Win11 有（DWMWA_WINDOW_CORNER_PREFERENCE），Win10 的窗口永远是直角。
+    /// 这种系统里改用 WPF 分层窗口：四角由 alpha 透出桌面，卡片自己带 8px 圆角，
+    /// 顺带也拿到了自绘玻璃（模糊快照）需要的逐像素透明。
+    /// </summary>
+    private static readonly bool OwnCorners = !DwmChrome.SupportsFluent;
+
+    private const int GlassBlurRadius = 16;
+    private const int GlassBlurPadding = 24;
+
+    private ImageBrush? _glassBrush;
+    private bool _glassActive;
+
     private static readonly FontFamily IconFont = AppFont.Icon;
 
     internal TrayMenuWindow(Action openSettings, Action exit, Action<bool> toggleStartup,
@@ -41,6 +54,9 @@ public partial class TrayMenuWindow : Window
         _mouseProc = OutsideClickHookProc;
 
         InitializeComponent();
+        // 分层窗口的样式跟着句柄走，必须在 InitializeComponent 之后、ApplyTheme 里的
+        // EnsureHandle 之前定下来（WindowStyle 已经是 None，这一句才合法）。
+        if (OwnCorners) AllowsTransparency = true;
         ApplyTheme();
         BuildItems();
 
@@ -73,21 +89,80 @@ public partial class TrayMenuWindow : Window
 
         var solid = new SolidColorBrush(ThemeHelper.MenuSurface(dark));
 
-        DwmChrome.SetFrameExtended(hwnd, true);
+        // 分层窗口的透明四角由 WPF 的 alpha 负责，再让 DWM 扩展边框进来只会招来黑角。
+        if (!AllowsTransparency) DwmChrome.SetFrameExtended(hwnd, true);
         DwmChrome.TrySetDarkTitleBar(hwnd, dark);
         DwmChrome.TrySetCorner(hwnd, NativeMethods.DWMWCP_ROUND);
 
         if (ThemeHelper.AcrylicAllowed && DwmChrome.TrySetBackdrop(hwnd, NativeMethods.DWMSBT_TRANSIENTWINDOW))
         {
+            HideGlassLayers();
             Root.BorderThickness = new Thickness(1);
             Root.BorderBrush = ThemeHelper.GlassStroke(dark);
             Root.Background = new SolidColorBrush(ThemeHelper.GlassTint(dark));
             return;
         }
 
-        Root.CornerRadius = new CornerRadius(0);
+        // Win10 没有系统亚克力：同一份「抓桌面快照自己模糊」的兜底用在这儿，
+        // 唯一前提是分层窗口的逐像素透明——正好上面已经打开了。
+        _glassActive = OwnCorners && ThemeHelper.GlassAllowed && AppSettings.Instance.TipGlass;
+        if (_glassActive)
+        {
+            Root.BorderThickness = new Thickness(0);
+            Root.Background = Brushes.Transparent;
+            GlassPlate.Stroke = ThemeHelper.GlassStroke(dark);
+            GlassPlate.Fill = GlassVeil(dark);
+            GlassImage.Visibility = GlassPlate.Visibility = Visibility.Visible;
+            return;
+        }
+
+        // 有系统圆角时交给 DWM 裁；没有的话窗口是分层窗口，卡片得自己保住 8px 圆角。
+        Root.CornerRadius = new CornerRadius(OwnCorners ? 8 : 0);
         Root.BorderThickness = new Thickness(0);
         Root.Background = solid;
+        HideGlassLayers();
+    }
+
+    private void HideGlassLayers()
+    {
+        _glassActive = false;
+        GlassImage.Fill = null;
+        GlassImage.Visibility = Visibility.Collapsed;
+        GlassPlate.Visibility = Visibility.Collapsed;
+    }
+
+    private static SolidColorBrush GlassVeil(bool dark)
+    {
+        var tint = ThemeHelper.GlassTintBase(dark);
+        byte alpha = (byte)Math.Round(
+            AppSettings.NormalizeGlassOpacity(AppSettings.Instance.TipGlassOpacity) * 255);
+
+        var brush = new SolidColorBrush(Color.FromArgb(alpha, tint.R, tint.G, tint.B));
+        brush.Freeze();
+        return brush;
+    }
+
+    /// <summary>
+    /// 抓一张菜单背后的桌面快照当卡片底。必须在窗口「已就位但完全透明」的那一刻抓：
+    /// 那时屏幕上就是干净的桌面，不会把菜单自己拍进去。
+    /// </summary>
+    private void CaptureGlass()
+    {
+        if (!_glassActive || _hwnd == IntPtr.Zero) return;
+
+        var bitmap = BackdropCapture.CaptureBlurred(_hwnd, GlassBlurPadding, GlassBlurRadius);
+        if (bitmap is null)
+        {
+            // 抓不到桌面就退回纯色菜单，别留一块只有蒙版的半透明空壳
+            HideGlassLayers();
+            Root.BorderThickness = new Thickness(0);
+            Root.Background = new SolidColorBrush(ThemeHelper.MenuSurface(ThemeHelper.IsDarkTheme));
+            return;
+        }
+
+        _glassBrush ??= new ImageBrush { Stretch = Stretch.Fill };
+        if (!ReferenceEquals(_glassBrush.ImageSource, bitmap)) _glassBrush.ImageSource = bitmap;
+        GlassImage.Fill = _glassBrush;
     }
 
     private Border AddItem(string label, string? glyph, Action onClick, bool? isChecked = null,
@@ -328,6 +403,9 @@ public partial class TrayMenuWindow : Window
 
         Left = Math.Clamp(cx - menuW, 8, SystemParameters.PrimaryScreenWidth - menuW - 8);
         Top = Math.Max(8, bottomLimit - menuH - 8);
+
+        // 此刻窗口已挪到最终位置、但整体还是透明的：正好拍一张干净的桌面快照。
+        CaptureGlass();
 
         var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(120))
         {

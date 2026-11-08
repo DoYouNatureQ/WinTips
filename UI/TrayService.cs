@@ -107,6 +107,11 @@ internal sealed class TrayService : IDisposable
         return IntPtr.Zero;
     }
 
+    /// <summary>
+    /// 命令行 <c>--test menu</c> 用：和托盘右键走同一条路径（落点、玻璃快照、主题都一致）。
+    /// </summary>
+    internal void ShowMenuAtCursor() => ShowMenu();
+
     private void ShowMenu()
     {
         var menu = new TrayMenuWindow(

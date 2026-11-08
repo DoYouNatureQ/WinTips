@@ -27,13 +27,20 @@
             </Style.Triggers>
         </Style>
     </Window.Resources>
-    <Border x:Name="Root" CornerRadius="8" Padding="5" Background="Transparent">
-        <ScrollViewer x:Name="Scroller" Focusable="False"
-                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <ScrollViewer.Resources>
-                <Style TargetType="ScrollBar" BasedOn="{StaticResource Win11ScrollBar}"/>
-            </ScrollViewer.Resources>
-            <StackPanel x:Name="ItemsHost" MinWidth="236"/>
-        </ScrollViewer>
-    </Border>
+    <Grid>
+        <!-- Win10 没有系统亚克力：抓一张背后桌面的模糊快照铺在卡片底下，蒙版和描边各一层。
+             两张矩形都带 8px 圆角，配合分层窗口的透明四角，看起来就和 Win11 的亚克力菜单一样。 -->
+        <Rectangle x:Name="GlassImage" RadiusX="8" RadiusY="8" Visibility="Collapsed"/>
+        <Rectangle x:Name="GlassPlate" RadiusX="8" RadiusY="8" Margin="0.5"
+                   StrokeThickness="1" Visibility="Collapsed"/>
+        <Border x:Name="Root" CornerRadius="8" Padding="5" Background="Transparent">
+            <ScrollViewer x:Name="Scroller" Focusable="False"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer.Resources>
+                    <Style TargetType="ScrollBar" BasedOn="{StaticResource Win11ScrollBar}"/>
+                </ScrollViewer.Resources>
+                <StackPanel x:Name="ItemsHost" MinWidth="236"/>
+            </ScrollViewer>
+        </Border>
+    </Grid>
 </Window>

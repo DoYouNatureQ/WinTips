@@ -41,6 +41,13 @@ internal static class ThemeHelper
 
     public static bool AcrylicAllowed => MicaAllowed && !BatterySaver;
 
+    /// <summary>
+    /// 自绘玻璃（抓桌面快照 + 盒式模糊，见 Native/BackdropCapture）不依赖 DWM，Win10 也能用；
+    /// 只有系统亚克力 / Mica 才必须是 Win11。唯一的前提是窗口带逐像素 alpha，Win10 那种窗口
+    /// 由分层窗口（AllowsTransparency）提供。
+    /// </summary>
+    public static bool GlassAllowed => !HighContrast && TransparencyEnabled && !BatterySaver;
+
     public static bool IsDarkTheme
     {
         get

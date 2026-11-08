@@ -123,6 +123,12 @@ public partial class App : Application
 
     private void RunTest(string[] args)
     {
+        if (args.Length >= 1 && args[0].Equals("menu", StringComparison.OrdinalIgnoreCase))
+        {
+            _tray?.ShowMenuAtCursor();
+            return;
+        }
+
         if (args.Length >= 1 && TipInfo.TryParseKind(args[0], out var kind))
         {
             bool? state = args.Length >= 2
