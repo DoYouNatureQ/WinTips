@@ -15,17 +15,6 @@
 
 // ==WindhawkModReadme==
 /*
-# WinTips OSD」这行开始整段复制进 wintips-osd.wh.cpp 的
-      ==WindhawkModReadme== 两个标记之间的注释体；本段注释可一起复制，渲染时不可见。
-
-硬性约束（官方 pr_validation 会检查）：
-  · 图片只能是 Markdown 语法，host 仅限 raw.githubusercontent.com 或 i.imgur.com
-  · 不能用 HTML 的 img 标签
-  · 单张普通图片 < 2 MB；图片会被 CI 抓取归档，之后换图只能换新 URL/文件名
-  · 下方 raw 链接指向本仓库 Windhawk/preview/ 下的文件，提交 PR 前必须先 push 到 main，
-    否则 CI 取图返回 404 会直接报错
--->
-
 # WinTips OSD
 
 A Windows 11 style floating card for the lock keys, Insert and clipboard actions.
