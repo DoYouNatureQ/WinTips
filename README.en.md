@@ -17,10 +17,6 @@ A keyboard state indicator for Windows
 
 When you press Caps Lock, Num Lock, Scroll Lock or Insert, or copy, paste or cut, WinTips slides an acrylic flyout in from the screen edge and reports the key state or the action, then fades out on its own. The app lives in the tray, has no main window, makes no network requests, and has no third-party dependencies.
 
-| Light theme | Dark theme |
-| :---: | :---: |
-| <img src="promo/osd-light-en.png" width="350" alt="Caps Lock flyout in the light theme"> | <img src="promo/osd-dark-en.png" width="350" alt="Caps Lock flyout in the dark theme"> |
-
 ## Features
 
 | Area | Description |

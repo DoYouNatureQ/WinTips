@@ -8,7 +8,7 @@
   · 浮窗       UI/OsdWindow.xaml            160x50dip，圆角 8，指示条 60x3，图标 22
   · 设置窗口   UI/SettingsWindow.xaml       800dip 宽，两栏卡片 348 / 18 / *
   · 开关/滑块  Resources/Styles.xaml        开关 40x20、滑块轨道 4、拇指 18
-  · 配色       Core/ThemeHelper.cs          卡片、描边、分隔线、强调色 #0067C0
+  · 配色       Core/ThemeHelper.cs          卡片、描边、分隔线、强调色（取系统强调色 #0078D4）
   · 文案       Core/Localization.cs         运行时解析，随应用一起更新
 
 输出：promo/store/*.png，1920x1080。文件名不带 -en 为中文版。
@@ -19,6 +19,7 @@
     python make_store_shots.py en lock    # 仅英文的锁定键那张
 """
 import io
+import math
 import os
 import re
 import sys
@@ -325,15 +326,36 @@ def check_layer(size_px, color):
     return lay
 
 
-def osd_width(text, fnt, d):
-    tw = d.textlength(text, font=fnt) / P(1)
-    return max(160.0, tw + 78)
+def osd_metrics(text, count, d):
+    """复刻 OsdWindow.UpdateSize() 的宽度与文本位置
+
+    宽度：16 + 图标22 + 18 + 文字 + 12（+徽章），不足 160 时按 160 保底。
+    文本：XAML 是 HorizontalAlignment=Center + Margin=18,0,0,2，居中于
+    ContentGrid（左 16 / 右 12）减去左 margin 后的槽，等效文字中心 (w+22)/2。
+    带计数徽章时代码改用 Left + 算出的 Margin.Left，这里照抄，避免压住徽章。
+    """
+    f_txt = ui(14, "med")
+    f_cnt = ui(12.5, "bld")
+    tw = d.textlength(text, font=f_txt) / P(1)
+    cw = d.textlength("×%d" % count, font=f_cnt) / P(1) if count else 0.0
+    extra = (cw + 22) if count else 0.0
+    w = max(160.0, float(math.ceil(16 + 22 + 18 + tw + 12 + extra)))
+
+    if count:
+        pill = cw + 14
+        badge_start = w - 16 - 8 - pill
+        mid = (22 + badge_start) / 2
+        left = 16 + max(30.0, mid - tw / 2)
+    else:
+        left = 16 + 18 + (w - 16 - 12 - 18 - tw) / 2
+    return w, tw, cw, left + tw / 2, left
 
 
-def draw_osd(img, cx, top, dark, text, kind="lock", on=True, count=None):
+def draw_osd(img, cx, top, dark, text, kind="lock", on=True, count=None, bar=True):
+    """bar=False 用于剪贴板提示：ApplyMode() 里 lockUi 才显示 LockIndicator"""
     f_txt = ui(14, "med")
     probe = ImageDraw.Draw(img)
-    w = osd_width(text, f_txt, probe)
+    w, tw, cw, tx_local, _left = osd_metrics(text, count, probe)
     h = 50.0
     x0, y0 = cx - w / 2, top
     r = 8.0
@@ -373,31 +395,30 @@ def draw_osd(img, cx, top, dark, text, kind="lock", on=True, count=None):
         lay = check_layer(int(ic), col)
     img.paste(lay, (int(ix), int(iy)), lay)
 
-    # 文案：在图标右侧的剩余区域居中
-    area0 = x0 + 16 + 22 + 18
-    area1 = x0 + w - 12 - (26 if count else 0)
-    tx = (area0 + area1) / 2
-    d.text((P(tx), P(y0 + h / 2 - 1)), text, font=f_txt, fill=col, anchor="mm")
+    # 文案：水平按 (w+22)/2 居中；垂直对齐浮窗中线（底部指示条另占 7dip）
+    d.text((P(x0 + tx_local), P(y0 + 25)), text, font=f_txt, fill=col, anchor="mm")
 
     if count:
         f_cnt = ui(12.5, "bld")
-        cw = d.textlength("×%d" % count, font=f_cnt) / P(1) + 14
-        bh = 19.0
+        bw_ = cw + 14
+        bh = 20.0
         bx1 = x0 + w - 12
-        bx0 = bx1 - cw
-        by0 = y0 + (h - bh) / 2
-        d.rounded_rectangle([P(bx0), P(by0), P(bx1), P(by0 + bh)], radius=P(9.5),
+        bx0 = bx1 - bw_
+        # 剪贴板模式的内容区是 16,8,8,8，上下对称，徽章正对中线
+        by0 = y0 + 25 - bh / 2
+        d.rounded_rectangle([P(bx0), P(by0), P(bx1), P(by0 + bh)], radius=P(10),
                             fill=ACCENT + (255,))
         d.text((P((bx0 + bx1) / 2), P(by0 + bh / 2)), "×%d" % count, font=f_cnt,
                fill=(255, 255, 255, 255), anchor="mm")
 
-    # 底部指示条
-    bw = 60.0 if on else 36.0
-    bh2 = 3.0
-    bx = cx - bw / 2
-    by = y0 + h - 7 - bh2
-    d.rounded_rectangle([P(bx), P(by), P(bx + bw), P(by + bh2)], radius=P(1.5),
-                        fill=ACCENT + (255 if on else 51,))
+    # 底部指示条：只有锁定键类提示才有（剪贴板 / 语言提示不画）
+    if bar:
+        bw = 60.0 if on else 36.0
+        bh2 = 3.0
+        bx = cx - bw / 2
+        by = y0 + h - 7 - bh2
+        d.rounded_rectangle([P(bx), P(by), P(bx + bw), P(by + bh2)], radius=P(1.5),
+                            fill=ACCENT + (255 if on else 51,))
     return img
 
 
@@ -985,10 +1006,11 @@ def render_terminal(img, dark):
 
 # ---------------------------------------------------------------- 场景
 SCENES = {
+    # place 默认就是 bottom：AppSettings.TipVertical 的出厂值是 PlacementBottom
     "lock": dict(scale=1.5, dark=False, icons=True,
-                 osd=dict(kind="lock", on=True, text=("KeyCapsLock", "StateOn"), place="top")),
+                 osd=dict(kind="lock", on=True, text=("KeyCapsLock", "StateOn"), place="bottom")),
     "copy": dict(scale=1.5, dark=False, notepad=True,
-                 osd=dict(kind="check", on=True, text=("TipCopied", None), count=3, place="top")),
+                 osd=dict(kind="check", on=True, text=("TipCopied", None), count=3, place="bottom")),
     "dark": dict(scale=1.5, dark=True, terminal=True,
                  osd=dict(kind="lock", on=True, text=("KeyNumLock", "StateOn"), place="bottom")),
     "settings": dict(scale=1.1, dark=False, settings=True),
@@ -1031,7 +1053,10 @@ def render(name, lang):
         spec = cfg["osd"]
         text = osd_text(spec, lang)
         top = 16 if spec["place"] == "top" else VH - TASKBAR_H - 16 - 50
-        img = draw_osd(img, VW / 2, top, dark, text, spec["kind"], spec["on"], spec.get("count"))
+        # 剪贴板 / 语言提示没有底部指示条（ApplyMode: lockUi 才显示）
+        bar = spec["kind"] not in ("check", "globe")
+        img = draw_osd(img, VW / 2, top, dark, text, spec["kind"], spec["on"],
+                       spec.get("count"), bar)
 
     out = os.path.join(OUT_DIR, "%s%s.png" % (
         {"lock": "01-lock", "copy": "02-copy", "dark": "03-dark", "settings": "04-settings"}[name],

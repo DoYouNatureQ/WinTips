@@ -17,10 +17,6 @@ Windows 键盘状态提示工具
 
 按下 Caps Lock、Num Lock、Scroll Lock、Insert，或执行复制、粘贴、剪切时，WinTips 在屏幕边缘滑出一个亚克力质感的浮窗，报告当前按键状态或操作，随后自动淡出。程序常驻托盘，无主窗口、不联网、无第三方依赖。
 
-| 浅色主题 | 深色主题 |
-| :---: | :---: |
-| <img src="promo/osd-light.png" width="350" alt="浅色主题下的 Caps Lock 提示"> | <img src="promo/osd-dark.png" width="350" alt="深色主题下的 Caps Lock 提示"> |
-
 ## 功能
 
 | 类别 | 说明 |
