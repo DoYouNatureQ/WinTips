@@ -15,6 +15,8 @@ Windows 键盘状态提示工具
 
 </div>
 
+<img src="promo/wintips-promo.png" width="100%" alt="WinTips 浮窗与大写锁定提示">
+
 按下 Caps Lock、Num Lock、Scroll Lock、Insert，或执行复制、粘贴、剪切时，WinTips 在屏幕边缘滑出一个亚克力质感的浮窗，报告当前按键状态或操作，随后自动淡出。程序常驻托盘，无主窗口、不联网、无第三方依赖。
 
 ## 功能
