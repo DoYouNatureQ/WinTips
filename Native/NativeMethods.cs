@@ -43,6 +43,28 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetKeyboardLayout(uint idThread);
 
+    /// <summary>
+    /// GUI 线程状态。传 0 给 idThread 时拿到的是前台线程的焦点窗口——输入语言和输入法上下文
+    /// 都挂在那个线程上，GetForegroundWindow 拿到的顶层窗口未必是同一个（UWP 的
+    /// ApplicationFrameHost、游戏自绘的子窗口、外壳覆盖层都是例子）。
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GUITHREADINFO
+    {
+        public int cbSize;
+        public uint flags;
+        public IntPtr hwndActive;
+        public IntPtr hwndFocus;
+        public IntPtr hwndCapture;
+        public IntPtr hwndMenuOwner;
+        public IntPtr hwndMoveSize;
+        public IntPtr hwndCaret;
+        public RECT rcCaret;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern int LCIDToLocaleName(uint Locale, System.Text.StringBuilder lpName, int cchName, uint dwFlags);
 
@@ -102,6 +124,18 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hWnd);
+
+    /// <summary>GetWindow 的取值：Z 序里上一层（更靠前的那个窗口）。</summary>
+    public const uint GW_HWNDPREV = 0x0003;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
 
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE_LEGACY = 19;
@@ -177,6 +211,31 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    /// <summary>
+    /// 把系统定时器精度提到 1ms。默认粒度是 15.6ms：实时模糊按 33ms 排节拍时，剩下那 19ms
+    /// 的等待会被睡成 31ms，帧率就在 21～30 之间抖，看着一闪一闪。只在浮窗可见期间提高，
+    /// 隐藏立刻恢复，别让一台常驻托盘的程序一直拖着系统功耗。
+    /// </summary>
+    [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
+    public static extern uint TimeBeginPeriod(uint uMilliseconds);
+
+    [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
+    public static extern uint TimeEndPeriod(uint uMilliseconds);
+
+    /// <summary>远程桌面会话。这种会话里 DWM 的抓屏排除不可靠，实时模糊要退回静态快照。</summary>
+    public const int SM_REMOTESESSION = 0x1000;
+
+    public const uint WDA_NONE = 0x00000000;
+
+    /// <summary>
+    /// 把自己从抓屏里摘出去：窗口照常显示在屏幕上，但 BitBlt / 截图 / 录屏里都看不到它。
+    /// 需要 Win10 2004（19041）以上，更早的系统会退化成 WDA_MONITOR（抓出来是黑块）。
+    /// </summary>
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
@@ -280,6 +339,9 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern uint GetDpiForSystem();
 
+    /// <summary>SetWindowPos 的置顶插入位置（HWND_TOPMOST，句柄值 -1）。</summary>
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
@@ -361,4 +423,71 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern bool GetCursorPos(out POINT lpPoint);
+
+    // —— 完整性级别与按键轮询 ——
+    // 前台窗口的进程比本进程"高"（提权窗口）时，系统不再回调本进程的低级键盘钩子，
+    // 这条提示链路就断了。判定靠读前台进程令牌的完整性级别，兜底靠 GetAsyncKeyState
+    // 轮询（读会话级按键状态，不走钩子，不受 UIPI 限制，见 Core/KeyStateWatcher.cs）。
+
+    public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+    public const uint TOKEN_QUERY = 0x0008;
+
+    public const int TokenIntegrityLevel = 25;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SID_AND_ATTRIBUTES
+    {
+        public IntPtr Sid;
+        public uint Attributes;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TOKEN_MANDATORY_LABEL
+    {
+        public SID_AND_ATTRIBUTES Label;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool OpenProcessToken(IntPtr hProcess, uint dwDesiredAccess, out IntPtr phToken);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetTokenInformation(IntPtr hToken, int tokenInformationClass,
+        IntPtr tokenInformation, int tokenInformationLength, out int returnLength);
+
+    [DllImport("advapi32.dll")]
+    public static extern IntPtr GetSidSubAuthority(IntPtr pSid, int nSubAuthority);
+
+    [DllImport("advapi32.dll")]
+    public static extern IntPtr GetSidSubAuthorityCount(IntPtr pSid);
+
+    /// <summary>异步按键状态：最高位为 1 表示当前按住。与焦点无关，也不受完整性级别限制。</summary>
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int nVirtKey);
+
+    public const int VK_SHIFT = 0x10;
+    public const int VK_CONTROL = 0x11;
+
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+
+    public delegate void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
+        int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
+        WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
 }

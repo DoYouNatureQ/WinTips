@@ -10,6 +10,7 @@
 //   --keymap                   check the key -> tip table on its own
 //   --bench [frames]           time one card frame and report the footprint
 //   --live [seconds]           run the overlay for real
+//   --livetest                 show a card and report which backdrop path ran
 //   --grab <out.png>           capture the whole virtual desktop
 //   --crop / --bounds / --pick image helpers
 //   --tap                      toggle Caps Lock once
@@ -23,6 +24,12 @@
 // Windhawk passes WH_MOD_ID to the compiler for every mod; this file stands in
 // for the engine, so it supplies the value here.
 #define WH_MOD_ID L"wintips-osd"
+
+// The mod stays quiet while the WinTips app is running - it would be a second
+// card on screen. The harness has to be able to show one anyway, so the
+// instance check is stubbed out here, in the harness only: the mod source is
+// unchanged and Windhawk compiles it as it is.
+#define OpenMutexW(a, b, c) ((HANDLE) nullptr)
 
 #include "../wintips-osd.wh.cpp"
 
@@ -120,6 +127,9 @@ bool ParseKind(const wchar_t* text, TipKind& kind) {
         kind = kPaste;
     } else if (_wcsicmp(text, L"cut") == 0) {
         kind = kCut;
+    } else if (_wcsicmp(text, L"lang") == 0 ||
+               _wcsicmp(text, L"language") == 0) {
+        kind = kLanguage;
     } else {
         return false;
     }
@@ -128,7 +138,7 @@ bool ParseKind(const wchar_t* text, TipKind& kind) {
 
 int RunShot(int argc, wchar_t** argv) {
     if (argc < 6) {
-        wprintf(L"usage: --shot <caps|num|scroll|insert|copy|paste|cut> "
+        wprintf(L"usage: --shot <caps|num|scroll|insert|copy|paste|cut|lang> "
                 L"<on|off> <scale> <out.png> [light|dark] [lang] [bg.png] "
                 L"[top|bottom]\n");
         return 2;
@@ -203,8 +213,14 @@ int RunShot(int argc, wchar_t** argv) {
                                  g_scale);
             HDC screen = GetDC(nullptr);
             ok = CaptureBackdrop(screen, p.x, p.y, g_cardWidth, g_cardHeight,
-                                 radius);
+                                 radius,
+                                 (int)std::lround((float)kStaticPaddingDip *
+                                                  std::max(1.0f, g_scale)));
             ReleaseDC(nullptr, screen);
+            // The grab is wider than the card, so the drawing code needs to
+            // know where the card sits inside it - in the mod, Present() does.
+            g_presentX = p.x;
+            g_presentY = p.y;
         } else {
             ok = UseImageAsBackdrop(argv[8], g_cardWidth, g_cardHeight, radius);
         }
@@ -235,7 +251,6 @@ int RunShot(int argc, wchar_t** argv) {
 int RunLive(int seconds) {
     LoadSettings();
     DetectLanguage();
-    InterlockedExchange(&g_pollEnabled, g_settings.pollElevated ? 1 : 0);
 
     g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     HANDLE uiThread =
@@ -266,6 +281,86 @@ int RunLive(int seconds) {
         PostThreadMessageW(g_hookThreadId, WM_QUIT, 0, 0);
     }
     WaitForSingleObject(hookThread, 3000);
+    return 0;
+}
+
+// Checks the live backdrop path on a real desktop: shows a card without any
+// keyboard involvement and reports which path produced the backdrop. The grab
+// is wider than the card by the static margin (72 DIP) or the live one (40
+// DIP), so its width says whether the capture worker really delivered frames.
+int RunLiveTest(const wchar_t* backdropPath) {
+    LoadSettings();
+    DetectLanguage();
+
+    g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    HANDLE uiThread =
+        CreateThread(nullptr, 0, UiThreadProc, nullptr, 0, nullptr);
+    if (!uiThread) {
+        wprintf(L"failed to start UI thread\n");
+        return 1;
+    }
+    if (g_readyEvent) {
+        WaitForSingleObject(g_readyEvent, 5000);
+    }
+
+    wprintf(L"live backdrop supported : %s\n",
+            LiveBackdropSupported() ? L"yes" : L"no");
+    if (!g_hwnd) {
+        wprintf(L"no window\n");
+        return 1;
+    }
+
+    PostMessageW(g_hwnd, WM_APP_TIP, (WPARAM)kCapsLock, 1);
+    Sleep(700);
+
+    int expectedLive = g_cardWidth + 2 * (int)std::lround(
+                                          (float)kLivePaddingDip *
+                                          std::max(1.0f, g_scale));
+    int expectedStatic = g_cardWidth + 2 * (int)std::lround(
+                                            (float)kStaticPaddingDip *
+                                            std::max(1.0f, g_scale));
+    wprintf(L"card                    : %dx%d\n", g_cardWidth, g_cardHeight);
+    wprintf(L"backdrop                : %dx%d at (%d,%d), valid %s\n",
+            g_backdrop.image.width, g_backdrop.image.height, g_backdrop.x,
+            g_backdrop.y, g_backdrop.valid ? L"yes" : L"no");
+    wprintf(L"expected static / live  : %d / %d\n", expectedStatic,
+            expectedLive);
+    wprintf(L"backdrop path           : %s\n",
+            !g_backdrop.valid ? L"none"
+            : g_backdrop.image.width == expectedLive ? L"live"
+            : g_backdrop.image.width == expectedStatic ? L"static"
+                                                       : L"other");
+
+    // A second tip after the first one has faded out: the capture worker has to
+    // be stopped with the card and started again for the next one.
+    Sleep(2200);
+    if (g_phase == kPhaseHidden) {
+        PostMessageW(g_hwnd, WM_APP_TIP, (WPARAM)kNumLock, 1);
+        Sleep(700);
+        wprintf(L"second tip backdrop     : %dx%d, path %s\n",
+                g_backdrop.image.width, g_backdrop.image.height,
+                !g_backdrop.valid ? L"none"
+                : g_backdrop.image.width == expectedLive ? L"live"
+                : g_backdrop.image.width == expectedStatic ? L"static"
+                                                           : L"other");
+    }
+
+    // The whole point of the capture exclusion is that this snapshot shows the
+    // desktop and not the card itself, so it is worth looking at.
+    if (backdropPath && g_backdrop.valid) {
+        Bitmap shot(g_backdrop.image.width, g_backdrop.image.height,
+                    g_backdrop.image.stride, PixelFormat32bppRGB,
+                    (BYTE*)g_backdrop.image.bits);
+        CLSID clsid;
+        if (GetEncoderClsid(L"image/png", &clsid) >= 0 &&
+            shot.Save(backdropPath, &clsid, nullptr) == Ok) {
+            wprintf(L"saved backdrop          : %s\n", backdropPath);
+        }
+    }
+
+    PostMessageW(g_hwnd, WM_APP_QUIT, 0, 0);
+    WaitForSingleObject(uiThread, 3000);
+    CloseHandle(uiThread);
     return 0;
 }
 
@@ -768,6 +863,29 @@ int RunSelfTest() {
     Sleep(200);
     wprintf(L"repeat copy badge count    : %d (expected 2)\n", g_frame.count);
 
+    // The language card: the sample must describe the foreground thread, the
+    // handle must resolve to a name, and the watch must end on its own.
+    // wprintf can't show CJK on a GBK console, so the name is checked by shape
+    // (length and first code point) instead of by printing it.
+    InputState input = CurrentInputState();
+    wprintf(L"input state                : hkl=0x%llx ime=%s mode=%d\n",
+            (unsigned long long)(ULONG_PTR)input.hkl,
+            input.HasIme() ? L"yes" : L"no", input.conversionMode);
+    std::wstring langName = LanguageDisplayName(input.hkl);
+    wprintf(L"language name              : %u chars, first=U+%04X\n",
+            (unsigned)langName.size(),
+            langName.empty() ? 0u : (unsigned)langName[0]);
+
+    // Ticks are driven directly: the timer that normally calls this belongs to
+    // the hook thread, and this check runs on the main one.
+    StartInputWatch();
+    bool watching = g_inputWatching;
+    for (int i = 0; i < 60 && g_inputWatching; i++) {
+        InputTick();
+    }
+    wprintf(L"language watch             : started=%s settled=%s\n",
+            watching ? L"yes" : L"no", g_inputWatching ? L"no" : L"yes");
+
     // Restore the original Caps Lock state.
     if ((GetKeyState(VK_CAPITAL) & 1) != capsBefore) {
         TapKey(VK_CAPITAL);
@@ -824,9 +942,13 @@ int RunBench(int argc, wchar_t** argv) {
     {
         HDC screen = GetDC(nullptr);
         CaptureBackdrop(screen, place.x, place.y, g_cardWidth, g_cardHeight,
-                        radius);
+                        radius,
+                        (int)std::lround((float)kStaticPaddingDip *
+                                         std::max(1.0f, g_scale)));
         ReleaseDC(nullptr, screen);
     }
+    g_presentX = place.x;
+    g_presentY = place.y;
     QueryPerformanceCounter(&t1);
     double captureMs =
         (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)freq.QuadPart;
@@ -846,8 +968,8 @@ int RunBench(int argc, wchar_t** argv) {
     double frameMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 /
                      (double)freq.QuadPart / frames;
 
-    // Nothing on screen: the only timer left is the optional 250 ms poll, so a
-    // second of idling should cost no measurable CPU.
+    // Nothing on screen and no hook thread in this mode, so no timer should be
+    // running at all: a second of idling has to cost no measurable CPU.
     FILETIME created{}, exited{}, kernel{}, user{};
     GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
     ULARGE_INTEGER before;
@@ -897,6 +1019,8 @@ int wmain(int argc, wchar_t** argv) {
         result = RunSelfTest();
     } else if (argc > 1 && _wcsicmp(argv[1], L"--bench") == 0) {
         result = RunBench(argc, argv);
+    } else if (argc > 1 && _wcsicmp(argv[1], L"--livetest") == 0) {
+        result = RunLiveTest(argc > 2 ? argv[2] : nullptr);
     } else if (argc > 1 && _wcsicmp(argv[1], L"--grab") == 0 && argc > 2) {
         result = RunGrab(argv[2]);
     } else if (argc > 1 && _wcsicmp(argv[1], L"--crop") == 0) {
@@ -918,7 +1042,8 @@ int wmain(int argc, wchar_t** argv) {
                 (GetKeyState(VK_CAPITAL) & 1) ? L"on" : L"off");
         result = 0;
     } else {
-        result = RunLive(0);
+        // `--live` alone waits for Enter; `--live 10` quits on its own.
+        result = RunLive(argc > 2 ? _wtoi(argv[2]) : 0);
     }
 
     GdiplusShutdown(g_gdiplusToken);

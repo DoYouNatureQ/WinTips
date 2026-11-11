@@ -16,7 +16,8 @@
         TextOptions.TextRenderingMode="ClearType"
         TextOptions.TextFormattingMode="Ideal">
     <Grid x:Name="Root">
-        <Rectangle x:Name="GlassImage" RadiusX="8" RadiusY="8" Visibility="Collapsed"/>
+        <Rectangle x:Name="GlassImage" RadiusX="8" RadiusY="8" Visibility="Collapsed"
+                   RenderOptions.BitmapScalingMode="Linear"/>
         <Rectangle x:Name="GlassPlate" RadiusX="8" RadiusY="8" Margin="0.5"
                    StrokeThickness="1" Visibility="Collapsed"/>
         <Grid x:Name="ContentGrid" Margin="16,6,12,10">

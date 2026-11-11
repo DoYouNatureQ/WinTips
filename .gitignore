@@ -4,3 +4,4 @@ publish/
 *.user
 .vs/
 Build/
+.workbuddy/

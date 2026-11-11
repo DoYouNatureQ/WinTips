@@ -14,6 +14,7 @@ public partial class App : Application
     private Mutex? _mutex;
     private bool _ownsMutex;
     private KeyboardHook? _hook;
+    private KeyStateWatcher? _poll;
     private OsdController? _osd;
     private InputStateWatcher? _input;
     private TrayService? _tray;
@@ -66,6 +67,13 @@ public partial class App : Application
         _hook.ClipboardPressed += k => _osd!.OnClipboardPressed(k);
         _hook.SwitchKeyDown += s => _input!.Touch(s);
         _hook.Install();
+
+        // 钩子只在"前台窗口不比本进程高"时才有回调。提权的管理员窗口一抢到焦点，
+        // 系统就不叫我们了，得靠轮询兜底（只在那种时刻才跑，平时不耗电）。
+        _poll = new KeyStateWatcher();
+        _poll.ToggleChanged += k => _osd!.OnToggleChanged(k);
+        _poll.Pressed += k => _osd!.OnInsertPressed(k);
+        _poll.Start();
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));
 
@@ -156,6 +164,7 @@ public partial class App : Application
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         AppSettings.FlushPendingSave();
         _hook?.Dispose();
+        _poll?.Dispose();
         _input?.Dispose();
         _tray?.Dispose();
         if (_ownsMutex)

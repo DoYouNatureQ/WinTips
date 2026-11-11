@@ -21,7 +21,7 @@ A Windows 11-style keyboard state indicator. Press **Caps Lock / Num Lock / Scro
 
 ### Look & behavior
 
-- **Native Windows 11 look**: acrylic, system corners, theme and accent color all follow the system; Windows 10 gets self-blurred glass, and high contrast or transparency off falls back to solid colors.
+- **Native Windows 11 look**: acrylic, system corners, theme and accent color all follow the system; Windows 10 gets self-blurred glass, and high contrast or transparency off falls back to solid colors. With blur on, the flyout keeps re-capturing the desktop while it is visible, so the glass tracks whatever moves behind it.
 - **Edge-aware slide**: the flyout enters and leaves from the screen edge it hugs, left/right outranking top/bottom; mid-screen it slides vertically.
 - **Unobtrusive**: click-through, never steals focus, absent from the taskbar and Alt+Tab, fades after 1–5 seconds.
 
@@ -45,10 +45,12 @@ Just run `WinTips.exe` — once the tray icon appears, it is working.
 
 - The Insert hint is event-based and shows no on/off state, since Windows does not track that state at the system level. Only a bare Insert counts: with Ctrl or Shift held it is a copy or a paste instead.
 - With several displays the flyout follows the active window's display by default; turn off "Follow the focused display" in the settings to keep it on the primary display.
-- A low-level keyboard hook cannot see keys sent to elevated, administrator windows.
+- While an elevated (administrator) window has focus, keys fall back to polling: Windows does not deliver keys destined for a higher-integrity window to a normal process's keyboard hook, so Caps/Num/Scroll/Insert are picked up by polling key state instead. They still show, at the cost of up to 50 ms extra latency. The IME's Chinese/English mode cannot be read in that state (that needs messaging an elevated window), so only the language is shown.
+- The flyout cannot be drawn over games running in true exclusive fullscreen: that mode owns the picture and Windows will not let any other window cover it. Borderless fullscreen and windowed mode are fine.
 - Cuts from non-keyboard sources, such as the "Cut" context-menu item, cannot be told apart from copies and are shown with the copy style.
 - The IME mode hint relies on the IME reporting its conversion mode. Most IMEs do; a few third-party ones do not respond and their mode switch shows no hint.
 - Switching with the **mouse** — the language bar or the IME status bar — shows no hint: that kind of change has no keystroke to hang on and sends no system notification.
+- With blur on, the flyout is invisible to screenshots and screen recordings for the second or two it is on screen: it opts out of capture via `WDA_EXCLUDEFROMCAPTURE`, without which every re-capture would photograph the flyout itself. Remote Desktop sessions and older Windows 10 builds cannot do the live refresh and fall back to a single capture taken before the flyout appears, in which case it does show up in screenshots.
 
 ## License
 

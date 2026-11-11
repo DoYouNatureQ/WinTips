@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WinTips.Core;
 using WinTips.Native;
@@ -18,6 +20,9 @@ public partial class OsdWindow : Window
     private readonly DispatcherTimer _hideTimer = new();
 
     private readonly DispatcherTimer _followTimer = new();
+
+    /// <summary>显示期间盯住置顶位置的看守，见 <see cref="TopmostGuard"/>。</summary>
+    private readonly TopmostGuard _topmost = new();
 
     private bool _visible;
     private bool _shownOnce;
@@ -69,9 +74,93 @@ public partial class OsdWindow : Window
 
     private ImageBrush? _glassBrush;
 
+    private BackdropSnapshot? _backdrop;
+
+    private bool _backdropTracking;
+
+    private int _backdropX;
+    private int _backdropY;
+    private int _backdropW;
+    private int _backdropH;
+
+    private Thread? _liveCapture;
+
+    private ManualResetEventSlim? _liveWait;
+
+    private IntPtr _liveHwnd;
+
+    private int _livePadding;
+
+    /// <summary>是否正提着系统定时器精度（要和 <see cref="NativeMethods.TimeEndPeriod"/> 配对）。</summary>
+    private bool _liveTimerPrecise;
+
+    /// <summary>抓屏循环排节拍用。Stopwatch 走 QPC，比 TickCount 的 15.6ms 分辨率可靠得多。</summary>
+    private readonly Stopwatch _liveClock = Stopwatch.StartNew();
+
+    /// <summary>抓屏线程的世代号。加一就等于叫停——比一个 bool 更能防住"旧线程还没退干净又起新的"。</summary>
+    private volatile int _liveGeneration;
+
+    // ---- 实时刷新的显示缓冲 ----
+
+    /// <summary>显示位图两份轮换：只写当前没在显示的那份，写完再把填充切过去。</summary>
+    private WriteableBitmap? _liveA;
+    private WriteableBitmap? _liveB;
+    private ImageBrush? _liveBrushA;
+    private ImageBrush? _liveBrushB;
+    private bool _liveShowA;
+
+    /// <summary>上一帧真正显示出去的像素，用来跟新帧混一点，压掉低帧率下的跳变。</summary>
+    private byte[]? _liveShown;
+
+    /// <summary>新帧落点。跟上一帧混好之后才写进位图。</summary>
+    private byte[]? _liveScratch;
+
+    private int _liveFrameW;
+    private int _liveFrameH;
+    private bool _liveHasFrame;
+
+    /// <summary>已有一帧交给 UI 线程、还没画出去。用来做背压，不让快照在消息队列里堆积。</summary>
+    private int _livePending;
+
+    /// <summary>上一帧窗口所在的位置，用来判断卡片是不是正在动。</summary>
+    private int _liveRectX;
+    private int _liveRectY;
+
     private const int GlassBlurRadius = 16;
 
-    private const int GlassBlurPadding = 24;
+    /// <summary>
+    /// 实时刷新用的半径。两次方框模糊的 sigma 只有 radius×0.82，放大半径到 20 才跟三次、
+    /// 半径 16 的观感持平，而每帧的卷积次数少了三分之一。
+    /// </summary>
+    private const int GlassLiveBlurRadius = 20;
+
+    /// <summary>实时刷新的模糊次数（静态快照用 3 次）。</summary>
+    private const int GlassLiveBlurPasses = 2;
+
+    /// <summary>
+    /// 抓不到实时刷新时，快照四周固定留这么多白（单位 DIP，抓屏前按缩放换成物理像素）：
+    /// 模糊核半径（卡片边缘取样要用到外侧像素）+ 卡片会滑动的距离（滑入 20、跟随自动隐藏
+    /// 的任务栏要一个任务栏厚度）。这段留白就是卡片能自由移动、快照又不用重抓的范围。
+    /// </summary>
+    private const int GlassBlurPadding = 72;
+
+    /// <summary>
+    /// 能实时刷新时留白可以小得多：每 <see cref="GlassLiveRefreshMs"/> 会重新抓一次并重新
+    /// 对准卡片，留白只需盖住两次刷新之间挪动的距离。
+    /// </summary>
+    private const int GlassLivePadding = 40;
+
+    /// <summary>
+    /// 实时刷新的间隔。抓一次桌面要等一次桌面合成，再密也快不了，所以不追满帧；真正的
+    /// 流畅感靠帧间混合补——否则 20 来帧的模糊背景一跳一跳，看着就是在闪。
+    /// </summary>
+    private const int GlassLiveRefreshMs = 22;
+
+    /// <summary>
+    /// 新帧在混合里的权重（256 为完全用新帧）。取 150 左右：一帧过去跟到六成、三帧基本
+    /// 到位（约 100ms），既有"跟得上手"的即时感，又不会被二十几帧的内容跳变硌到眼睛。
+    /// </summary>
+    private const int GlassLiveBlendWeight = 150;
 
     private const double GlassCornerRadius = 8;
 
@@ -148,6 +237,9 @@ public partial class OsdWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _topmost.End();
+        StopBackdropTracking();
+        StopLiveBackdrop();
         AppFont.Changed -= OnUiFontChanged;
         try
         {
@@ -291,6 +383,11 @@ public partial class OsdWindow : Window
         ApplyCardLayers(glass, dark);
 
         _glassActive = glass;
+        if (!glass)
+        {
+            StopBackdropTracking();
+            StopLiveBackdrop();
+        }
     }
 
     /// 玻璃卡片有两套实现：Win11 上系统亚克力兜底，其余情况靠抓桌面快照自己模糊。
@@ -328,18 +425,27 @@ public partial class OsdWindow : Window
         GlassPlate.Fill = _glassVeilBrush;
     }
 
+    /// <summary>
+    /// 抓一张桌面快照做玻璃底。必须在窗口弹出之前调用——窗口已经在屏幕上时抓屏，
+    /// 拍到的就是卡片自己。
+    /// </summary>
     private void UpdateBackdrop()
     {
         if (!_glassActive) return;
 
-        var bitmap = BackdropCapture.CaptureBlurred(
-            new WindowInteropHelper(this).Handle,
-            GlassBlurPadding,
-            GlassBlurRadius);
+        int padding = (int)Math.Ceiling(GlassBlurPadding * Math.Max(1.0, CurrentScale()));
 
-        if (bitmap is null)
+        var previous = _backdrop;
+        _backdrop = BackdropCapture.Capture(
+            new WindowInteropHelper(this).Handle,
+            padding,
+            GlassBlurRadius);
+        previous?.Release();
+
+        if (_backdrop is null)
         {
             // 抓不到桌面就退回纯色卡片，别留一块只有薄纱的半透明浮动玻璃
+            _backdropW = 0;
             Root.Background = OwnCorners ? Brushes.Transparent : _surfaceBrush;
             GlassImage.Fill = OwnCorners ? _surfaceBrush : null;
             return;
@@ -347,8 +453,350 @@ public partial class OsdWindow : Window
 
         Root.Background = Brushes.Transparent;
         _glassBrush ??= new ImageBrush { Stretch = Stretch.Fill };
-        if (!ReferenceEquals(_glassBrush.ImageSource, bitmap)) _glassBrush.ImageSource = bitmap;
-        if (!ReferenceEquals(GlassImage.Fill, _glassBrush)) GlassImage.Fill = _glassBrush;
+        GlassImage.Fill = _glassBrush;
+        _backdropW = 0;
+        SyncBackdrop();
+    }
+
+    /// <summary>
+    /// 按卡片当前的位置从快照里重新取一块。
+    /// </summary>
+    /// <remarks>
+    /// 快照是死的，卡片是活的：滑入、跟随自动隐藏的任务栏时窗口每帧都在挪，只有让取样框
+    /// 跟着窗口一起挪，玻璃底下透出的画面才会跟着变——真玻璃滑过桌面就是这个观感。
+    /// 反过来，如果把快照当成一张贴在窗口上的图，移动时整块模糊会跟着卡片平移，一眼就
+    /// 看出是张静态照片。
+    /// </remarks>
+    private void SyncBackdrop()
+    {
+        if (_backdrop is null) return;
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || !NativeMethods.GetWindowRect(hwnd, out var box)) return;
+
+        int x = box.Left;
+        int y = box.Top;
+        int w = box.Right - box.Left;
+        int h = box.Bottom - box.Top;
+        if (x == _backdropX && y == _backdropY && w == _backdropW && h == _backdropH) return;
+
+        if (BackdropCapture.Render(_backdrop, x, y, w, h) is not { } bitmap) return;
+
+        _backdropX = x;
+        _backdropY = y;
+        _backdropW = w;
+        _backdropH = h;
+
+        if (_glassBrush is not null && !ReferenceEquals(_glassBrush.ImageSource, bitmap))
+            _glassBrush.ImageSource = bitmap;
+    }
+
+    private void StartBackdropTracking()
+    {
+        if (_backdrop is null || _backdropTracking) return;
+        _backdropTracking = true;
+        CompositionTarget.Rendering += OnBackdropFrame;
+    }
+
+    private void StopBackdropTracking()
+    {
+        if (!_backdropTracking) return;
+        _backdropTracking = false;
+        CompositionTarget.Rendering -= OnBackdropFrame;
+    }
+
+    private void OnBackdropFrame(object? sender, EventArgs e) => SyncBackdrop();
+
+    /// <summary>
+    /// 卡片显示期间持续重抓桌面，让模糊跟着背后的画面一起动。
+    /// </summary>
+    /// <remarks>
+    /// 关键是先把窗口排除出抓屏（WDA_EXCLUDEFROMCAPTURE），否则每张快照里都是卡片自己。
+    /// 拿不到这项能力（旧系统、远程桌面、DWM 不合成）就什么都不做，退回弹出前抓一次、
+    /// 之后靠取样框在留白里跟着挪的老办法。
+    /// </remarks>
+    private void StartLiveBackdrop()
+    {
+        if (_liveCapture is not null || !_glassActive) return;
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || !BackdropCapture.TryExcludeFromCapture(hwnd)) return;
+
+        _liveHwnd = hwnd;
+        _livePadding = (int)Math.Ceiling(GlassLivePadding * Math.Max(1.0, CurrentScale()));
+        _liveWait = new ManualResetEventSlim(false);
+
+        int gen = ++_liveGeneration;
+        var wait = _liveWait;
+        _liveCapture = new Thread(() => CaptureLoop(wait, gen))
+        {
+            IsBackground = true,
+            Name = "WinTips backdrop",
+            // 抓屏要等桌面合成，本来就不快；压低优先级，别跟界面动画抢 UI 线程。
+            Priority = ThreadPriority.BelowNormal,
+        };
+
+        // 只在实时刷新这段时间里把系统定时器调细，循环里的等待才不会被 15.6ms 的粒度吃掉。
+        if (!_liveTimerPrecise)
+        {
+            _liveTimerPrecise = true;
+            NativeMethods.TimeBeginPeriod(1);
+        }
+
+        _liveCapture.Start();
+    }
+
+    private void StopLiveBackdrop()
+    {
+        if (_liveCapture is not null)
+        {
+            _liveGeneration++;
+            _liveWait?.Set();
+            _liveCapture.Join(400);
+            _liveCapture = null;
+            _liveWait = null;
+
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero) BackdropCapture.AllowCapture(hwnd);
+        }
+
+        if (_liveTimerPrecise)
+        {
+            _liveTimerPrecise = false;
+            NativeMethods.TimeEndPeriod(1);
+        }
+
+        _backdrop?.Release();
+        _backdrop = null;
+        _backdropW = 0;
+
+        _liveA = null;
+        _liveB = null;
+        _liveBrushA = null;
+        _liveBrushB = null;
+        _liveShown = null;
+        _liveScratch = null;
+        _liveFrameW = 0;
+        _liveFrameH = 0;
+        _liveHasFrame = false;
+
+        // 排队中的那一帧可能因为窗口已经关掉而永远不会被处理，标志必须在这里清，
+        // 否则下一次弹出时每一帧都会被当成「上一帧还没画」扔掉，实时刷新就再也不动了。
+        Interlocked.Exchange(ref _livePending, 0);
+    }
+
+    private void CaptureLoop(ManualResetEventSlim wait, int gen)
+    {
+        int misses = 0;
+        long next = _liveClock.ElapsedMilliseconds;
+
+        while (gen == _liveGeneration)
+        {
+            long start = _liveClock.ElapsedMilliseconds;
+
+            var snapshot = BackdropCapture.Capture(
+                _liveHwnd, _livePadding, GlassLiveBlurRadius, waitForComposition: false,
+                passes: GlassLiveBlurPasses);
+            if (snapshot is null)
+            {
+                // 偶发抓不到（窗口刚换显示器、桌面正在切）不算事，连着抓不到才收摊。
+                if (++misses >= 10) break;
+            }
+            else
+            {
+                misses = 0;
+
+                TraceBackdrop(snapshot, (int)(_liveClock.ElapsedMilliseconds - start));
+
+                // 上一帧 UI 线程还没消化掉，这一帧就直接扔了。排队只会越排越旧，
+                // 到后面一串积压一起涌上来，比降帧还难看。
+                if (Interlocked.Exchange(ref _livePending, 1) == 1)
+                {
+                    snapshot.Release();
+                }
+                else
+                {
+                    try
+                    {
+                        Dispatcher.BeginInvoke(() => PresentLiveFrame(snapshot));
+                    }
+                    catch
+                    {
+                        Interlocked.Exchange(ref _livePending, 0);
+                        snapshot.Release();
+                        break;
+                    }
+                }
+            }
+
+            // 节拍按「上一拍 + 间隔」排，而不是「现在 + 间隔」：偶尔一帧慢了几毫秒就不会
+            // 一路累积下去。用 Stopwatch 而不是 TickCount——后者在默认时钟粒度下只有 15.6ms
+            // 的分辨率，按它算间隔会让周期在 17/32/48 三档之间跳，看着就是闪。
+            next += GlassLiveRefreshMs;
+
+            long now = _liveClock.ElapsedMilliseconds;
+            if (now <= next)
+            {
+                wait.Wait((int)Math.Min(next - now, GlassLiveRefreshMs));
+            }
+            else
+            {
+                // 落后超过一整拍了（系统卡了一下），别再补抓，从当前时刻重新排。
+                next = now;
+            }
+        }
+    }
+
+    private static readonly string? DebugTrace =
+        Environment.GetEnvironmentVariable("WINTIPS_DEBUG_BACKDROP_TRACE") is { Length: > 0 } path
+            ? path
+            : null;
+
+    /// <summary>
+    /// 诊断用：把每次实时抓屏拿到的中心像素和耗时记一行，判断模糊是真的在跟桌面走、
+    /// 还是把卡片自己拍进去了，以及一帧要花多久。只有设了环境变量才会写文件。
+    /// </summary>
+    private static void TraceBackdrop(BackdropSnapshot snapshot, int cost)
+    {
+        if (DebugTrace is null) return;
+
+        int cx = snapshot.Width / 2;
+        int cy = snapshot.Height / 2;
+        int i = (cy * snapshot.Width + cx) * 4;
+        try
+        {
+            System.IO.File.AppendAllText(DebugTrace,
+                $"{DateTime.Now:HH:mm:ss.fff} cost={cost} {snapshot.Pixels[i + 2]},{snapshot.Pixels[i + 1]},{snapshot.Pixels[i]}\n");
+        }
+        catch { }
+    }
+
+    private long _lastPresentTick;
+
+    private static readonly string? DebugFrameDir =
+        Environment.GetEnvironmentVariable("WINTIPS_DEBUG_LIVE_FRAME_DIR") is { Length: > 0 } dir
+            ? dir
+            : null;
+
+    private int _dumpCount;
+
+    private int _presentCount;
+
+    /// <summary>诊断用：把送给屏幕的那一帧存成 PNG，检查实时画面本身有没有坏（撕裂、错位、黑块）。</summary>
+    private void DumpLiveFrame(BitmapSource bitmap)
+    {
+        if (DebugFrameDir is null || _dumpCount >= 4) return;
+        try
+        {
+            System.IO.Directory.CreateDirectory(DebugFrameDir);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var stream = System.IO.File.Create(System.IO.Path.Combine(DebugFrameDir, $"live{_dumpCount}.png"));
+            encoder.Save(stream);
+        }
+        catch { }
+        _dumpCount++;
+    }
+
+    /// <summary>
+    /// 调试用：记下真正显示出去的那一帧（混合之后）的中心像素和帧间隔，用来看跟得平不平。
+    /// </summary>
+    private void TracePresented(byte[] pixels, int width, int height)
+    {
+        if (DebugTrace is null) return;
+
+        long now = _liveClock.ElapsedMilliseconds;
+        int gap = _lastPresentTick == 0 ? 0 : (int)(now - _lastPresentTick);
+        _lastPresentTick = now;
+
+        int i = ((height / 2) * width + width / 2) * 4;
+        try
+        {
+            System.IO.File.AppendAllText(DebugTrace,
+                $"P {DateTime.Now:HH:mm:ss.fff} gap={gap} {pixels[i + 2]},{pixels[i + 1]},{pixels[i]}\n");
+        }
+        catch { }
+    }
+
+    /// <summary>把后台抓到的新快照换上去。在 UI 线程上跑。</summary>
+    /// <remarks>
+    /// 每帧只写一次位图，而且是写到没在显示的那一份，写完再切填充。直接往正在显示的位图上
+    /// 写像素，渲染线程可能取到写了一半的画面——背景看起来就一闪一闪的。
+    /// </remarks>
+    private void PresentLiveFrame(BackdropSnapshot snapshot)
+    {
+        try
+        {
+            if (!_visible || !_glassActive) return;
+
+            if (_liveHwnd == IntPtr.Zero || !NativeMethods.GetWindowRect(_liveHwnd, out var box)) return;
+
+            int w = box.Right - box.Left;
+            int h = box.Bottom - box.Top;
+            if (w <= 0 || h <= 0) return;
+
+            EnsureLiveBuffers(w, h);
+
+            var work = _liveScratch!;
+            if (!BackdropCapture.CopyInto(snapshot, box.Left, box.Top, w, h, work)) return;
+
+            int bytes = w * h * 4;
+
+            // 卡片自己在动（滑入、跟随任务栏）时不做混合：那会儿背景是整体平移的，
+            // 混前后两帧等于把两个位置叠在一起，边缘会糊成重影。停下来再混，才是要的效果。
+            bool moved = Math.Abs(box.Left - _liveRectX) > 2 || Math.Abs(box.Top - _liveRectY) > 2;
+            _liveRectX = box.Left;
+            _liveRectY = box.Top;
+
+            // 第一帧没有「上一帧」可混，直接照搬，否则会从全黑淡进来。
+            if (_liveHasFrame && !moved) BackdropCapture.Blend(_liveShown!, work, bytes, GlassLiveBlendWeight);
+
+            // 混好的这份就是接下来要显示的，直接把两个缓冲的角色对调，不动数据。
+            (_liveShown, _liveScratch) = (_liveScratch, _liveShown);
+            _liveHasFrame = true;
+
+            var target = _liveShowA ? _liveB! : _liveA!;
+            target.WritePixels(new Int32Rect(0, 0, w, h), _liveShown!, w * 4, 0);
+
+            TracePresented(_liveShown!, w, h);
+
+            _liveShowA = !_liveShowA;
+            GlassImage.Fill = _liveShowA ? _liveBrushA : _liveBrushB;
+
+            if (_presentCount++ % 8 == 0) DumpLiveFrame(target);
+        }
+        finally
+        {
+            snapshot.Release();
+            Interlocked.Exchange(ref _livePending, 0);
+        }
+    }
+
+    /// <summary>
+    /// 卡片尺寸变了（换显示器、改缩放、文案变长）就重做一对显示位图和缓冲。
+    /// </summary>
+    private void EnsureLiveBuffers(int width, int height)
+    {
+        if (_liveA is not null && _liveFrameW == width && _liveFrameH == height) return;
+
+        // 位图按设备像素建、DPI 也按当前缩放标：这样它在 DIP 空间里正好是卡片的尺寸，
+        // 铺上去是一对一映射，不会每帧被重采样一次（重采样也会让边缘发颤）。
+        double dpi = 96 * Math.Max(1.0, CurrentScale());
+
+        _liveA = new WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, null);
+        _liveB = new WriteableBitmap(width, height, dpi, dpi, PixelFormats.Bgra32, null);
+        _liveBrushA = new ImageBrush(_liveA) { Stretch = Stretch.Fill };
+        _liveBrushB = new ImageBrush(_liveB) { Stretch = Stretch.Fill };
+
+        _liveShown = new byte[width * height * 4];
+        _liveScratch = new byte[width * height * 4];
+
+        _liveFrameW = width;
+        _liveFrameH = height;
+        _liveHasFrame = false;
+
+        // false 表示 A 现在没在显示，第一帧写 A。
+        _liveShowA = false;
     }
 
     public void PreWarm()
@@ -453,6 +901,7 @@ public partial class OsdWindow : Window
             Root.BeginAnimation(UIElement.OpacityProperty, null);
             Root.Opacity = 1;
             Reposition();
+            RaiseTopmost();
             AnimateStatus(on);
             RestartTimer();
             StartFollow();
@@ -480,6 +929,7 @@ public partial class OsdWindow : Window
 
         Show();
         PlacePhysical(_lastLeft, _lastTop);
+        RaiseTopmost();
         _visible = true;
         _shownOnce = true;
         if (!ready)
@@ -488,6 +938,10 @@ public partial class OsdWindow : Window
             Reposition();
         }
         AnimateIn();
+        StartLiveBackdrop();
+        // 能实时重抓就不必再逐帧挪取样框了：每次重抓都会按卡片当前的位置重新对准，
+        // 而这六十毫秒里卡片顶多挪几像素，模糊本来就看不出来，省下一次常驻的渲染循环。
+        if (_liveCapture is null) StartBackdropTracking();
         if (ms > 0) AnimateStatus(on);
         RestartTimer();
         StartFollow();
@@ -547,6 +1001,9 @@ public partial class OsdWindow : Window
     private void HideInstantly()
     {
         StopFollow();
+        _topmost.End();
+        StopBackdropTracking();
+        StopLiveBackdrop();
         _hideTimer.Stop();
         Root.BeginAnimation(UIElement.OpacityProperty, null);
         BeginAnimation(LeftProperty, null);
@@ -900,6 +1357,25 @@ public partial class OsdWindow : Window
 
     private double ToWindowDip(double targetDip) => targetDip * WindowDipRatio();
 
+    /// <summary>
+    /// 每次弹出前重新插到置顶带的最前面，并在显示期间一直盯住这个位置。
+    /// </summary>
+    /// <remarks>
+    /// 窗口自己带 WS_EX_TOPMOST，但置顶窗口之间是按先后排的：边界全屏的游戏、录制软件、
+    /// 各种覆盖层启动后也会把自家窗口设成置顶，于是压在提示上面，提示就"没出现"了。
+    /// 摆位用的是 SWP_NOZORDER（不扰动焦点），这一步单独补 Z 序。
+    ///
+    /// 只补一次不够：游戏拿到焦点、切分辨率、重建交换链时都会再把自家窗口顶一次，
+    /// 于是提示先露出来又被压回去。真正的看门人交给 <see cref="TopmostGuard"/>，
+    /// 它会盯着卡片中心有没有被别人盖住，盖住了才补抢一次。
+    /// </remarks>
+    private void RaiseTopmost()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        _topmost.Begin(hwnd);
+    }
+
     private void PlacePhysical(double left, double top)
     {
         var hwnd = new WindowInteropHelper(this).Handle;
@@ -1030,6 +1506,9 @@ public partial class OsdWindow : Window
 
         void FinishHide()
         {
+            _topmost.End();
+            StopBackdropTracking();
+            StopLiveBackdrop();
             Hide();
             _visible = false;
             _clipCount = 0;
