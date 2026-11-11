@@ -10,9 +10,11 @@ public sealed class KeyboardHook : IDisposable
     private readonly NativeMethods.LowLevelKeyboardProc _proc;
     private readonly HashSet<uint> _down = new();
 
-    public event Action<TipKind>? ToggleChanged;
+    /// <summary>锁定键被按下，第二个参数是按键发生的时刻（见 <see cref="EventTime"/>）。</summary>
+    public event Action<TipKind, long>? ToggleChanged;
 
-    public event Action<TipKind>? Pressed;
+    /// <summary>Insert 被单独按下，第二个参数同上。</summary>
+    public event Action<TipKind, long>? Pressed;
 
     public event Action<TipKind>? ClipboardPressed;
 
@@ -75,11 +77,17 @@ public sealed class KeyboardHook : IDisposable
                     if (kind != null)
                     {
                         var k = kind.Value;
+
+                        // 记的是按键发生的那一刻，不是回调被处理的那一刻：转发要过一次
+                        // Dispatcher，UI 线程忙的时候这一步能拖几百毫秒，而 Raw Input
+                        // 那条路会用同一个时刻来和这里比对。
+                        long at = EventTime.Rebase(info.time);
+
                         System.Windows.Application.Current?.Dispatcher.BeginInvoke(
                             System.Windows.Threading.DispatcherPriority.Send, () =>
                         {
-                            if (TipInfo.IsToggle(k)) ToggleChanged?.Invoke(k);
-                            else if (k == TipKind.Insert) Pressed?.Invoke(k);
+                            if (TipInfo.IsToggle(k)) ToggleChanged?.Invoke(k, at);
+                            else if (k == TipKind.Insert) Pressed?.Invoke(k, at);
                             else ClipboardPressed?.Invoke(k);
                         });
                     }

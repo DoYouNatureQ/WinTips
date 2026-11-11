@@ -40,6 +40,13 @@ internal static partial class NativeMethods
     [DllImport("user32.dll")]
     public static extern short GetKeyState(int nVirtKey);
 
+    /// <summary>
+    /// 正在处理的那条消息被投递的时刻（开机以来的毫秒数，32 位）。WM_INPUT 里拿它就是
+    /// 按键发生的时刻——不是这条消息被处理的时刻，两者在 UI 线程忙的时候能差几百毫秒。
+    /// </summary>
+    [DllImport("user32.dll")]
+    public static extern int GetMessageTime();
+
     [DllImport("user32.dll")]
     public static extern IntPtr GetKeyboardLayout(uint idThread);
 
@@ -245,6 +252,20 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowTextW(IntPtr hWnd, [MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder sb, int max);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassNameW(IntPtr hWnd, [MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder sb, int max);
+
+    /// <summary>
+    /// 取某个屏幕坐标处最上层、**可接收鼠标**的窗口。
+    /// </summary>
+    /// <remarks>
+    /// 诊断用：卡片自己带 WS_EX_TRANSPARENT（点击穿透），这个函数会直接跳过它，
+    /// 所以返回的永远是"卡片底下"那个窗口——正好用来回答"卡片这个位置底下到底是谁"。
+    /// 不能拿它判断"卡片有没有被盖住"，透明窗口在这条 API 里根本不存在。
+    /// </remarks>
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr FindWindowW(string? lpClassName, string? lpWindowName);
@@ -490,4 +511,14 @@ internal static partial class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    /// <summary>
+    /// 把两个线程的输入队列临时接到一起。接上之后 <c>GetKeyState</c> 才会反映出对方的
+    /// 键盘状态——本进程的 UI 线程没有焦点，自己的队列镜像永远停在启动那一刻。
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
 }

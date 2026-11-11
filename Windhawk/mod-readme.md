@@ -48,9 +48,10 @@ Chinese/English mode.
   change, so a `Ctrl+C` that interrupts a console app and a permanent
   `Shift+Delete` stay quiet. Context-menu copies can be reported too.
 - **Works under elevated windows.** Windows stops calling the keyboard hook while
-  an administrator window has focus; the lock keys are then read from the
-  session-wide key state instead, at the cost of up to 50 ms. See below for what
-  does not work there.
+  an administrator window has focus; the keys then come from Raw Input, which is
+  delivered per device and ignores both focus and integrity level. A key-state
+  poll stays behind it for anything Raw Input cannot see, such as a remote or a
+  virtual keyboard. See below for what does not work there.
 - **Light on resources.** Nothing runs while the card is hidden. A frame takes
   about 0.5 ms at 100% size; the live backdrop and the topmost guard only tick
   while a card is up.

@@ -15,6 +15,7 @@ public partial class App : Application
     private bool _ownsMutex;
     private KeyboardHook? _hook;
     private KeyStateWatcher? _poll;
+    private RawInputWatcher? _raw;
     private OsdController? _osd;
     private InputStateWatcher? _input;
     private TrayService? _tray;
@@ -57,23 +58,47 @@ public partial class App : Application
 
         settings.LaunchAtStartup = StartupManager.IsEnabled();
 
+        // 启动时借前台线程的输入队列读一次锁定键基线。之后状态全部靠"按下即翻转"，
+        // 不再读 GetKeyState——那个镜像对没有焦点的线程根本不更新。
+        LockState.Initialize();
+
         _osd = new OsdController();
         _input = new InputStateWatcher();
         _input.LanguageChanged += hkl => _osd!.OnLanguageChanged(hkl);
         _input.ImeModeChanged += native => _osd!.OnImeModeChanged(native);
         _hook = new KeyboardHook();
-        _hook.ToggleChanged += k => _osd!.OnToggleChanged(k);
-        _hook.Pressed += k => _osd!.OnInsertPressed(k);
+
+        // 三条捕获路径统一走 LockState.Toggle：谁先到谁翻转，后到的由去重挡掉。
+        // 不读 GetKeyState 取状态——那个镜像会卡住，连按四次读回同一个值。
+        // 传进去的是按键发生的时刻，不是处理时刻：UI 线程被抓背景拖住时，同一次按下
+        // 在两条路径上的处理时刻能差几百毫秒，比处理时刻就会翻两遍。
+        _hook.ToggleChanged += (k, at) =>
+        {
+            if (LockState.Toggle(k, at, out bool on)) _osd!.OnLockToggled(k, on);
+        };
+        _hook.Pressed += (k, at) => { if (LockState.Accept(k, at)) _osd!.OnInsertPressed(k); };
         _hook.ClipboardPressed += k => _osd!.OnClipboardPressed(k);
         _hook.SwitchKeyDown += s => _input!.Touch(s);
-        _hook.Install();
 
-        // 钩子只在"前台窗口不比本进程高"时才有回调。提权的管理员窗口一抢到焦点，
-        // 系统就不叫我们了，得靠轮询兜底（只在那种时刻才跑，平时不耗电）。
+        // 调试用：设 WINTIPS_NO_HOOK=1 就不装低级钩子。目的是能单独验证"没有钩子时
+        // Raw Input 是否自足"——提权的管理员窗口前台时，钩子本来就等于不存在，
+        // 这个开关能在普通窗口上把同样的处境复现出来。
+        if (Environment.GetEnvironmentVariable("WINTIPS_NO_HOOK") != "1")
+            _hook.Install();
+
+        // 低级钩子在前台是提权窗口时会被 UIPI 掐断，系统干脆不回调。两条兜底并着上：
+        //   Raw Input —— 走设备栈，跟完整性级别无关，是这里的主力；
+        //   轮询     —— 万一 Raw Input 被设备/驱动层挡掉（远控、虚拟键盘），它还能兜。
+        // 去重与状态翻转都在 LockState 里，三条路径不会各说各话。
         _poll = new KeyStateWatcher();
-        _poll.ToggleChanged += k => _osd!.OnToggleChanged(k);
+        _poll.ToggleChanged += (k, on) => _osd!.OnLockToggled(k, on);
         _poll.Pressed += k => _osd!.OnInsertPressed(k);
         _poll.Start();
+
+        _raw = new RawInputWatcher();
+        _raw.ToggleChanged += (k, on) => _osd!.OnLockToggled(k, on);
+        _raw.Pressed += k => _osd!.OnInsertPressed(k);
+        _raw.Start();
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));
 
@@ -165,6 +190,7 @@ public partial class App : Application
         AppSettings.FlushPendingSave();
         _hook?.Dispose();
         _poll?.Dispose();
+        _raw?.Dispose();
         _input?.Dispose();
         _tray?.Dispose();
         if (_ownsMutex)

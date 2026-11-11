@@ -36,13 +36,23 @@ internal static class ForegroundLevel
     public static bool ForegroundOutranksSelf()
     {
         IntPtr hwnd = NativeMethods.GetForegroundWindow();
-        if (hwnd == IntPtr.Zero) return false;
+
+        // 读不到前台窗口时不能假设"钩子还在工作"。全屏切换、显示模式重建、安全桌面刚
+        // 退出的那几拍，GetForegroundWindow 会短暂返回 0；此时前台多半仍是那个高权限
+        // 窗口，按"钩子正常"处理的结果是整段提示全哑。反过来多轮询一轮只是几次
+        // GetAsyncKeyState，代价可以忽略。
+        if (hwnd == IntPtr.Zero) return true;
 
         // 前台窗口在一次按键期间不会变，按句柄缓存，免得每 50ms 开一次进程令牌。
         if (_hasLast && hwnd == _lastHwnd) return _lastRaised;
 
         uint rid = OfWindow(hwnd);
         bool raised = rid == 0 || rid > SelfRid;
+
+        if (Diag.Enabled)
+        {
+            Diag.Write($"fg {Diag.Describe(hwnd)} il=0x{rid:X} self=0x{SelfRid:X} polling={raised}");
+        }
 
         _lastHwnd = hwnd;
         _lastRaised = raised;

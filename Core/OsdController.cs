@@ -5,11 +5,6 @@ namespace WinTips.Core;
 
 internal sealed class OsdController
 {
-    private readonly DispatcherTimer _verify = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    private TipKind _verifyKind;
-    private bool _verifyState;
-    private bool _verifyPending;
-
     private readonly DispatcherTimer _clipPending = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private TipKind _clipPendingKind;
 
@@ -20,7 +15,6 @@ internal sealed class OsdController
 
     public OsdController()
     {
-        _verify.Tick += VerifyTick;
         _clipPending.Tick += (_, _) => _clipPending.Stop();
     }
 
@@ -39,16 +33,18 @@ internal sealed class OsdController
 
     public void PreWarm() => Window.PreWarm();
 
-    public void OnToggleChanged(TipKind kind)
+    /// <summary>
+    /// 锁定键的显示入口。状态由 <see cref="LockState"/> 统一给出，这里不再自己去问系统。
+    /// </summary>
+    /// <remarks>
+    /// 早先这里会再读一次 GetKeyState 并起个 250ms 的定时器"校验"：那是本线程消息队列的
+    /// 镜像，前台是提权窗口时根本不更新，校验只会把正确状态又改回错的。现在状态来源只有
+    /// 一个，也就没有需要校验的第二个答案了。
+    /// </remarks>
+    public void OnLockToggled(TipKind kind, bool on)
     {
         if (!IsEnabled(kind)) return;
-        bool newOn = (NativeMethods.GetKeyState(TipInfo.VirtualKey(kind)) & 1) == 0;
-        Show(kind, newOn);
-        _verifyKind = kind;
-        _verifyState = newOn;
-        _verifyPending = true;
-        _verify.Stop();
-        _verify.Start();
+        Show(kind, on);
     }
 
     public void OnInsertPressed(TipKind kind)
@@ -92,15 +88,6 @@ internal sealed class OsdController
         NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_DIB) ||
         NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_ENHMETAFILE) ||
         NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_METAFILEPICT);
-
-    private void VerifyTick(object? sender, EventArgs e)
-    {
-        _verify.Stop();
-        if (!_verifyPending) return;
-        _verifyPending = false;
-        bool actual = (NativeMethods.GetKeyState(TipInfo.VirtualKey(_verifyKind)) & 1) != 0;
-        if (actual != _verifyState) _window?.UpdateState(_verifyKind, actual);
-    }
 
     private void Show(TipKind kind, bool? state)
     {

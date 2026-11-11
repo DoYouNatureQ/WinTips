@@ -62,9 +62,10 @@ Chinese/English mode.
   change, so a `Ctrl+C` that interrupts a console app and a permanent
   `Shift+Delete` stay quiet. Context-menu copies can be reported too.
 - **Works under elevated windows.** Windows stops calling the keyboard hook while
-  an administrator window has focus; the lock keys are then read from the
-  session-wide key state instead, at the cost of up to 50 ms. See below for what
-  does not work there.
+  an administrator window has focus; the keys then come from Raw Input, which is
+  delivered per device and ignores both focus and integrity level. A key-state
+  poll stays behind it for anything Raw Input cannot see, such as a remote or a
+  virtual keyboard. See below for what does not work there.
 - **Light on resources.** Nothing runs while the card is hidden. A frame takes
   about 0.5 ms at 100% size; the live backdrop and the topmost guard only tick
   while a card is up.
@@ -398,7 +399,27 @@ constexpr int kBaseAnimationMs = 300;
 constexpr int kClipIntentMs = 800;    // wait this long for the clipboard to change
 constexpr int kClipMergeMs = 250;     // coalesce clipboard manager write-backs
 constexpr int kPollMs = 50;           // elevated-window fallback
-constexpr int kPollProbeMs = 200;     // stand-in when the win event can't hook
+
+// How often the fallback question - "has the foreground gone above us?" - is
+// asked when the window event says nothing. Slower than the event, its only job
+// is to notice sooner or later, and while nothing is elevated it costs a cached
+// comparison. It runs unconditionally: the event comes from SetWinEventHook,
+// which Windows is just as entitled to filter as the keyboard hook, so losing
+// it is precisely the case where the fallback matters.
+constexpr int kPollProbeMs = 500;
+
+// One press can be reported by every capture path at once (hook, Raw Input,
+// poll). Only the first may flip the state: a second flip for the same physical
+// press would leave the card showing the opposite of the real lock. Measured
+// between the presses themselves, not between the moments each path noticed
+// them. Nobody taps a lock key twice within 200 ms.
+constexpr int kSameKindWindowMs = 200;
+
+// Raw Input repeats a key-down every few dozen ms while it is held; the flag
+// that filters those out expires, in case the matching key-up never arrived
+// (device unplugged, driver hiccup) and would otherwise swallow every later
+// press.
+constexpr int kRawRepeatGuardMs = 1500;
 constexpr int kFollowIntervalMs = 60; // the taskbar slide takes ~200 ms
 constexpr int kFollowMs = 140;        // shorter than the entrance, so it keeps up
 
@@ -2377,6 +2398,19 @@ TipKind g_clipIntentKind = kCopy;
 
 // Hook thread only.
 bool g_vkDown[256];
+
+// The lock state itself, and the one place it is allowed to change.
+//
+// It is not read from the system. GetKeyState reports the message-queue mirror
+// of the calling thread, and the hook thread never receives keyboard messages -
+// its mirror stays at whatever it was when the mod loaded, so four taps in a row
+// read back the same value. GetAsyncKeyState only says "held down", which is not
+// a lock state either. So the state is one flip per captured press, which makes
+// "every press changes it" true by construction.
+//
+// Both the hook thread and the UI thread (Raw Input) write this, so mutation is
+// serialised by AllowTip: it settles, per key, which one capture path owns a
+// given press before the read-modify-write below happens.
 bool g_toggleState[3];
 
 // The elevated-window fallback, also hook thread only. A low-level keyboard
@@ -2388,10 +2422,18 @@ HWINEVENTHOOK g_foregroundHook;
 DWORD g_selfRid;                   // own integrity level, read once at startup
 bool g_pollRunning;
 bool g_pollDown[kPollKeyCount];    // per key: held down at the last poll
-int g_pollMismatch[kPollKeyCount]; // consecutive poll reads that disagree
 HWND g_levelHwnd;                  // window the verdict below was measured on
 bool g_levelRaised;
 bool g_levelKnown;
+
+// When each key last produced a tip, shared by every capture path so a press is
+// reported once. Read and written from two threads; see AllowTip.
+ULONGLONG g_lastFired[kPollKeyCount];
+
+// Raw Input key state, UI thread only. Key-down is what counts; the flags exist
+// to drop auto-repeat and to expire a press whose release was never delivered.
+bool g_rawDown[kPollKeyCount];
+ULONGLONG g_rawDownAt[kPollKeyCount];
 
 // The language watch, also hook thread only. A language or IME-mode change has
 // no notification of its own: it is a property of the thread that owns the
@@ -2917,6 +2959,53 @@ int TipKindForVk(DWORD vk, bool ctrl, bool shift) {
     return ctrl ? ClipKindFromVk(vk) : -1;
 }
 
+// Claims a press for the calling capture path. Returns false when another path
+// already reported the same press, in which case the caller must neither flip
+// the state nor show a tip.
+//
+// `at` is when the key went down, not when this path got round to it. Raw Input
+// is handled on the UI thread, which can be busy capturing a backdrop for a
+// whole frame: its report then arrives well after the hook's, and comparing
+// processing times would make one keystroke look like two. Comparing press
+// times is what makes them the same press.
+//
+// The claim is what keeps a double report from turning into a double flip: being
+// wrong about that is invisible at the time (the card still appears) and only
+// shows up later as "the state is the opposite of the key", so it is settled
+// here rather than in each path.
+bool AllowTip(TipKind kind, ULONGLONG at) {
+    if ((unsigned)kind >= (unsigned)kPollKeyCount) {
+        return true;  // nothing shared to protect: copy/paste/cut/language
+    }
+
+    ULONGLONG last = g_lastFired[kind];
+    // Signed, and both sides of zero: the two paths measure the same press a few
+    // ms apart, and either one can be the earlier of the two.
+    LONGLONG delta = (LONGLONG)(at - last);
+    if (delta > -(LONGLONG)kSameKindWindowMs &&
+        delta < (LONGLONG)kSameKindWindowMs) {
+        return false;
+    }
+    // The exchange decides the race: exactly one caller sees the stamp it read
+    // and goes on; anyone else sees the winner's newer stamp and backs off.
+    return InterlockedExchange64((volatile LONG64*)&g_lastFired[kind],
+                                 (LONG64)at) == (LONG64)last;
+}
+
+// When the message being handled was posted, in the 64-bit tick domain.
+// GetMessageTime is the same millisecond counter as GetTickCount, only 32 bits
+// wide; putting it back together with the current tick recovers the elapsed
+// time even across the 49-day wrap.
+ULONGLONG MessagePostTime() {
+    DWORD posted = (DWORD)GetMessageTime();
+    ULONGLONG now = GetTickCount64();
+    ULONGLONG at = (now & ~0xFFFFFFFFull) | posted;
+    if (at > now) {
+        at -= 0x100000000ull;  // posted just before the counter wrapped
+    }
+    return at;
+}
+
 // =============================================================================
 // Environment checks
 // =============================================================================
@@ -3005,6 +3094,46 @@ void UpdateGeometry() {
     g_following = false;
     g_backdropPending = false;
     g_surface.Ensure(g_cardWidth, g_cardHeight);
+}
+
+// The card has to land on a display. Its place is derived from the foreground
+// window, that window's monitor, the work area, the taskbar's live edge and the
+// DPI - any of which can come back nonsensical during a fullscreen switch, with
+// the taskbar covered, or across a monitor hot-plug. A card that lands nowhere
+// is indistinguishable from "no tip at all", which is the hardest failure to
+// diagnose, so the resting position is checked once per show and pulled back to
+// the centre of the work area if it failed. Once, not followed: this must not
+// turn into a source of jitter.
+void EnsureOnScreen() {
+    if (g_cardWidth <= 0 || g_cardHeight <= 0) {
+        return;
+    }
+
+    POINT centre{g_posX + g_cardWidth / 2, g_posY + g_cardHeight / 2};
+    if (MonitorFromPoint(centre, MONITOR_DEFAULTTONULL)) {
+        return;
+    }
+
+    // The target itself may be the monitor that went away; the primary one is
+    // then the only safe place left.
+    MonitorTarget target = g_monitor;
+    if (!target.valid) {
+        LoadMonitor(PrimaryMonitor(), target);
+    }
+    if (!target.valid) {
+        return;
+    }
+
+    int usableW = (int)std::max<LONG>(1, target.work.right - target.work.left);
+    int usableH = (int)std::max<LONG>(1, target.work.bottom - target.work.top);
+    g_posX = target.work.left + (usableW - g_cardWidth) / 2;
+    g_posY = target.work.top + (usableH - g_cardHeight) / 2;
+    // The slide and the follow loop ease from the placement, so a jump has to
+    // move it too or the next frame would drag the card straight back out.
+    g_placement.x = g_posX;
+    g_placement.y = g_posY;
+
+    Wh_Log(L"card landed off-screen, recentred to %d,%d", g_posX, g_posY);
 }
 
 // Grabs the pixels behind the card and blurs them. The window has to be hidden
@@ -3216,6 +3345,7 @@ void StepAnimation() {
 // =============================================================================
 
 int g_topmostRaises;
+bool g_topmostUnfixable;  // this show has raised and stayed covered anyway
 
 void RaiseTopmost() {
     if (!g_hwnd) {
@@ -3268,6 +3398,7 @@ void StartTopmostGuard() {
         return;
     }
     g_topmostRaises = 0;
+    g_topmostUnfixable = false;
     RaiseTopmost();
     SetTimer(g_hwnd, kTimerTopmost, kTopmostGuardMs, nullptr);
 }
@@ -3290,6 +3421,17 @@ void OnTopmostTick() {
 
     RaiseTopmost();
     g_topmostRaises++;
+
+    // Look again straight away. Still covered means the raise did not take -
+    // exclusive fullscreen, or the system simply refused - which is a different
+    // fault from "had to raise once", and the only way to tell them apart
+    // afterwards. Once per show: a game that re-raises every frame would
+    // otherwise fill the log with it.
+    if (!g_topmostUnfixable && FindCoveringWindow(g_hwnd)) {
+        g_topmostUnfixable = true;
+        Wh_Log(L"card still covered after raise #%d", g_topmostRaises);
+    }
+
     // Something is raising itself over the card over and over. Speed up rather
     // than settle into a "visible for 100 ms, covered for 100 ms" flicker.
     if (g_topmostRaises > kTopmostRaisesBeforeFast) {
@@ -3423,6 +3565,7 @@ void ShowTip(TipKind kind, bool on) {
 
     g_theme = CurrentTheme();
     UpdateGeometry();
+    EnsureOnScreen();
     RefreshBackdrop();
 
     int animMs = g_settings.AnimationMs();
@@ -3620,6 +3763,121 @@ void HandleClipboardUpdate() {
     ShowTip(kCopy, false);
 }
 
+// =============================================================================
+// Raw Input
+//
+// The third way in, and the only one that both survives an elevated window and
+// never samples: the hook is cut by UIPI, and polling can miss a quick tap that
+// starts and ends between two 50 ms reads. Raw Input comes off the device stack
+// straight to a window that asked for it with RIDEV_INPUTSINK, so neither focus
+// nor integrity level matters. It is what makes the fallback below an actual
+// fallback rather than the only line of defence.
+//
+// The card window itself is the sink: 1x1, hidden most of the time, and
+// INPUTSINK does not care about either. Keys therefore arrive on the UI thread
+// and go straight to HandleTip - no cross-thread post, no extra window.
+// =============================================================================
+
+bool RegisterRawInputKeys(HWND hwnd, bool enable) {
+    RAWINPUTDEVICE device{};
+    device.usUsagePage = 0x01;  // HID_USAGE_PAGE_GENERIC
+    device.usUsage = 0x06;      // HID_USAGE_GENERIC_KEYBOARD
+    device.dwFlags = enable ? RIDEV_INPUTSINK : RIDEV_REMOVE;
+    device.hwndTarget = enable ? hwnd : nullptr;
+    return RegisterRawInputDevices(&device, 1, sizeof(device)) != FALSE;
+}
+
+int RawKeyIndex(const RAWKEYBOARD& key) {
+    if (key.VKey != 0xFF) {
+        for (int i = 0; i < kPollKeyCount; i++) {
+            if (KindToVk((TipKind)i) == key.VKey) {
+                return i;
+            }
+        }
+    }
+    // Some keys arrive with no virtual key at all (0xFF), most visibly Insert
+    // behind an E0 prefix; the scan code is the remaining handle.
+    switch (key.MakeCode) {
+        case 0x3A:
+            return kCapsLock;
+        case 0x45:
+            return kNumLock;
+        case 0x46:
+            return kScrollLock;
+        case 0x52:
+            return kInsert;
+        default:
+            return -1;
+    }
+}
+
+void HandleRawKey(const RAWKEYBOARD& key, ULONGLONG at) {
+    int index = RawKeyIndex(key);
+    if (index < 0) {
+        return;
+    }
+
+    if (key.Flags & RI_KEY_BREAK) {
+        g_rawDown[index] = false;
+        return;
+    }
+
+    ULONGLONG now = GetTickCount64();
+    if (g_rawDown[index] &&
+        now - g_rawDownAt[index] < (ULONGLONG)kRawRepeatGuardMs) {
+        return;  // auto-repeat of a key that is still held
+    }
+    g_rawDown[index] = true;
+    g_rawDownAt[index] = now;
+
+    TipKind kind = (TipKind)index;
+
+    if (kind == kInsert) {
+        // Ctrl+Insert is a copy and Shift+Insert a paste, exactly as in the
+        // hook path, so a modified Insert is not a bare press.
+        if (CtrlDown() || ShiftDown()) {
+            return;
+        }
+        if (!AllowTip(kind, at)) {
+            return;
+        }
+        HandleTip(kind, false);
+        return;
+    }
+
+    if (!IsToggleKind(kind)) {
+        return;
+    }
+    if (!AllowTip(kind, at)) {
+        return;  // another path got there first; flipping again would desync
+    }
+    bool state = !g_toggleState[index];
+    g_toggleState[index] = state;
+    HandleTip(kind, state);
+}
+
+void HandleRawInput(LPARAM lParam) {
+    const UINT header = sizeof(RAWINPUTHEADER);
+
+    UINT size = 0;
+    if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, nullptr, &size, header) !=
+            0 ||
+        size == 0 || size > sizeof(RAWINPUT)) {
+        return;
+    }
+
+    RAWINPUT raw{};
+    UINT read = size;
+    if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, &read, header) ==
+        (UINT)-1) {
+        return;
+    }
+    if (raw.header.dwType != RIM_TYPEKEYBOARD) {
+        return;
+    }
+    HandleRawKey(raw.data.keyboard, MessagePostTime());
+}
+
 void ApplySettings() {
     LoadSettings();
     DetectLanguage();
@@ -3715,6 +3973,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SETTINGCHANGE:
             OnDisplayChanged();
             return 0;
+        case WM_INPUT:
+            HandleRawInput(lParam);
+            break;  // fall through to DefWindowProc, which releases the buffer
         case WM_NCHITTEST:
             return HTTRANSPARENT;
         case WM_DESTROY:
@@ -3776,6 +4037,16 @@ DWORD WINAPI UiThreadProc(LPVOID) {
 
     AddClipboardFormatListener(g_hwnd);
 
+    // Session-wide keyboard capture that does not go through the hook. It has
+    // to be undone on the way out as well: Windhawk unloads a mod inside the
+    // live process, so a leftover registration would keep posting WM_INPUT to a
+    // window that no longer exists.
+    if (!RegisterRawInputKeys(g_hwnd, true)) {
+        Wh_Log(L"RegisterRawInputDevices failed: %lu", GetLastError());
+    } else {
+        Wh_Log(L"raw input keyboard sink registered");
+    }
+
     if (g_readyEvent) {
         SetEvent(g_readyEvent);
     }
@@ -3786,6 +4057,7 @@ DWORD WINAPI UiThreadProc(LPVOID) {
         DispatchMessageW(&msg);
     }
 
+    RegisterRawInputKeys(nullptr, false);
     RemoveClipboardFormatListener(g_hwnd);
     // Join the capture worker before the window it captures around disappears;
     // it also drops the timer resolution and the capture exclusion on the way
@@ -3852,7 +4124,13 @@ DWORD IntegrityRid(HANDLE process) {
 bool ForegroundOutranksSelf() {
     HWND foreground = GetForegroundWindow();
     if (!foreground) {
-        return false;
+        // No foreground window does not mean the hook is working. Fullscreen
+        // transitions, a display-mode rebuild and the moment the secure desktop
+        // goes away all return null for a while, and the window in front is
+        // usually still the elevated one. Treating that as "hook fine" silences
+        // every tip for the whole stretch; one extra poll costs a handful of
+        // GetAsyncKeyState calls, so assume the fallback is needed.
+        return true;
     }
     if (g_levelKnown && foreground == g_levelHwnd) {
         return g_levelRaised;
@@ -3889,6 +4167,7 @@ void StartFallbackPoll() {
     }
     g_pollRunning = true;
     SetTimer(nullptr, kThreadTimerPoll, kPollMs, nullptr);
+    Wh_Log(L"fallback poll started");
 }
 
 void StopFallbackPoll() {
@@ -3898,7 +4177,7 @@ void StopFallbackPoll() {
     g_pollRunning = false;
     KillTimer(nullptr, kThreadTimerPoll);
     ZeroMemory(g_pollDown, sizeof(g_pollDown));
-    ZeroMemory(g_pollMismatch, sizeof(g_pollMismatch));
+    Wh_Log(L"fallback poll stopped");
 }
 
 void RefreshFallbackPoll() {
@@ -4036,6 +4315,11 @@ void PollTick() {
     bool insertModified = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
                           (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 
+    // Nothing below corrects the tracked state against GetKeyState any more.
+    // That read is this thread's message-queue mirror, and the hook thread
+    // never receives keyboard messages: the mirror freezes at load time, so a
+    // "correction" would rewrite a correct state into a stale one. Four taps in
+    // a row reading back the same value is exactly that bug.
     for (int i = 0; i < kPollKeyCount; i++) {
         int vk = KindToVk((TipKind)i);
         bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -4043,7 +4327,8 @@ void PollTick() {
         g_pollDown[i] = down;
 
         if (i == kInsert) {
-            if (pressed && !insertModified && g_hwnd) {
+            if (pressed && !insertModified && g_hwnd &&
+                AllowTip((TipKind)kInsert, GetTickCount64())) {
                 // Same path as a hooked Insert: notify switch, fullscreen
                 // check and the tip itself all live in HandleTip.
                 PostMessageW(g_hwnd, WM_APP_TIP, (WPARAM)kInsert, 0);
@@ -4055,30 +4340,14 @@ void PollTick() {
             // A lock key toggles exactly once per press, so flipping the state
             // we track is exact - and unlike reading it here, it can't catch the
             // old value before the system has applied the toggle.
+            if (!AllowTip((TipKind)i, GetTickCount64())) {
+                continue;  // the hook already reported this press
+            }
             bool state = !g_toggleState[i];
             g_toggleState[i] = state;
-            g_pollMismatch[i] = 0;
             if (g_hwnd) {
                 PostMessageW(g_hwnd, WM_APP_POLL, (WPARAM)i, state ? 1 : 0);
             }
-            continue;
-        }
-
-        // Now that the press has settled, check the guess. Two polls in a row
-        // have to disagree before the card is corrected, so a single stale read
-        // can't make it flip back and forth.
-        bool actual = (GetKeyState(vk) & 1) != 0;
-        if (actual == g_toggleState[i]) {
-            g_pollMismatch[i] = 0;
-            continue;
-        }
-        if (++g_pollMismatch[i] < 2) {
-            continue;
-        }
-        g_pollMismatch[i] = 0;
-        g_toggleState[i] = actual;
-        if (g_hwnd) {
-            PostMessageW(g_hwnd, WM_APP_POLL, (WPARAM)i, actual ? 1 : 0);
         }
     }
 }
@@ -4104,7 +4373,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
                 int kind = TipKindForVk(vk, CtrlDown(), ShiftDown());
 
-                if (kind >= 0) {
+                if (kind >= 0 && AllowTip((TipKind)kind, GetTickCount64())) {
                     bool predicted = false;
                     if (IsToggleKind((TipKind)kind)) {
                         // Flip our own copy of the state instead of reading the
@@ -4163,11 +4432,15 @@ DWORD WINAPI HookThreadProc(LPVOID) {
         ForegroundChangedProc, 0, 0,
         WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     if (!g_foregroundHook) {
-        // Without it the fallback still has to notice elevated windows somehow:
-        // a slow probe costs little and only runs while the mod is idle.
         Wh_Log(L"SetWinEventHook failed: %lu", GetLastError());
-        SetTimer(nullptr, kThreadTimerProbe, kPollProbeMs, nullptr);
     }
+
+    // The probe runs either way. Without the window event it is the only way to
+    // notice an elevated window at all; with it, it is the insurance against
+    // the event being filtered - which is the same UIPI rule that swallows the
+    // hook, so the two failures go together. Its verdict is cached by window
+    // handle, so while nothing is elevated it costs one comparison.
+    SetTimer(nullptr, kThreadTimerProbe, kPollProbeMs, nullptr);
 
     RefreshFallbackPoll();
 

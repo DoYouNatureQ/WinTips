@@ -1,4 +1,3 @@
-using System.Text;
 using System.Windows.Threading;
 using WinTips.Native;
 
@@ -90,7 +89,11 @@ internal sealed class TopmostGuard
 
         Raise(hwnd);
         _raises++;
-        TraceRaise(cover);
+
+        // 抢完再看一眼。还是被盖住，说明这一手根本无效（对方是独占全屏、或者系统压根
+        // 没让这次置顶生效），跟"抢一次就够了"是两种完全不同的故障——日志里必须分得开，
+        // 否则事后只看到一串 raise 却判断不出到底有没有起作用。
+        TraceRaise(cover, FindCover(hwnd));
 
         if (_raises <= RaisesBeforeFast) return;
         if (_timer.Interval.TotalMilliseconds > FastIntervalMs)
@@ -98,28 +101,20 @@ internal sealed class TopmostGuard
     }
 
     /// <summary>
-    /// 诊断用：把每次补抢记一行，被谁压住、抢了几次。只有设了环境变量才会写文件。
-    /// 用户报"还是被遮挡"时，看这行就知道对方到底是哪个窗口、是抢一次就够还是一直在抢。
+    /// 诊断用：记一行"被谁压住、抢了几次、抢完有没有用"。只有设了环境变量才会写文件。
+    /// 用户报"还是被遮挡""根本没弹"时，看这行就知道对方是哪个窗口、以及卡片是不是
+    /// 真的排在它下面（这决定了该修置顶还是该查按键链路）。
     /// </summary>
-    private static readonly string? DebugTrace =
-        Environment.GetEnvironmentVariable("WINTIPS_DEBUG_TOPMOST") is { Length: > 0 } path
-            ? path
-            : null;
-
-    private void TraceRaise(IntPtr cover)
+    private void TraceRaise(IntPtr cover, IntPtr still)
     {
-        if (DebugTrace is null) return;
+        if (!Diag.TopmostEnabled) return;
 
-        var title = new StringBuilder(256);
-        NativeMethods.GetWindowTextW(cover, title, title.Capacity);
-        NativeMethods.GetWindowThreadProcessId(cover, out uint pid);
+        string card = NativeMethods.GetWindowRect(_hwnd, out var r)
+            ? $"{r.Right - r.Left}x{r.Bottom - r.Top}@({r.Left},{r.Top})"
+            : "?";
 
-        try
-        {
-            System.IO.File.AppendAllText(DebugTrace,
-                $"{DateTime.Now:HH:mm:ss.fff} raise#{_raises} over pid={pid} \"{title}\"\n");
-        }
-        catch { }
+        Diag.WriteTopmost($"raise#{_raises} card={card} over {Diag.Describe(cover)} " +
+                          $"stillCovered={Diag.Describe(still)}");
     }
 
     /// <summary>

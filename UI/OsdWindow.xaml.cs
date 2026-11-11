@@ -874,6 +874,12 @@ public partial class OsdWindow : Window
 
         _target = target;
 
+        if (Diag.Enabled)
+        {
+            Diag.Write($"show {kind} state={state} target={target.Left:F0},{target.Top:F0} " +
+                       $"{target.Width:F0}x{target.Height:F0} scale={target.Scale:F2}");
+        }
+
         var prevKind = _currentKind;
         _currentKind = kind;
         _welcome = welcome;
@@ -929,6 +935,7 @@ public partial class OsdWindow : Window
 
         Show();
         PlacePhysical(_lastLeft, _lastTop);
+        EnsureOnScreen();
         RaiseTopmost();
         _visible = true;
         _shownOnce = true;
@@ -1385,6 +1392,45 @@ public partial class OsdWindow : Window
             (int)Math.Round(left * scale), (int)Math.Round(top * scale),
             (int)Math.Round(Width * scale), (int)Math.Round(Height * scale),
             NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+    }
+
+    /// <summary>
+    /// 兜底：卡片必须落在某块显示器上，落空了就往回挪。
+    /// </summary>
+    /// <remarks>
+    /// 位置是一路算出来的（前台窗口 → 显示器 → 工作区 → 任务栏挡掉的那条边 → DPI），
+    /// 全屏应用、任务栏被覆盖、显示器热插拔时这几项都可能给到异常值。算出来的点一旦
+    /// 落空，用户看到的就是"提示弹了，但屏幕上什么都没有"——跟"根本没弹"完全无法区分，
+    /// 排起来最费时间。这里用卡片中心点在显示那一刻做一次判定，判不过就退回目标显示器
+    /// 可用区正中。只判一次，不跟着移动，不会变成常驻的抖动源。
+    /// </remarks>
+    private void EnsureOnScreen()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        if (!NativeMethods.GetWindowRect(hwnd, out var r)) return;
+
+        int cx = r.Left + (r.Right - r.Left) / 2;
+        int cy = r.Top + (r.Bottom - r.Top) / 2;
+
+        var center = new NativeMethods.POINT { X = cx, Y = cy };
+        if (NativeMethods.MonitorFromPoint(center, NativeMethods.MONITOR_DEFAULTTONULL) != IntPtr.Zero)
+        {
+            Diag.Write($"card {r.Right - r.Left}x{r.Bottom - r.Top}@({r.Left},{r.Top}) visible");
+            return;
+        }
+
+        var area = _target.IsLive ? _target : MonitorArea.Primary();
+        var (l, t, rt, b) = area.Usable();
+
+        double left = l + (rt - l - Width) / 2;
+        double top = t + (b - t - Height) / 2;
+
+        _lastLeft = _followLeft = left;
+        _lastTop = _followTop = top;
+        PlacePhysical(left, top);
+
+        Diag.Write($"card offscreen at ({r.Left},{r.Top}), recentered to ({left:F0},{top:F0})");
     }
 
     private void FollowTaskbar()
