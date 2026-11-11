@@ -19,7 +19,7 @@ When you press Caps Lock, Num Lock, Scroll Lock or Insert, or copy, paste or cut
 
 | Light theme | Dark theme |
 | :---: | :---: |
-| <img src="promo/osd-light.png" width="350" alt="Caps Lock flyout in the light theme"> | <img src="promo/osd-dark.png" width="350" alt="Caps Lock flyout in the dark theme"> |
+| <img src="promo/osd-light-en.png" width="350" alt="Caps Lock flyout in the light theme"> | <img src="promo/osd-dark-en.png" width="350" alt="Caps Lock flyout in the dark theme"> |
 
 ## Features
 
@@ -65,31 +65,12 @@ Every option is set in the Settings window and saved as you change it; no restar
 - **Placement**: snapping on the vertical and horizontal axes, or a saved custom position; whether to follow the focused display.
 - **Other**: launch at startup, UI language (eight, following the system by default), UI font.
 
-## Building
-
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). Packaging the MSIX additionally needs the Windows SDK, and the installer needs Inno Setup 6.4+; missing tools only skip those steps.
-
-```bat
-git clone https://github.com/DoYouNatureQ/WinTips.git
-cd WinTips
-
-:: Debug build
-dotnet build
-
-:: Publish: single file, self-contained, x64; output in publish\WinTips.exe
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -o publish
-
-:: Or run stop -> clean -> publish -> package -> start in one go
-Build\rebuild.bat
-```
-
-The version number is maintained only in `<Version>` in `WinTips.csproj`. Sources are split by responsibility: `App/` (startup and wiring), `Core/` (settings, localization, lock-key state machine), `UI/` (WPF windows), `Native/` (DWM, desktop capture, Raw Input) and `Windhawk/` (mod variant).
-
 ## Implementation notes
 
 - **Three capture paths**: a low-level keyboard hook handles the normal case; while an elevated window has focus, UIPI truncates those callbacks and Raw Input reads the keys instead; key-state polling covers the rest. All three events are de-duplicated by the time the key was pressed, so a press is never toggled twice.
 - **Glass and background**: Windows 11 uses DWM acrylic, Windows 10 captures and blurs the desktop itself. With blur on, the flyout excludes itself from capture via `WDA_EXCLUDEFROMCAPTURE` and keeps re-capturing so the glass tracks what is behind it.
 - **Footprint**: the tray icon uses native `Shell_NotifyIcon` and WinForms is disabled, removing about 19.8 MB of resident assemblies; single-file compression is off, taking the private working set from 83.5 MB to 38.8 MB.
+- **Layout**: `App/` (startup and wiring), `Core/` (settings, localization, lock-key state machine), `UI/` (WPF windows), `Native/` (DWM, desktop capture, Raw Input), `Windhawk/` (mod variant).
 
 ## Known limitations
 

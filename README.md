@@ -65,31 +65,12 @@ Windows 键盘状态提示工具
 - **位置**：垂直与水平两轴吸附，或拖拽保存自定义位置；是否跟随焦点显示器。
 - **其他**：开机启动、界面语言（八种，默认跟随系统）、界面字体。
 
-## 构建
-
-需要 [.NET 10 SDK](https://dotnet.microsoft.com/download)。打包 MSIX 另需 Windows SDK，打包安装程序另需 Inno Setup 6.4+；缺少时脚本会跳过对应步骤。
-
-```bat
-git clone https://github.com/DoYouNatureQ/WinTips.git
-cd WinTips
-
-:: 调试构建
-dotnet build
-
-:: 发布：单文件、自包含、x64，产物在 publish\WinTips.exe
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -o publish
-
-:: 或一键完成 停止 → 清理 → 发布 → 打包 → 启动
-Build\rebuild.bat
-```
-
-版本号只维护 `WinTips.csproj` 中的 `<Version>`。源码按职责分为 `App/`（启动与装配）、`Core/`（设置、本地化、锁定键状态机）、`UI/`（WPF 窗口）、`Native/`（DWM、桌面快照、Raw Input）与 `Windhawk/`（模组版本）。
-
 ## 技术要点
 
 - **三路按键捕获**：常规由低级键盘钩子捕获；前台为提权窗口时 UIPI 会截断回调，改由 Raw Input 读取；两者均不可用时由状态轮询兜底。三路事件统一按按键发生时刻去重，避免重复翻转。
 - **玻璃与背景**：Windows 11 使用 DWM 亚克力，Windows 10 抓取桌面快照自行模糊；开启模糊时浮窗以 `WDA_EXCLUDEFROMCAPTURE` 排除自身抓屏，并持续重抓以同步背后画面。
 - **资源占用**：托盘图标使用原生 `Shell_NotifyIcon` 并禁用 WinForms，减少约 19.8 MB 常驻程序集；单文件不做压缩，私有工作集由 83.5 MB 降至 38.8 MB。
+- **代码分布**：`App/`（启动与装配）、`Core/`（设置、本地化、锁定键状态机）、`UI/`（WPF 窗口）、`Native/`（DWM、桌面快照、Raw Input）、`Windhawk/`（模组版本）。
 
 ## 已知限制
 
