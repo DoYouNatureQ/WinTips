@@ -74,7 +74,7 @@ Every option is set in the Settings window and saved as you change it; no restar
 
 | Limitation | Explanation |
 | --- | --- |
-| Elevated windows | Keys fall back to Raw Input and polling, with up to about 50 ms extra latency, and only the input language is reported — not the IME mode |
+| Elevated windows | The low-level hook receives nothing while an elevated window is in the foreground; keys fall back to Raw Input and polling, with up to about 50 ms extra latency. Copy / paste / cut are covered by the polling fallback recognizing the key combos; the input-method tip depends on the hook and does not appear |
 | Input methods | Depends on the IME reporting its conversion mode; a few third-party IMEs do not. Switching from the language bar with the mouse produces no tip |
 | Exclusive fullscreen | True exclusive fullscreen owns the display pipeline and the flyout cannot be drawn; borderless and windowed modes are fine |
 | Screenshots | With blur on, the flyout is excluded from capture for the second or two it is visible; Remote Desktop and older Windows 10 builds fall back to a single capture, in which case it does show up |

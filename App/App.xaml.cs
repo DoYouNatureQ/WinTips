@@ -93,11 +93,20 @@ public partial class App : Application
         _poll = new KeyStateWatcher();
         _poll.ToggleChanged += (k, on) => _osd!.OnLockToggled(k, on);
         _poll.Pressed += k => _osd!.OnInsertPressed(k);
+        // 前台是提权/受保护进程时钩子收不到按键，粘贴不动剪贴板、没有监听可兜，
+        // 由轮询识别 Ctrl+C/V/X、Shift+Delete 补上提示；与钩子的重合由 LockState 去重。
+        _poll.ClipboardPressed += k => _osd!.OnClipboardPressed(k);
         _poll.Start();
 
         _raw = new RawInputWatcher();
         _raw.ToggleChanged += (k, on) => _osd!.OnLockToggled(k, on);
         _raw.Pressed += k => _osd!.OnInsertPressed(k);
+
+        // Raw Input 能用 E0 前缀分清小键盘 0 和真 Insert，GetAsyncKeyState 分不清
+        // （Num Lock 关闭时小键盘 0 的虚拟键就是 VK_INSERT）。它注册成功后，轮询对
+        // Insert 就别再插话；注册失败时这个委托返回 false，轮询照旧兜底。
+        _poll.InsertCoveredByRawInput = () => _raw!.Registered;
+
         _raw.Start();
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));

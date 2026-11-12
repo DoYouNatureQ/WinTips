@@ -59,7 +59,7 @@ bool UseImageAsBackdrop(const wchar_t* path, int w, int h, int radius) {
         g.DrawImage(&source, RectF(0.0f, 0.0f, (float)w, (float)h), (float)cx,
                     (float)cy, (float)cw, (float)ch, UnitPixel);
     }
-    BlurBackdrop(g_backdrop.image, radius);
+    BlurBackdrop(g_backdrop.image, radius, kStaticBlurPasses);
     g_backdrop.x = 0;
     g_backdrop.y = 0;
     g_backdrop.valid = true;
@@ -137,6 +137,9 @@ bool ParseKind(const wchar_t* text, TipKind& kind) {
 }
 
 int RunShot(int argc, wchar_t** argv) {
+    // Pick up settings.ini (countBadge, blurRadius, ...) before the CLI
+    // overrides below, matching how the other modes seed g_settings.
+    LoadSettings();
     if (argc < 6) {
         wprintf(L"usage: --shot <caps|num|scroll|insert|copy|paste|cut|lang> "
                 L"<on|off> <scale> <out.png> [light|dark] [lang] [bg.png] "
@@ -710,36 +713,47 @@ int TaskbarBandChecks() {
 // The key -> tip table the hook runs on. Two of the legacy clipboard keys land
 // on keys that have a tip of their own, so the modifier state is what decides
 // between "Insert" and "Copied"/"Pasted"; the table is pure, so it needs no
-// input injection to check.
+// input injection to check. `extended` is the hook's LLKHF_EXTENDED bit: with
+// Num Lock off, numpad 0 arrives as VK_INSERT without it, so those cases must
+// resolve to no tip at all, modifiers or not.
 int KeyMapChecks() {
     struct KeyCase {
         const wchar_t* name;
         DWORD vk;
+        bool extended;
         bool ctrl;
         bool shift;
         int want;
     };
 
     KeyCase cases[] = {
-        {L"Insert", VK_INSERT, false, false, kInsert},
-        {L"Ctrl+Insert", VK_INSERT, true, false, kCopy},
-        {L"Shift+Insert", VK_INSERT, false, true, kPaste},
-        {L"Ctrl+Shift+Insert", VK_INSERT, true, true, kCopy},
-        {L"Ctrl+C", 'C', true, false, kCopy},
-        {L"Ctrl+V", 'V', true, false, kPaste},
-        {L"Ctrl+X", 'X', true, false, kCut},
-        {L"Ctrl+Shift+C", 'C', true, true, kCopy},
-        {L"Shift+Delete", VK_DELETE, false, true, kCut},
-        {L"Ctrl+Shift+Delete", VK_DELETE, true, true, -1},
-        {L"Delete", VK_DELETE, false, false, -1},
-        {L"c", 'C', false, false, -1},
-        {L"Ctrl+A", 'A', true, false, -1},
-        {L"Caps Lock", VK_CAPITAL, false, false, kCapsLock},
+        {L"Insert", VK_INSERT, true, false, false, kInsert},
+        {L"Ctrl+Insert", VK_INSERT, true, true, false, kCopy},
+        {L"Shift+Insert", VK_INSERT, true, false, true, kPaste},
+        {L"Ctrl+Shift+Insert", VK_INSERT, true, true, true, kCopy},
+        {L"Numpad 0 (NumLock off)", VK_INSERT, false, false, false, -1},
+        {L"Ctrl+Numpad 0", VK_INSERT, false, true, false, -1},
+        {L"Shift+Numpad 0", VK_INSERT, false, false, true, -1},
+        {L"Ctrl+C", 'C', false, true, false, kCopy},
+        {L"Ctrl+V", 'V', false, true, false, kPaste},
+        {L"Ctrl+X", 'X', false, true, false, kCut},
+        {L"Ctrl+Shift+C", 'C', false, true, true, kCopy},
+        {L"Shift+Delete", VK_DELETE, false, false, true, kCut},
+        {L"Ctrl+Shift+Delete", VK_DELETE, false, true, true, -1},
+        {L"Delete", VK_DELETE, false, false, false, -1},
+        {L"c", 'C', false, false, false, -1},
+        {L"Ctrl+A", 'A', false, true, false, -1},
+        // AltGr is Left Ctrl + Right Alt, and ClipCtrlDown() drops the Ctrl for
+        // it: on Czech and Hungarian layouts these letters are "@", "ć", "ź".
+        {L"AltGr+V", 'V', false, false, false, -1},
+        {L"AltGr+C", 'C', false, false, false, -1},
+        {L"AltGr+X", 'X', false, false, false, -1},
+        {L"Caps Lock", VK_CAPITAL, false, false, false, kCapsLock},
     };
 
     int failures = 0;
     for (const KeyCase& c : cases) {
-        int got = TipKindForVk(c.vk, c.ctrl, c.shift);
+        int got = TipKindForVk(c.vk, c.extended, c.ctrl, c.shift);
         bool ok = got == c.want;
         if (!ok) {
             failures++;

@@ -38,7 +38,10 @@ Chinese/English mode.
   frame. *Card material → Solid* for an opaque card.
 - **Windows 11 look, Windows 10 included.** The mod paints the card itself, so
   it needs neither system acrylic nor system rounded corners. Per-monitor DPI,
-  light/dark theme and the system accent color are followed.
+  light/dark theme and the system accent color are followed. The labels are
+  drawn by DirectWrite — the same engine the native OSD uses — so they stay
+  smooth at every DPI scale, with a GDI+ fallback where dwrite.dll is not
+  available.
 - **Stays in front.** A fullscreen game, recorder or launcher overlay that covers
   the card is noticed within 100 ms and the card is re-raised; when nothing
   covers it, no other window is touched.
@@ -48,10 +51,10 @@ Chinese/English mode.
   change, so a `Ctrl+C` that interrupts a console app and a permanent
   `Shift+Delete` stay quiet. Context-menu copies can be reported too.
 - **Works under elevated windows.** Windows stops calling the keyboard hook while
-  an administrator window has focus; the keys then come from Raw Input, which is
-  delivered per device and ignores both focus and integrity level. A key-state
-  poll stays behind it for anything Raw Input cannot see, such as a remote or a
-  virtual keyboard. See below for what does not work there.
+  an administrator window has focus; the lock keys and Insert then come from Raw
+  Input, which is delivered per device and ignores both focus and integrity
+  level. A key-state poll stays behind it for anything Raw Input cannot see, such
+  as a remote or a virtual keyboard. See below for what does not work there.
 - **Light on resources.** Nothing runs while the card is hidden. A frame takes
   about 0.5 ms at 100% size; the live backdrop and the topmost guard only tick
   while a card is up.
@@ -62,7 +65,8 @@ Chinese/English mode.
 
 - **Tips** — Caps Lock, Num Lock, Scroll Lock, Insert, Copy, Paste and Cut, each
   on or off. *Also notify non-keyboard copies* adds context-menu and in-app
-  copies.
+  copies; *Show the ×N count badge* hides the badge on the copy/paste/cut cards
+  when turned off.
 - **Input language & Chinese/English tip** — off by default; shows the globe card
   after a language switch. Set it back to off if it fires more often than it
   helps.
@@ -91,9 +95,15 @@ Chinese/English mode.
   display pipeline. Borderless and windowed games are fine.
 - Behind an **elevated window** the backdrop grab comes back black, so that tip
   falls back to a solid card. The language is still reported there, the IME mode
-  is not.
+  is not. Copy, paste and cut are not either: they need the key the hook is
+  denied, and Raw Input only answers for the lock keys and Insert.
 - The language card needs a keystroke to hang on: switching with the mouse from
   the language bar or an IME status window shows nothing.
+- The card is **left out of screen capture** while the live backdrop runs
+  (`WDA_EXCLUDEFROMCAPTURE`): screenshots, recordings, streams and screen sharing
+  don't show it. That is what keeps the live blur from feeding on itself. Pick
+  *Card material → Solid* if you want the card in a recording — it uses the
+  one-shot backdrop, which needs no exclusion.
 - Without the live-refresh capability the backdrop is a snapshot taken when the
   card appeared; sliding in and following the taskbar still work, because the
   grab includes a margin around the card.

@@ -25,7 +25,8 @@ internal sealed class RawInputWatcher : IDisposable
 
     /// <summary>
     /// 扫描码兜底表。Raw Input 对某些键给出的 VKey 是 0xFF（尤其带 E0 前缀的 Insert），
-    /// 那时只能按 <c>MakeCode</c> 认。
+    /// 那时只能按 <c>MakeCode</c> 认。注意扫描码单独认不出键：0x52 同时是小键盘 0 和
+    /// Insert，0x46 同时是 Scroll Lock 和 Ctrl+Break，区别全在 E0 前缀上。
     /// </summary>
     private static readonly (ushort MakeCode, TipKind Kind)[] ByMakeCode =
     {
@@ -189,16 +190,37 @@ internal sealed class RawInputWatcher : IDisposable
     /// <summary>上一次的按下态，用于滤掉系统的自动重复。</summary>
     private static int IndexOf(NativeMethods.RAWKEYBOARD key)
     {
+        // 真 Insert 与小键盘 0 的扫描码同为 0x52，区别只有 E0 前缀；而 Num Lock 关闭
+        // 时小键盘 0 上报的 VKey 还恰恰是 VK_INSERT (0x2D)。所以 Insert 在哪条路上
+        // 都必须以 E0 标志为准，否则小键盘 0 会被当成 Insert。
+        bool e0 = (key.Flags & NativeMethods.RI_KEY_E0) != 0;
+
         if (key.VKey != NativeMethods.VK_NONE_RAW)
         {
             for (int i = 0; i < Keys.Length; i++)
-                if (TipInfo.VirtualKey(Keys[i]) == key.VKey) return i;
+            {
+                if (TipInfo.VirtualKey(Keys[i]) != key.VKey) continue;
+                if (Keys[i] == TipKind.Insert && !e0) return -1;
+                return i;
+            }
+
+            // VKey 明确是别的键就到此为止，不再看扫描码：Num Lock 开着时小键盘 0 的
+            // MakeCode 也是 0x52、和 Insert 一样，VKey（VK_NUMPAD0）才是区分它的唯一
+            // 线索。原实现会继续落进扫描码兜底表把它认成 Insert——这就是"Num Lock
+            // 开着按 0 也弹 Insert"的那条路。
+            return -1;
         }
 
-        // VKey 缺失（0xFF）时退回扫描码。E0 前缀的 Insert 也是 0x52，不影响判断。
+        // VKey 缺失（0xFF）时退回扫描码。E0 版的 0x52 是 Insert，无 E0 的是小键盘 0；
+        // E0 版的 0x46 是 Ctrl+Break，不是 Scroll Lock。
         for (int i = 0; i < ByMakeCode.Length; i++)
-            if (ByMakeCode[i].MakeCode == key.MakeCode)
-                return Array.IndexOf(Keys, ByMakeCode[i].Kind);
+        {
+            if (ByMakeCode[i].MakeCode != key.MakeCode) continue;
+
+            if (ByMakeCode[i].Kind == TipKind.Insert && !e0) return -1;
+            if (ByMakeCode[i].Kind == TipKind.ScrollLock && e0) return -1;
+            return Array.IndexOf(Keys, ByMakeCode[i].Kind);
+        }
 
         return -1;
     }

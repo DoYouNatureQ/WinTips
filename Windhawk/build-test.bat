@@ -27,7 +27,7 @@ rem MSVC-only #pragma comment(lib) lines.
 cl /nologo /std:c++20 /EHsc /W3 /DUNICODE /D_UNICODE /utf-8 ^
    /Fo:obj\ /Fe:wintips-osd-test.exe standalone\wintips-osd-test.cpp ^
    /link /SUBSYSTEM:CONSOLE gdiplus.lib gdi32.lib dwmapi.lib shcore.lib ^
-   shell32.lib advapi32.lib user32.lib imm32.lib
+   shell32.lib advapi32.lib user32.lib imm32.lib dwrite.lib
 if errorlevel 1 exit /b 1
 
 echo.

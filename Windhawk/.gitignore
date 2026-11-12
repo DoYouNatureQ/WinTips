@@ -8,3 +8,5 @@ obj/
 preview/*
 !preview/osd-*.png
 !preview/osd-*.gif
+shot-*.png
+*.ppm

@@ -4,13 +4,13 @@
 // @name:zh-CN      WinTips 键盘状态提示
 // @description     Shows a Win11-style floating OSD for Caps/Num/Scroll Lock, Insert and copy/paste/cut
 // @description:zh-CN 按下大写/数字/滚动锁定、Insert 或复制/粘贴/剪切时弹出 Win11 质感的浮窗提示
-// @version         1.5.2
+// @version         1.6.0
 // @author          DoYouNatureQ
 // @github          https://github.com/DoYouNatureQ
 // @homepage        https://github.com/DoYouNatureQ/WinTips
 // @license         GPL-3.0-or-later
 // @include         windhawk.exe
-// @compilerOptions -lgdiplus -lgdi32 -ladvapi32 -lshell32 -lshcore -ldwmapi -limm32
+// @compilerOptions -lgdiplus -lgdi32 -ladvapi32 -lshell32 -lshcore -ldwmapi -limm32 -ldwrite
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -41,7 +41,10 @@ Chinese/English mode.
   frame. *Card material → Solid* for an opaque card.
 - **Windows 11 look, Windows 10 included.** The mod paints the card itself, so
   it needs neither system acrylic nor system rounded corners. Per-monitor DPI,
-  light/dark theme and the system accent color are followed.
+  light/dark theme and the system accent color are followed. The labels are
+  drawn by DirectWrite — the same engine the native OSD uses — so they stay
+  smooth at every DPI scale, with a GDI+ fallback where dwrite.dll is not
+  available.
 - **Stays in front.** A fullscreen game, recorder or launcher overlay that covers
   the card is noticed within 100 ms and the card is re-raised; when nothing
   covers it, no other window is touched.
@@ -51,10 +54,10 @@ Chinese/English mode.
   change, so a `Ctrl+C` that interrupts a console app and a permanent
   `Shift+Delete` stay quiet. Context-menu copies can be reported too.
 - **Works under elevated windows.** Windows stops calling the keyboard hook while
-  an administrator window has focus; the keys then come from Raw Input, which is
-  delivered per device and ignores both focus and integrity level. A key-state
-  poll stays behind it for anything Raw Input cannot see, such as a remote or a
-  virtual keyboard. See below for what does not work there.
+  an administrator window has focus; the lock keys and Insert then come from Raw
+  Input, which is delivered per device and ignores both focus and integrity
+  level. A key-state poll stays behind it for anything Raw Input cannot see, such
+  as a remote or a virtual keyboard. See below for what does not work there.
 - **Light on resources.** Nothing runs while the card is hidden. A frame takes
   about 0.5 ms at 100% size; the live backdrop and the topmost guard only tick
   while a card is up.
@@ -65,7 +68,8 @@ Chinese/English mode.
 
 - **Tips** — Caps Lock, Num Lock, Scroll Lock, Insert, Copy, Paste and Cut, each
   on or off. *Also notify non-keyboard copies* adds context-menu and in-app
-  copies.
+  copies; *Show the ×N count badge* hides the badge on the copy/paste/cut cards
+  when turned off.
 - **Input language & Chinese/English tip** — off by default; shows the globe card
   after a language switch. Set it back to off if it fires more often than it
   helps.
@@ -94,9 +98,15 @@ Chinese/English mode.
   display pipeline. Borderless and windowed games are fine.
 - Behind an **elevated window** the backdrop grab comes back black, so that tip
   falls back to a solid card. The language is still reported there, the IME mode
-  is not.
+  is not. Copy, paste and cut are not either: they need the key the hook is
+  denied, and Raw Input only answers for the lock keys and Insert.
 - The language card needs a keystroke to hang on: switching with the mouse from
   the language bar or an IME status window shows nothing.
+- The card is **left out of screen capture** while the live backdrop runs
+  (`WDA_EXCLUDEFROMCAPTURE`): screenshots, recordings, streams and screen sharing
+  don't show it. That is what keeps the live blur from feeding on itself. Pick
+  *Card material → Solid* if you want the card in a recording — it uses the
+  one-shot backdrop, which needs no exclusion.
 - Without the live-refresh capability the backdrop is a snapshot taken when the
   card appeared; sliding in and following the taskbar still work, because the
   grab includes a margin around the card.
@@ -202,6 +212,14 @@ complete corresponding source under the GPL.
     右键菜单、应用内“复制”按钮等非键盘复制（剪贴板更新即提示）也会弹出提示。
 
     需要同时开启上面的“复制”选项。
+- countBadge: true
+  $name: Show the ×N count badge
+  $name:zh-CN: 显示 ×N 次数徽章
+  $description: >-
+    Copy, paste and cut cards show a small ×N badge counting consecutive
+    actions. Turn this off to keep just the icon and the label.
+  $description:zh-CN: >-
+    复制、粘贴、剪切卡片右上角的 ×N 次数徽章记录连续操作次数。不需要时可关闭，卡片只保留图标和文字。
 - notifyLanguage: false
   $name: Input language & Chinese/English tip
   $name:zh-CN: 输入法语言与中英文提示
@@ -317,14 +335,14 @@ complete corresponding source under the GPL.
     where text stays readable over a light wallpaper.
   $description:zh-CN: >-
     仅亚克力材质有效：模糊背景之上那层底色盖住多少。数值越低越透、背景越清晰，越高越接近实心。20 至 90，55 是"看得见背后"与"文字不失读"的平衡点。
-- blurRadius: 12
+- blurRadius: 16
   $name: Blur radius (pixels)
   $name:zh-CN: 模糊半径（像素）
   $description: >-
     Only used by the Acrylic material. Higher values look softer; 0 keeps the
-    background sharp behind the tint.
+    background sharp behind the tint. 16 matches the WinTips app's default.
   $description:zh-CN: >-
-    仅亚克力材质有效。数值越大越模糊，0 表示背景不模糊、只叠一层色调。
+    仅亚克力材质有效。数值越大越模糊，0 表示背景不模糊、只叠一层色调。16 与 WinTips 应用默认值一致。
 - accentColor: ""
   $name: Accent color
   $name:zh-CN: 强调色
@@ -348,6 +366,7 @@ complete corresponding source under the GPL.
 #include <shellscalingapi.h>
 #include <dwmapi.h>
 #include <imm.h>
+#include <dwrite.h>
 
 #include <algorithm>
 #include <cmath>
@@ -398,16 +417,16 @@ constexpr int kPollMs = 50;           // elevated-window fallback
 constexpr int kPollProbeMs = 500;
 
 // One press can be reported by every capture path at once (hook, Raw Input,
-// poll). Only the first may flip the state: a second flip for the same physical
-// press would leave the card showing the opposite of the real lock. Measured
-// between the presses themselves, not between the moments each path noticed
-// them. Nobody taps a lock key twice within 200 ms.
+// poll). Only the first report may show a card: a second card for the same
+// physical press would show the opposite of the real lock. Measured between the
+// presses themselves, not between the moments each path noticed them.
 constexpr int kSameKindWindowMs = 200;
 
-// Raw Input repeats a key-down every few dozen ms while it is held; the flag
-// that filters those out expires, in case the matching key-up never arrived
-// (device unplugged, driver hiccup) and would otherwise swallow every later
-// press.
+// Raw Input repeats a key-down every few dozen ms while it is held; every
+// repeat refreshes the stamp, so this only expires when nothing at all arrived
+// for this long - the matching key-up was lost (device unplugged, a secure
+// desktop that swallowed it). Treating the next press as new is then the
+// recovery, and a desktop switch re-seeds the state on top of it.
 constexpr int kRawRepeatGuardMs = 1500;
 constexpr int kFollowIntervalMs = 60; // the taskbar slide takes ~200 ms
 constexpr int kFollowMs = 140;        // shorter than the entrance, so it keeps up
@@ -416,10 +435,19 @@ constexpr int kFollowMs = 140;        // shorter than the entrance, so it keeps 
 // and the blur is re-aligned to wherever the card is now. A grab costs about
 // 7 ms of a core (it waits for the compositor), so this is not a frame rate to
 // chase - the smoothness comes from the blend below rather than from more
-// frames. The WinTips app refreshes every 22 ms; the mod is a guest in
-// windhawk.exe, where other mods' hooks run on the same CPU, so it settles for
-// 30 Hz and lets the blend do the rest.
-constexpr int kLiveRefreshMs = 33;
+// frames. 22 ms matches the WinTips app; the blend is what hides the beat.
+constexpr int kLiveRefreshMs = 22;
+
+// Box-blur passes. The one-shot snapshot runs three and approaches a Gaussian;
+// the live path runs two and widens the radius instead (see kLiveRadiusScale) -
+// same softness per frame for a third less convolution. Same split the
+// WinTips app makes.
+constexpr int kStaticBlurPasses = 3;
+constexpr int kLiveBlurPasses = 2;
+
+// The live path blurs with two passes, whose sigma is only radius * 0.82; the
+// radius grows by a quarter (16 -> 20) to match the three-pass snapshot.
+constexpr float kLiveRadiusScale = 1.25f;
 
 // How far the card may wander inside one grab, in DIPs. The snapshot is taken
 // around the card instead of exactly behind it, and the drawing code samples
@@ -430,7 +458,8 @@ constexpr int kStaticPaddingDip = 72; // one grab per tip: cover the whole slide
 
 // New frame's weight in the blend (256 = new frame only). Around 150 the image
 // catches up in about three frames - fast enough to read as "live", slow enough
-// that a 40 Hz capture of a busy desktop doesn't flicker.
+// that a ~45 Hz capture of a busy desktop doesn't flicker. Same value the
+// WinTips app uses.
 constexpr int kLiveBlendWeight = 150;
 
 // The topmost guard: check this often whether something else landed on top of
@@ -459,16 +488,21 @@ constexpr int kPollKeyCount = kInsert + 1;
 constexpr UINT WM_APP_TIP = WM_APP + 1;
 constexpr UINT WM_APP_QUIT = WM_APP + 2;
 
+// Posted by the hook when a key that may switch the input language went down,
+// so the sampling it starts reads another process's IME window without holding
+// up the hook. Window message, handled on the UI thread.
+constexpr UINT WM_APP_LANGUAGE_WATCH = WM_APP + 7;
+
 constexpr UINT_PTR kTimerAnim = 1;
 constexpr UINT_PTR kTimerHold = 2;
 constexpr UINT_PTR kTimerFollow = 3;
 constexpr UINT_PTR kTimerLiveBackdrop = 6;
 constexpr UINT_PTR kTimerTopmost = 7;
+constexpr UINT_PTR kTimerInput = 8;  // the language watch, on the UI thread
 
 // Thread timers on the hook thread (window timers would need the card window).
 constexpr UINT_PTR kThreadTimerPoll = 1;
 constexpr UINT_PTR kThreadTimerProbe = 2;
-constexpr UINT_PTR kThreadTimerInput = 3;
 
 // The language watch: poll this often for this long after a switch key.
 constexpr int kInputPollMs = 50;
@@ -507,6 +541,7 @@ struct Settings {
     bool notify[kKindCount] = {true, true, true, true,
                                true, true, true, false}; // language tip off
     bool notifyAnyCopy = true;
+    bool countBadge = true; // ×N badge on copy/paste/cut cards (issue #7304)
     int displayMs = 2000;
     int animationPercent = 100;
     int tipScalePercent = 100;
@@ -521,7 +556,9 @@ struct Settings {
     // 55 is the same balance point the WinTips app settled on: below ~40 the
     // text starts fighting a busy wallpaper, above ~75 the blur is invisible.
     int tintOpacity = 55;
-    int blurRadius = 12;
+    // Same default the WinTips app uses: soft enough to read as frosted glass,
+    // sharp enough that the desktop behind stays recognizable.
+    int blurRadius = 16;
     std::wstring accentColor;
     bool suppressFullscreen = false;
 
@@ -614,6 +651,7 @@ void LoadSettings() {
     s.notify[kPaste] = Wh_GetIntSetting(L"notifyPaste") != 0;
     s.notify[kCut] = Wh_GetIntSetting(L"notifyCut") != 0;
     s.notifyAnyCopy = Wh_GetIntSetting(L"notifyAnyCopy") != 0;
+    s.countBadge = Wh_GetIntSetting(L"countBadge") != 0;
     s.notify[kLanguage] = Wh_GetIntSetting(L"notifyLanguage") != 0;
 
     s.displayMs = Clamp(Wh_GetIntSetting(L"displayMs"), 500, 10000);
@@ -979,27 +1017,18 @@ float Lerp(float a, float b, float t) {
 // =============================================================================
 
 using SetThreadDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
-using GetDpiForMonitor_t = HRESULT(WINAPI*)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
 
 float ScaleForMonitor(HMONITOR monitor) {
     if (!monitor) {
         return 1.0f;
     }
-    // Resolved once: a tip re-reads the DPI of the display it is about to land
-    // on, and LoadLibrary/GetProcAddress on every tip is pure overhead when the
-    // module never goes away in practice.
-    static GetDpiForMonitor_t getDpi = [] {
-        HMODULE shcore = LoadLibraryW(L"shcore.dll");
-        return shcore ? (GetDpiForMonitor_t)GetProcAddress(shcore,
-                                                           "GetDpiForMonitor")
-                      : nullptr;
-    }();
-    if (getDpi) {
-        UINT dpiX = 0, dpiY = 0;
-        if (SUCCEEDED(getDpi(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)) &&
-            dpiX > 0) {
-            return (float)dpiX / 96.0f;
-        }
+    // shcore is in the import table (-lshcore), so this is an ordinary call:
+    // a tip re-reads the DPI of the display it is about to land on, and that
+    // should not go through a proc address on every frame.
+    UINT dpiX = 0, dpiY = 0;
+    if (SUCCEEDED(GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)) &&
+        dpiX > 0) {
+        return (float)dpiX / 96.0f;
     }
     HDC dc = GetDC(nullptr);
     int dpi = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96;
@@ -1514,8 +1543,6 @@ void DrawLock(Graphics& g, RectF box, const Theme& theme, float angle,
     g.Restore(state);
 }
 
-// Check mark drawn on progressively: `progress` 0 draws nothing, 1 draws the
-// whole stroke. Ported from the "M5,12.5 L10,17.5 L19,7" polyline.
 // Globe drawn as strokes: an outline, a vertical ellipse for the meridians and
 // a horizon. Ported from "M3,11 A8,8 … M11,3 A4.5,8 … M3,11 H19" at 1.5.
 void DrawGlobe(Graphics& g, RectF box, const Theme& theme) {
@@ -1537,6 +1564,8 @@ void DrawGlobe(Graphics& g, RectF box, const Theme& theme) {
     g.Restore(state);
 }
 
+// Check mark drawn on progressively: `progress` 0 draws nothing, 1 draws the
+// whole stroke. Ported from the "M5,12.5 L10,17.5 L19,7" polyline.
 void DrawCheck(Graphics& g, RectF box, const Theme& theme, float progress) {
     float s = box.Width / 24.0f;
     GraphicsState state = g.Save();
@@ -1692,6 +1721,17 @@ float MeasureTextWidth(HDC dc, const LOGFONTW& logFont, const std::wstring& text
     return (float)size.cx;
 }
 
+// DirectWrite text, defined with the surface code below: it rasterises the
+// glyphs and blends them straight into the card's DIB, which is only known
+// there - the same forward-declaration split PaintCardBackground uses above.
+// DWrite is what the native Windows 11 OSD draws its labels with; GDI+'s
+// grid-fit aliasing is what issue #6977 reported as pixelated text.
+bool DWriteAvailable();
+float MeasureTextWidthDWrite(const std::wstring& text, float size, int weight);
+float DrawTextDWrite(const std::wstring& text, float size, int weight,
+                     const Color& color, float alphaScale, float x,
+                     float centerY, bool centerAlign);
+
 // =============================================================================
 // Frame rendering
 // =============================================================================
@@ -1754,26 +1794,51 @@ void RenderCard(Graphics& g, float scale, float width, float height,
     FormatTip(f.kind, f.on, label);
 
     // --- fonts -------------------------------------------------------------
+    // DirectWrite draws the label when it can be reached; the GDI+ path below
+    // is the fallback, and it keeps the font objects only then.
+    bool useDWrite = DWriteAvailable();
     HDC screenDc = GetDC(nullptr);
     LOGFONTW textLogFont = MakeUiLogFont(14.0f * scale, 500);
     LOGFONTW badgeLogFont = MakeUiLogFont(12.5f * scale, 600);
 
+    // `clip` marks the card family (icon, vertical rhythm); `badge` only says
+    // whether the ×N pill is drawn and reserves width (issue #7304).
     bool clip = IsClipKind(f.kind);
+    bool badge = clip && g_settings.countBadge;
     bool lang = IsLanguageKind(f.kind);
     float textWidth = MeasureTextWidth(screenDc, textLogFont, label);
-    float badgeWidth = clip ? MeasureTextWidth(screenDc, badgeLogFont,
-                                               CountText(f.count)) +
-                                  14.0f * scale
-                            : 0.0f;
+    if (useDWrite) {
+        float width = MeasureTextWidthDWrite(label, 14.0f * scale, 500);
+        if (width > 0.0f) {
+            textWidth = width;
+        }
+    }
+    float badgeWidth = 0.0f;
+    if (badge) {
+        badgeWidth =
+            MeasureTextWidth(screenDc, badgeLogFont, CountText(f.count)) +
+            14.0f * scale;
+        if (useDWrite) {
+            float width = MeasureTextWidthDWrite(CountText(f.count),
+                                                 12.5f * scale, 600);
+            if (width > 0.0f) {
+                badgeWidth = width + 14.0f * scale;
+            }
+        }
+    }
 
-    Font textFont(screenDc, &textLogFont);
-    Font badgeFont(screenDc, &badgeLogFont);
+    Font* textFont = nullptr;
+    Font* badgeFont = nullptr;
+    if (!useDWrite) {
+        textFont = new Font(screenDc, &textLogFont);
+        badgeFont = new Font(screenDc, &badgeLogFont);
+    }
     ReleaseDC(nullptr, screenDc);
 
     // --- card --------------------------------------------------------------
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetPixelOffsetMode(PixelOffsetModeHalf);
-    g.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+    g.SetTextRenderingHint(TextRenderingHintAntiAlias);
 
     GraphicsPath card;
     AddRoundRect(card, RectF(0.0f, 0.0f, width, height), 8.0f * scale);
@@ -1811,7 +1876,9 @@ void RenderCard(Graphics& g, float scale, float width, float height,
     }
 
     // --- text --------------------------------------------------------------
-    g.SetTextRenderingHint(TextRenderingHintAntiAliasGridFit);
+    // The hint matters only for the GDI+ fallback now, and AntiAlias (without
+    // the grid fit) is the best it can do - see the DirectWrite section below.
+    g.SetTextRenderingHint(TextRenderingHintAntiAlias);
     SolidBrush textBrush(theme.text);
     StringFormat textFormat;
     textFormat.SetFormatFlags(StringFormatFlagsNoWrap | StringFormatFlagsNoClip);
@@ -1819,13 +1886,19 @@ void RenderCard(Graphics& g, float scale, float width, float height,
     textFormat.SetLineAlignment(StringAlignmentCenter);
 
     float textX;
-    if (clip) {
+    if (badge) {
         const float gridLeft = 16.0f * scale;
         const float iconEnd = 22.0f * scale;
         float badgeStart = width - gridLeft - 8.0f * scale - badgeWidth;
         float mid = (iconEnd + badgeStart) / 2.0f;
         textX = std::max(iconEnd + 8.0f * scale, mid - textWidth / 2.0f);
         textX += gridLeft;
+    } else if (clip) {
+        // Badge hidden (issue #7304): center the label on the card itself, the
+        // way the badge-on layout lands, instead of the icon-gutter offset the
+        // lock cards use. The max keeps a gap when a label runs long.
+        textX = std::max((16.0f + 22.0f + 8.0f) * scale,
+                         width / 2.0f - textWidth / 2.0f);
     } else {
         // Centered in the content grid, offset by the icon gutter.
         float contentLeft = 16.0f * scale;
@@ -1834,20 +1907,36 @@ void RenderCard(Graphics& g, float scale, float width, float height,
                 18.0f * scale / 2.0f;
     }
 
+    // Vertical: the exe's XAML maths puts the label centre at ~22, but that
+    // reads as high on the rendered card (ink sits 3 px above centre), so the
+    // mod keeps the visually centred positions users are used to.
     float textY = (clip ? height / 2.0f - 1.0f * scale
                         : height / 2.0f - 2.0f * scale + gridShift);
     // NoWrap keeps a slightly narrower GDI+ measure from breaking the label
     // into two lines, so the rect only needs to be tall enough for one line.
     RectF textRect(textX, textY - 14.0f * scale, width - textX + 8.0f * scale,
                    28.0f * scale);
-    g.DrawString(label.c_str(), (INT)label.size(), &textFont, textRect,
-                 &textFormat, &textBrush);
+    if (useDWrite) {
+        // DirectWrite writes straight into the surface pixels, so everything
+        // GDI+ has queued must land in the DIB first.
+        g.Flush();
+        DrawTextDWrite(label, 14.0f * scale, 500, theme.text, 1.0f,
+                       textX + textWidth / 2.0f, textY, true);
+    } else {
+        g.DrawString(label.c_str(), (INT)label.size(), textFont, textRect,
+                     &textFormat, &textBrush);
+    }
 
     // --- clipboard badge ---------------------------------------------------
-    if (clip) {
-        float badgeHeight = 18.0f * scale;
-        float badgeX = width - 16.0f * scale - 8.0f * scale - badgeWidth;
-        float badgeY = (height - badgeHeight) / 2.0f;
+    if (badge) {
+        // Geometry copied from the exe's OsdWindow.xaml: the pill is right
+        // aligned inside the content grid (right inset 12, no extra margin),
+        // vertically centred in the grid band [6, 40] -> centre 23 DIP, and
+        // sized like the Border there: 12.5 px text line + 2 px padding on
+        // each side (~20.5 DIP tall, corner radius 9).
+        float badgeHeight = 20.5f * scale;
+        float badgeX = width - 12.0f * scale - badgeWidth;
+        float badgeY = (23.0f - badgeHeight / 2.0f) * scale;
 
         GraphicsState badgeState = g.Save();
         g.TranslateTransform(badgeX + badgeWidth / 2.0f, badgeY + badgeHeight / 2.0f);
@@ -1873,9 +1962,20 @@ void RenderCard(Graphics& g, float scale, float width, float height,
         badgeFormat.SetAlignment(StringAlignmentCenter);
         badgeFormat.SetLineAlignment(StringAlignmentCenter);
         std::wstring countText = CountText(f.count);
-        g.DrawString(countText.c_str(), (INT)countText.size(), &badgeFont,
-                     RectF(badgeX, badgeY, badgeWidth, badgeHeight),
-                     &badgeFormat, &badgeText);
+        if (useDWrite) {
+            g.Flush();
+            // The scale transform around the badge centre is reproduced by
+            // growing the font itself: scaling about the badge's centre keeps
+            // the midpoint, and the alpha follows the same animation value.
+            DrawTextDWrite(countText, 12.5f * scale * Clamp01(f.badgeScale),
+                           600, theme.onAccent, Clamp01(f.badgeAlpha),
+                           badgeX + badgeWidth / 2.0f,
+                           badgeY + badgeHeight / 2.0f, true);
+        } else {
+            g.DrawString(countText.c_str(), (INT)countText.size(), badgeFont,
+                         RectF(badgeX, badgeY, badgeWidth, badgeHeight),
+                         &badgeFormat, &badgeText);
+        }
 
         g.Restore(badgeState);
     }
@@ -1902,6 +2002,9 @@ void RenderCard(Graphics& g, float scale, float width, float height,
                      indicatorHeight / 2.0f);
         g.FillPath(&indicator, &bar);
     }
+
+    delete textFont;
+    delete badgeFont;
 }
 
 // Measures the card size for the current tip, in physical pixels.
@@ -1914,16 +2017,36 @@ void MeasureCard(float scale, const FrameState& f, int& outWidth,
     LOGFONTW textLogFont = MakeUiLogFont(14.0f * scale, 500);
     LOGFONTW badgeLogFont = MakeUiLogFont(12.5f * scale, 600);
 
+    // Width reserves room for the pill only when the badge setting shows it.
     bool clip = IsClipKind(f.kind);
+    bool badge = clip && g_settings.countBadge;
     float textWidth = MeasureTextWidth(screenDc, textLogFont, label);
-    float badgeWidth = clip ? MeasureTextWidth(screenDc, badgeLogFont,
-                                               CountText(f.count)) +
-                                  14.0f * scale
-                            : 0.0f;
+    if (DWriteAvailable()) {
+        float width = MeasureTextWidthDWrite(label, 14.0f * scale, 500);
+        if (width > 0.0f) {
+            textWidth = width;
+        }
+    }
+    float badgeWidth = 0.0f;
+    if (badge) {
+        badgeWidth =
+            MeasureTextWidth(screenDc, badgeLogFont, CountText(f.count)) +
+            14.0f * scale;
+        if (DWriteAvailable()) {
+            float width =
+                MeasureTextWidthDWrite(CountText(f.count), 12.5f * scale, 600);
+            if (width > 0.0f) {
+                badgeWidth = width + 14.0f * scale;
+            }
+        }
+    }
 
     float widthDip =
         16.0f + 22.0f + 18.0f + textWidth / scale + 12.0f +
-        (clip ? badgeWidth / scale + 22.0f : 0.0f);
+        // The exe reserves MeasureText(count) + 22 for the pill zone; the
+        // mod's badgeWidth already includes the pill's 14 px padding, so the
+        // equivalent here is badgeWidth + 8.
+        (badge ? badgeWidth / scale + 8.0f : 0.0f);
     outWidth = (int)std::lround(std::max(kBaseWidth * scale,
                                          std::ceil(widthDip) * scale));
     outHeight = (int)std::lround(kBaseHeight * scale);
@@ -1938,9 +2061,6 @@ namespace {
 constexpr UINT_PTR kTimerClip = 5;
 constexpr UINT WM_APP_POLL = WM_APP + 4;
 constexpr UINT WM_APP_SETTINGS = WM_APP + 5;
-// wParam: 0 = input language (lParam carries the HKL), 1 = IME Chinese mode,
-// 2 = IME English mode. The text is resolved on the UI thread.
-constexpr UINT WM_APP_LANGUAGE = WM_APP + 6;
 
 // =============================================================================
 // Layered ARGB surface
@@ -2065,8 +2185,10 @@ struct Backdrop {
 
 Backdrop g_backdrop;
 
-// Separable box blur. Running it twice per axis is close enough to a Gaussian
-// at this size and stays well under a millisecond for a card-sized region.
+// Separable box blur, `passes` rounds of horizontal + vertical. Three passes
+// approach a Gaussian closely enough for the one-shot snapshot; the live path
+// runs two and widens the radius to pay for it - see kLiveRadiusScale. Stays
+// well under a millisecond for a card-sized region either way.
 void BlurAxis(BYTE* bits, int width, int height, int radius, bool horizontal) {
     if (!bits || radius <= 0) {
         return;
@@ -2118,11 +2240,11 @@ void BlurAxis(BYTE* bits, int width, int height, int radius, bool horizontal) {
     }
 }
 
-void BlurBackdrop(Surface& image, int radius) {
+void BlurBackdrop(Surface& image, int radius, int passes) {
     if (!image.bits || radius <= 0) {
         return;
     }
-    for (int pass = 0; pass < 2; pass++) {
+    for (int pass = 0; pass < passes; pass++) {
         BlurAxis((BYTE*)image.bits, image.width, image.height, radius, true);
         BlurAxis((BYTE*)image.bits, image.width, image.height, radius, false);
     }
@@ -2174,7 +2296,7 @@ bool CaptureBackdrop(HDC source, int x, int y, int w, int h, int radius,
         return false;
     }
 
-    BlurBackdrop(g_backdrop.image, radius);
+    BlurBackdrop(g_backdrop.image, radius, kStaticBlurPasses);
     g_backdrop.x = grabX;
     g_backdrop.y = grabY;
     g_backdrop.valid = true;
@@ -2314,6 +2436,14 @@ int ReadConversionMode(HWND imeWnd) {
     return (int)result;
 }
 
+// The IME mode labels ("Chinese input" / "English input") are Chinese-only, and
+// every GUI thread has a default IME window whatever its layout, so a Japanese
+// or Korean IME's mode toggle would be described with the wrong words. Ask for
+// the mode only where the label makes sense.
+bool ChineseLayout(HKL hkl) {
+    return PRIMARYLANGID(LOWORD((ULONG_PTR)hkl)) == LANG_CHINESE;
+}
+
 InputState CurrentInputState() {
     InputState state;
     HWND hwnd = FocusWindow();
@@ -2332,9 +2462,11 @@ InputState CurrentInputState() {
     state.threadId = tid;
     state.processId = pid;
     state.hkl = hkl;
-    state.imeWnd = ImmGetDefaultIMEWnd(hwnd);
-    if (state.imeWnd) {
-        state.conversionMode = ReadConversionMode(state.imeWnd);
+    if (ChineseLayout(hkl)) {
+        state.imeWnd = ImmGetDefaultIMEWnd(hwnd);
+        if (state.imeWnd) {
+            state.conversionMode = ReadConversionMode(state.imeWnd);
+        }
     }
     return state;
 }
@@ -2385,17 +2517,23 @@ ULONGLONG g_lastShowTick;
 bool g_clipIntentActive;
 TipKind g_clipIntentKind = kCopy;
 
-// Hook thread only.
+// Hook thread only, and only as an auto-repeat filter: a key-down for a key
+// that is already in here is the keyboard repeating, not a new press. It is
+// deliberately not used to answer "is Ctrl down" - a key-up the hook never sees
+// (the secure desktop, an elevated window) would stay in here forever.
 bool g_vkDown[256];
 
 // The lock state itself, and the one place it is allowed to change.
 //
-// It is not read from the system. GetKeyState reports the message-queue mirror
-// of the calling thread, and the hook thread never receives keyboard messages -
-// its mirror stays at whatever it was when the mod loaded, so four taps in a row
-// read back the same value. GetAsyncKeyState only says "held down", which is not
-// a lock state either. So the state is one flip per captured press, which makes
-// "every press changes it" true by construction.
+// It is not read from the system at press time. GetKeyState answers out of the
+// calling thread's own copy of the key state: it starts as the live state when
+// the thread is created and only moves forward as that thread processes
+// keyboard input. The hook thread never processes any, so its copy is frozen at
+// load time and four taps in a row would read back the same value.
+// GetAsyncKeyState only says "held down", which is not a lock state either. So
+// the state is one flip per captured press, which makes "every press changes
+// it" true by construction, and ResyncKeyState() re-seeds it from the live state
+// on a desktop switch - the one thing that can swallow presses.
 //
 // Both the hook thread and the UI thread (Raw Input) write this, so mutation is
 // serialised by AllowTip: it settles, per key, which one capture path owns a
@@ -2408,15 +2546,26 @@ bool g_toggleState[3];
 // state instead ignores focus and integrity level alike, at the price of a
 // timer - which is why it only runs while such a window is in front.
 HWINEVENTHOOK g_foregroundHook;
+HWINEVENTHOOK g_desktopHook;
 DWORD g_selfRid;                   // own integrity level, read once at startup
 bool g_pollRunning;
 bool g_pollDown[kPollKeyCount];    // per key: held down at the last poll
+// Mirrors g_pollRunning for the UI thread, which decides there whether a Raw
+// Input key is worth reporting at all. See HandleRawInput.
+volatile LONG g_hookBlind;
 HWND g_levelHwnd;                  // window the verdict below was measured on
 bool g_levelRaised;
 bool g_levelKnown;
+// The short-lived thread that re-reads the lock state after a desktop switch.
+// Kept so a second switch during its 150 ms sleep doesn't start another one, and
+// so the teardown can wait for its last write. Hook thread only.
+HANDLE g_resyncThread;
 
 // When each key last produced a tip, shared by every capture path so a press is
-// reported once. Read and written from two threads; see AllowTip.
+// reported once. The press time sits in the upper 62 bits and the path that
+// claimed it in the low two, so one atomic word carries both and a 32-bit
+// process can neither tear the pair nor read one without the other. See
+// AllowTip.
 ULONGLONG g_lastFired[kPollKeyCount];
 
 // Raw Input key state, UI thread only. Key-down is what counts; the flags exist
@@ -2424,16 +2573,382 @@ ULONGLONG g_lastFired[kPollKeyCount];
 bool g_rawDown[kPollKeyCount];
 ULONGLONG g_rawDownAt[kPollKeyCount];
 
-// The language watch, also hook thread only. A language or IME-mode change has
-// no notification of its own: it is a property of the thread that owns the
-// input, and the only reliable trigger is "a key that switches it was just
-// pressed". So a switch key starts a short watch that compares the input state
-// of the focused thread a few times a second until it settles or times out.
+// Whether the Raw Input registration succeeded. The polling fallback has no way
+// to tell numpad 0 from Insert - GetAsyncKeyState only knows virtual keys, and
+// with Num Lock off numpad 0 reports VK_INSERT - so while this is true the poll
+// leaves Insert to Raw Input entirely. Raw Input is not blocked by UIPI, so it
+// covers exactly the elevated-foreground cases the poll exists for.
+bool g_rawInputOk;
+
+// The language watch. A language or IME-mode change has no notification of its
+// own: it is a property of the thread that owns the input, and the only reliable
+// trigger is "a key that switches it was just pressed". So a switch key starts a
+// short watch that compares the input state of the focused thread a few times a
+// second until it settles or times out.
+//
+// It lives on the UI thread. Finding the state means asking the foreground
+// app's IME window a question, and that answer can take tens of milliseconds to
+// arrive - which the hook thread must never wait for, because every keystroke in
+// the session waits behind it. The hook only posts a message; the sampling runs
+// on the thread that draws the card, where a slow answer costs a frame.
 volatile LONG g_languageEnabled;  // mirrors the setting, read by the hook
-bool g_inputWatching;
+bool g_inputWatching;             // UI thread only, here and below
 int g_inputTicks;
 bool g_inputHasLast;
 InputState g_inputLast;
+
+void StartInputWatch();
+void InputTick();
+
+// =============================================================================
+// DirectWrite text
+//
+// GDI+'s AntiAliasGridFit snaps every glyph to the pixel grid, which is what
+// makes the label look pixelated at 100% scaling - windhawk-mods issue #6977.
+// The native Windows 11 OSD draws its labels with DirectWrite, and so does the
+// card now: each glyph run is rasterised into a grayscale coverage texture and
+// blended over the card's premultiplied pixels by hand. Doing the blend
+// directly is what keeps the per-pixel alpha the layered window needs - a
+// Direct2D render target bound to the DC would flatten it.
+//
+// NATURAL_SYMMETRIC is the WPF-style symmetric grayscale smoothing, which is
+// what the standalone WinTips app (WPF) shows as well, so both editions draw
+// the label the same way. Subpixel positioning stays on (pixel snapping off),
+// which is what keeps the glyphs smooth while the card slides in. If dwrite.dll
+// cannot be reached the GDI+ path remains, now without the grid fit.
+// =============================================================================
+
+IDWriteFactory* g_dwriteFactory = nullptr;
+bool g_dwriteTried = false;
+
+bool DWriteAvailable() {
+    if (!g_dwriteTried) {
+        g_dwriteTried = true;
+        HRESULT hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+                                         __uuidof(IDWriteFactory),
+                                         (IUnknown**)&g_dwriteFactory);
+        if (FAILED(hr)) {
+            g_dwriteFactory = nullptr;
+            Wh_Log(L"DWriteCreateFactory failed: 0x%08lX", hr);
+        }
+    }
+    return g_dwriteFactory != nullptr;
+}
+
+// Text formats are cached: the size only changes when the card moves to a
+// display with another DPI scale or the card size setting changes, and a font
+// match on every frame would spend exactly the milliseconds the animation
+// needs. Four slots hold the two sizes of the card plus a little churn.
+struct CachedTextFormat {
+    float size;
+    int weight;
+    IDWriteTextFormat* format;
+};
+
+CachedTextFormat g_textFormatCache[4] = {};
+
+void DWriteShutdown() {
+    for (CachedTextFormat& entry : g_textFormatCache) {
+        if (entry.format) {
+            entry.format->Release();
+        }
+        entry.size = 0.0f;
+        entry.weight = 0;
+        entry.format = nullptr;
+    }
+    if (g_dwriteFactory) {
+        g_dwriteFactory->Release();
+        g_dwriteFactory = nullptr;
+    }
+    g_dwriteTried = false;
+}
+
+IDWriteTextFormat* GetTextFormat(float size, int weight) {
+    if (!DWriteAvailable()) {
+        return nullptr;
+    }
+    for (CachedTextFormat& entry : g_textFormatCache) {
+        if (entry.format && entry.size == size && entry.weight == weight) {
+            return entry.format;
+        }
+    }
+
+    IDWriteTextFormat* format = nullptr;
+    HRESULT hr = g_dwriteFactory->CreateTextFormat(
+        UiFaceName(), nullptr, (DWRITE_FONT_WEIGHT)weight,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, size, L"",
+        &format);
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateTextFormat(%s, %g) failed: 0x%08lX", UiFaceName(), size,
+               hr);
+        return nullptr;
+    }
+    format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+
+    CachedTextFormat* slot = nullptr;
+    for (CachedTextFormat& entry : g_textFormatCache) {
+        if (!entry.format) {
+            slot = &entry;
+            break;
+        }
+    }
+    if (!slot) {
+        slot = &g_textFormatCache[0]; // rare overflow: evict the oldest
+        if (slot->format) {
+            slot->format->Release();
+        }
+    }
+    slot->size = size;
+    slot->weight = weight;
+    slot->format = format;
+    return format;
+}
+
+float MeasureTextWidthDWrite(const std::wstring& text, float size,
+                             int weight) {
+    if (text.empty()) {
+        return 0.0f;
+    }
+    IDWriteTextFormat* format = GetTextFormat(size, weight);
+    if (!format) {
+        return 0.0f;
+    }
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(g_dwriteFactory->CreateTextLayout(text.c_str(),
+                                                 (UINT32)text.size(), format,
+                                                 10000.0f, 1000.0f, &layout))) {
+        return 0.0f;
+    }
+    DWRITE_TEXT_METRICS metrics{};
+    layout->GetMetrics(&metrics);
+    layout->Release();
+    return metrics.widthIncludingTrailingWhitespace;
+}
+
+// Blends DirectWrite's coverage texture straight into the card's premultiplied
+// pixels. A process-lifetime object: the refcount is pinned at one and the
+// draw parameters travel through the members rather than the client context.
+class CardTextRenderer : public IDWriteTextRenderer {
+public:
+    BYTE* bits = nullptr;
+    int width = 0;
+    int height = 0;
+    int stride = 0;
+    int coverageScale = 256; // extra multiplier on the coverage (badge fade)
+    BYTE premul[256][3];     // premultiplied text color per coverage level
+
+    void Begin(BYTE* surfaceBits, int surfaceWidth, int surfaceHeight,
+               int surfaceStride, const Color& color, float alphaScale) {
+        bits = surfaceBits;
+        width = surfaceWidth;
+        height = surfaceHeight;
+        stride = surfaceStride;
+        coverageScale =
+            (int)std::lround(Clamp01(alphaScale) * 256.0f);
+        for (int i = 0; i < 256; i++) {
+            premul[i][0] = (BYTE)((color.GetB() * i + 127) / 255);
+            premul[i][1] = (BYTE)((color.GetG() * i + 127) / 255);
+            premul[i][2] = (BYTE)((color.GetR() * i + 127) / 255);
+        }
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** object) {
+        if (!object) {
+            return E_POINTER;
+        }
+        *object = nullptr;
+        if (riid == __uuidof(IUnknown) ||
+            riid == __uuidof(IDWritePixelSnapping) ||
+            riid == __uuidof(IDWriteTextRenderer)) {
+            *object = (IDWriteTextRenderer*)this;
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() {
+        return 1;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() {
+        return 1;
+    }
+
+    // Subpixel positioning on: positions are not rounded to the pixel grid,
+    // which is what keeps the text smooth while the card slides.
+    HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(void*, BOOL* isDisabled) {
+        if (isDisabled) {
+            *isDisabled = TRUE;
+        }
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetCurrentTransform(void*, DWRITE_MATRIX* matrix) {
+        if (matrix) {
+            *matrix = DWRITE_MATRIX{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        }
+        return S_OK;
+    }
+
+    // The em sizes handed to CreateTextFormat are pixels already, so one DIP
+    // is one pixel here.
+    HRESULT STDMETHODCALLTYPE GetPixelsPerDip(void*, FLOAT* pixelsPerDip) {
+        if (pixelsPerDip) {
+            *pixelsPerDip = 1.0f;
+        }
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE
+    DrawGlyphRun(void*, FLOAT originX, FLOAT originY,
+                 DWRITE_MEASURING_MODE measuringMode,
+                 const DWRITE_GLYPH_RUN* glyphRun,
+                 const DWRITE_GLYPH_RUN_DESCRIPTION*, IUnknown*) {
+        return BlendGlyphRun(originX, originY, measuringMode, glyphRun);
+    }
+
+    HRESULT STDMETHODCALLTYPE DrawUnderline(void*, FLOAT, FLOAT,
+                                            const DWRITE_UNDERLINE*, IUnknown*) {
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE DrawStrikethrough(void*, FLOAT, FLOAT,
+                                                const DWRITE_STRIKETHROUGH*,
+                                                IUnknown*) {
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE DrawInlineObject(void*, FLOAT, FLOAT,
+                                               IDWriteInlineObject*, BOOL, BOOL,
+                                               IUnknown*) {
+        return S_OK;
+    }
+
+private:
+    HRESULT BlendGlyphRun(FLOAT originX, FLOAT originY,
+                          DWRITE_MEASURING_MODE measuringMode,
+                          const DWRITE_GLYPH_RUN* glyphRun) {
+        if (!bits || !g_dwriteFactory || !glyphRun ||
+            glyphRun->glyphCount == 0) {
+            return S_OK;
+        }
+
+        IDWriteGlyphRunAnalysis* analysis = nullptr;
+        if (FAILED(g_dwriteFactory->CreateGlyphRunAnalysis(
+                glyphRun, 1.0f, nullptr, DWRITE_RENDERING_MODE_NATURAL_SYMMETRIC,
+                measuringMode, originX, originY, &analysis))) {
+            // A missing label for one frame beats a failed card for the tip.
+            return S_OK;
+        }
+
+        RECT bounds{};
+        if (SUCCEEDED(analysis->GetAlphaTextureBounds(
+                DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds)) &&
+            bounds.right > bounds.left && bounds.bottom > bounds.top) {
+            const int left = std::max((int)bounds.left, 0);
+            const int top = std::max((int)bounds.top, 0);
+            const int right = std::min((int)bounds.right, width);
+            const int bottom = std::min((int)bounds.bottom, height);
+            if (right > left && bottom > top) {
+                // The CLEARTYPE_3x1 texture is three bytes per pixel - one
+                // coverage value per subpixel column - whatever the rendering
+                // mode. Averaging the three columns turns it into the
+                // grayscale coverage the card's surface needs.
+                const int textureWidth = bounds.right - bounds.left;
+                const int textureHeight = bounds.bottom - bounds.top;
+                std::vector<BYTE> texture((size_t)textureWidth * 3 *
+                                          textureHeight);
+                HRESULT texHr = analysis->CreateAlphaTexture(
+                        DWRITE_TEXTURE_CLEARTYPE_3x1, &bounds, texture.data(),
+                        (UINT32)texture.size());
+                if (SUCCEEDED(texHr)) {
+                    for (int y = top; y < bottom; y++) {
+                        const BYTE* source =
+                            texture.data() +
+                            (size_t)(y - bounds.top) * textureWidth * 3;
+                        BYTE* row = bits + (size_t)y * stride;
+                        for (int x = left; x < right; x++) {
+                            const BYTE* tex =
+                                source + (size_t)(x - bounds.left) * 3;
+                            const unsigned gray =
+                                ((unsigned)tex[0] + tex[1] + tex[2] + 1) / 3;
+                            const unsigned coverage =
+                                (gray * coverageScale + 128) >> 8;
+                            if (!coverage) {
+                                continue;
+                            }
+                            const unsigned inverse = 255 - coverage;
+                            BYTE* pixel = row + (size_t)x * 4;
+                            // Premultiplied "over": out = src + dst*(1-srcA).
+                            pixel[0] = (BYTE)(premul[coverage][0] +
+                                              (pixel[0] * inverse + 127) / 255);
+                            pixel[1] = (BYTE)(premul[coverage][1] +
+                                              (pixel[1] * inverse + 127) / 255);
+                            pixel[2] = (BYTE)(premul[coverage][2] +
+                                              (pixel[2] * inverse + 127) / 255);
+                            pixel[3] = (BYTE)(coverage +
+                                              (pixel[3] * inverse + 127) / 255);
+                        }
+                    }
+                }
+            }
+        }
+
+        analysis->Release();
+        return S_OK;
+    }
+};
+
+CardTextRenderer g_textRenderer;
+
+// Draws one line of text into the card surface. `x`/`centerY` name the point
+// the line is centred on - the same point the GDI+ path centred its rect
+// around - unless `centerAlign` is false, when `x` is the left edge instead.
+// Returns the measured line width, or 0 when DirectWrite is unavailable and
+// the caller must draw with GDI+.
+float DrawTextDWrite(const std::wstring& text, float size, int weight,
+                     const Color& color, float alphaScale, float x,
+                     float centerY, bool centerAlign) {
+    if (text.empty() || !DWriteAvailable() || !g_surface.bits) {
+        return 0.0f;
+    }
+    IDWriteTextFormat* format = GetTextFormat(size, weight);
+    if (!format) {
+        return 0.0f;
+    }
+    IDWriteTextLayout* layout = nullptr;
+    if (FAILED(g_dwriteFactory->CreateTextLayout(text.c_str(),
+                                                 (UINT32)text.size(), format,
+                                                 10000.0f, 1000.0f, &layout))) {
+        return 0.0f;
+    }
+
+    // One line, always: the labels are single strings and wrapping is off.
+    DWRITE_TEXT_METRICS metrics{};
+    layout->GetMetrics(&metrics);
+    UINT32 lineCount = 0;
+    layout->GetLineMetrics(nullptr, 0, &lineCount);
+    float lineHeight = size * 1.3f;
+    if (lineCount > 0) {
+        DWRITE_LINE_METRICS line{};
+        UINT32 fetched = 1;
+        if (SUCCEEDED(layout->GetLineMetrics(&line, 1, &fetched))) {
+            lineHeight = (float)line.height;
+        }
+    }
+
+    const float lineWidth = metrics.widthIncludingTrailingWhitespace;
+    const float originX = centerAlign ? x - lineWidth / 2.0f : x;
+    const float originY = centerY - lineHeight / 2.0f;
+
+    g_textRenderer.Begin((BYTE*)g_surface.bits, g_surface.width,
+                         g_surface.height, g_surface.stride, color, alphaScale);
+    layout->Draw(nullptr, &g_textRenderer, originX, originY);
+    layout->Release();
+    return lineWidth;
+}
+
 
 // =============================================================================
 // Live backdrop
@@ -2473,7 +2988,10 @@ TimePeriod_t TimePeriodFn(const char* name) {
     static bool tried;
     if (!tried) {
         tried = true;
-        winmm = LoadLibraryW(L"winmm.dll");
+        // SYSTEM32 only: winmm.dll is not a KnownDLL, so a bare name would let
+        // the default search order pick up a copy from next to windhawk.exe.
+        winmm = LoadLibraryExW(L"winmm.dll", nullptr,
+                               LOAD_LIBRARY_SEARCH_SYSTEM32);
     }
     return winmm ? (TimePeriod_t)GetProcAddress(winmm, name) : nullptr;
 }
@@ -2649,7 +3167,7 @@ DWORD WINAPI LiveCaptureThread(LPVOID param) {
                 }
             } else {
                 misses = 0;
-                BlurBackdrop(work, radius);
+                BlurBackdrop(work, radius, kLiveBlurPasses);
 
                 const int bytes = grabW * grabH * 4;
                 const int movedX = grabX - previousX;
@@ -2714,8 +3232,10 @@ void StartLiveCapture() {
 
     g_livePad = (int)std::lround((float)kLivePaddingDip *
                                  std::max(1.0f, g_scale));
+    // Two blur passes need a wider radius to match the three-pass snapshot;
+    // 16 * 1.25 = 20, the same split the WinTips app makes.
     g_liveRadius = (int)std::lround((float)g_settings.blurRadius *
-                                    std::max(1.0f, g_scale));
+                                    kLiveRadiusScale * std::max(1.0f, g_scale));
 
     g_liveWake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!g_liveWake) {
@@ -2737,9 +3257,9 @@ void StartLiveCapture() {
     SetThreadPriority(g_liveThread, THREAD_PRIORITY_BELOW_NORMAL);
 
     // The loop waits 22 ms at a time, and the default 15.6 ms timer granularity
-    // would turn that into 31 ms - the capture rate would wander between 20 and
-    // 30 Hz and the blur would visibly beat against the animation. Raised only
-    // while the card is up; a tray app must not hold the system out of idle.
+    // would round that up to 38 ms - the capture rate would drop to about 26 Hz
+    // and the blur would visibly beat against the animation. Raised only while
+    // the card is up; a tray app must not hold the system out of idle.
     TimePeriod_t beginPeriod = TimePeriodFn("timeBeginPeriod");
     if (beginPeriod && beginPeriod(1) == 0) {
         g_livePreciseTimer = true;
@@ -2759,7 +3279,11 @@ void StopLiveCapture() {
         SetEvent(g_liveWake);
     }
     if (g_liveThread) {
-        WaitForSingleObject(g_liveThread, 400);
+        // Unbounded: the worker only ever waits on its own event or on a grab,
+        // never on this thread, so it always gets back here to notice the
+        // generation bump. A timeout that just closes the handle would leave a
+        // second worker running beside the next one.
+        WaitForSingleObject(g_liveThread, INFINITE);
         CloseHandle(g_liveThread);
         g_liveThread = nullptr;
     }
@@ -2887,25 +3411,49 @@ int LegacyClipKindFromVk(DWORD vk, bool ctrl, bool shift) {
     }
 }
 
-// The hook's own table is authoritative for keys pressed while it was
-// installed; GetAsyncKeyState also covers a modifier held at load time.
+// Modifier state comes from GetAsyncKeyState, not from the hook's own table.
+// The table only learns about a key-up the hook is called for, and the hook is
+// not called for anything that happens while the secure desktop is up: after
+// Ctrl+Alt+Del, Win+L or a UAC prompt, Ctrl and Win would stay "held" until they
+// were pressed and released again in an ordinary window - which turns every
+// later V into a paste. GetAsyncKeyState has already accounted for every event
+// that came before the one being handled, and reads "up" once the key was
+// released on another desktop, so it answers this question and the table can't.
+//
+// Left and right are asked separately: the generic codes are resolved by the
+// keyboard layout, the specific ones are not.
+bool KeyDownNow(int vk) {
+    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+}
+
 bool CtrlDown() {
-    return g_vkDown[VK_LCONTROL] || g_vkDown[VK_RCONTROL] ||
-           g_vkDown[VK_CONTROL] || (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    return KeyDownNow(VK_LCONTROL) || KeyDownNow(VK_RCONTROL);
+}
+
+// Ctrl as a *clipboard* modifier, which is a narrower question than CtrlDown().
+//
+// AltGr arrives as Left Ctrl + Right Alt, so CtrlDown() is true for as long as
+// AltGr is held. On Czech, Slovak, Hungarian, Polish and Croatian layouts
+// AltGr+V types "@": claiming a paste on every e-mail address typed is worse
+// than missing a deliberate Ctrl+RightAlt+V, and AltGr+C / AltGr+X would arm
+// the copy and cut intents the same way.
+//
+// Asked of Right Alt specifically, not of "some Alt is down": Ctrl+LeftAlt+C is
+// not AltGr on any layout, and ignoring it would lose a real copy.
+bool ClipCtrlDown() {
+    return CtrlDown() && !KeyDownNow(VK_RMENU);
 }
 
 bool ShiftDown() {
-    return g_vkDown[VK_LSHIFT] || g_vkDown[VK_RSHIFT] || g_vkDown[VK_SHIFT] ||
-           (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    return KeyDownNow(VK_LSHIFT) || KeyDownNow(VK_RSHIFT);
 }
 
 bool AltDown() {
-    return g_vkDown[VK_LMENU] || g_vkDown[VK_RMENU] || g_vkDown[VK_MENU] ||
-           (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+    return KeyDownNow(VK_LMENU) || KeyDownNow(VK_RMENU);
 }
 
 bool WinDown() {
-    return g_vkDown[VK_LWIN] || g_vkDown[VK_RWIN];
+    return KeyDownNow(VK_LWIN) || KeyDownNow(VK_RWIN);
 }
 
 // Keys that may have just changed the input language or the IME mode: their own
@@ -2936,7 +3484,14 @@ bool SwitchCandidate(DWORD vk) {
 }
 
 // A key press resolved to the tip it should raise, or -1 for "not ours".
-int TipKindForVk(DWORD vk, bool ctrl, bool shift) {
+// `extended` is the hook's LLKHF_EXTENDED bit. With Num Lock off, numpad 0
+// reports VK_INSERT too, and the E0 prefix is the only thing marking the real
+// Insert key: without this check, every 0 on the numpad would raise an Insert
+// card - or a copied/pasted one under Ctrl/Shift.
+int TipKindForVk(DWORD vk, bool extended, bool ctrl, bool shift) {
+    if (vk == VK_INSERT && !extended) {
+        return -1;
+    }
     int kind = LegacyClipKindFromVk(vk, ctrl, shift);
     if (kind >= 0) {
         return kind;
@@ -2948,9 +3503,17 @@ int TipKindForVk(DWORD vk, bool ctrl, bool shift) {
     return ctrl ? ClipKindFromVk(vk) : -1;
 }
 
-// Claims a press for the calling capture path. Returns false when another path
-// already reported the same press, in which case the caller must neither flip
-// the state nor show a tip.
+// Which capture path is reporting. Two paths can see the same press; one path
+// seeing two presses in a row is a different thing and must not be dropped.
+enum TipSource {
+    kSourceHook = 0,
+    kSourcePoll = 1,
+    kSourceRaw = 2,
+};
+
+// Claims a press for the calling capture path. False means some other path has
+// already reported this very press, in which case the caller must neither flip
+// the tracked state nor raise a card.
 //
 // `at` is when the key went down, not when this path got round to it. Raw Input
 // is handled on the UI thread, which can be busy capturing a backdrop for a
@@ -2958,27 +3521,40 @@ int TipKindForVk(DWORD vk, bool ctrl, bool shift) {
 // processing times would make one keystroke look like two. Comparing press
 // times is what makes them the same press.
 //
-// The claim is what keeps a double report from turning into a double flip: being
-// wrong about that is invisible at the time (the card still appears) and only
-// shows up later as "the state is the opposite of the key", so it is settled
-// here rather than in each path.
-bool AllowTip(TipKind kind, ULONGLONG at) {
+// `source` is what the time window alone cannot tell apart: the same press seen
+// by a second path (drop it - flipping twice would leave every later card
+// showing the opposite of the key) and a second, genuine press from the path
+// that already reported one (keep it - the system toggled twice, and dropping it
+// would leave the state one toggle behind for the rest of the session). Nobody
+// holds a lock key down expecting a card every 200 ms; two real taps that fast
+// are rare but not impossible, and getting them wrong is permanent.
+bool AllowTip(TipKind kind, ULONGLONG at, int source) {
     if ((unsigned)kind >= (unsigned)kPollKeyCount) {
         return true;  // nothing shared to protect: copy/paste/cut/language
     }
 
-    ULONGLONG last = g_lastFired[kind];
-    // Signed, and both sides of zero: the two paths measure the same press a few
-    // ms apart, and either one can be the earlier of the two.
-    LONGLONG delta = (LONGLONG)(at - last);
-    if (delta > -(LONGLONG)kSameKindWindowMs &&
-        delta < (LONGLONG)kSameKindWindowMs) {
-        return false;
+    const ULONGLONG stamp = (at << 2) | (ULONGLONG)source;
+    for (;;) {
+        // Time and path in one word, read in one go: this process is 32-bit, so
+        // a plain 64-bit read could tear and report a wild press time.
+        const ULONGLONG current = (ULONGLONG)InterlockedCompareExchange64(
+            (volatile LONG64*)&g_lastFired[kind], 0, 0);
+        // Signed, and both sides of zero: the two paths measure the same press a
+        // few ms apart, and either one can be the earlier of the two.
+        const LONGLONG delta = (LONGLONG)(at - (current >> 2));
+        if (delta > -(LONGLONG)kSameKindWindowMs &&
+            delta < (LONGLONG)kSameKindWindowMs) {
+            return (int)(current & 3) == source;
+        }
+        // The exchange decides the race: exactly one caller sees the stamp it
+        // read and goes on; anyone else re-reads the winner's and backs off.
+        if (InterlockedCompareExchange64((volatile LONG64*)&g_lastFired[kind],
+                                         (LONGLONG)stamp,
+                                         (LONGLONG)current) ==
+            (LONGLONG)current) {
+            return true;
+        }
     }
-    // The exchange decides the race: exactly one caller sees the stamp it read
-    // and goes on; anyone else sees the winner's newer stamp and backs off.
-    return InterlockedExchange64((volatile LONG64*)&g_lastFired[kind],
-                                 (LONG64)at) == (LONG64)last;
 }
 
 // When the message being handled was posted, in the 64-bit tick domain.
@@ -3344,6 +3920,16 @@ void RaiseTopmost() {
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 }
 
+// DWM-cloaked windows keep WS_VISIBLE while showing nothing: a closed shell
+// flyout stays in the Z-order, and so does a UWP app that was suspended. Those
+// aren't on screen, so they can't be covering the card either.
+bool WindowCloaked(HWND hwnd) {
+    DWORD cloaked = 0;
+    return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked,
+                                           sizeof(cloaked))) &&
+           cloaked != 0;
+}
+
 // The window covering the card's centre, or null when nothing is. Only the
 // centre point counts: the taskbar, a toast or a tooltip clipping a corner is
 // supposed to sit next to the card, while a fullscreen game or a maximised
@@ -3368,7 +3954,7 @@ HWND FindCoveringWindow(HWND self) {
             GetWindowThreadProcessId(walk, &pid) && pid && pid != selfPid &&
             GetWindowRect(walk, &other) && centreX >= other.left &&
             centreX < other.right && centreY >= other.top &&
-            centreY < other.bottom) {
+            centreY < other.bottom && !WindowCloaked(walk)) {
             return walk;
         }
         walk = GetWindow(walk, GW_HWNDPREV);
@@ -3404,6 +3990,14 @@ void OnTopmostTick() {
     if (g_phase == kPhaseOut || !IsWindowVisible(g_hwnd)) {
         return;
     }
+    // A window in a Z-order band no SetWindowPos can beat (a UWP overlay, an
+    // exclusive-fullscreen game) stays in front no matter how often the card is
+    // raised. Once that is known, stop: the raise is a wasted call and the 30 ms
+    // timer behind it would only burn cycles for the rest of the tip.
+    if (g_topmostUnfixable) {
+        StopTopmostGuard();
+        return;
+    }
     if (!FindCoveringWindow(g_hwnd)) {
         return;
     }
@@ -3419,6 +4013,11 @@ void OnTopmostTick() {
     if (!g_topmostUnfixable && FindCoveringWindow(g_hwnd)) {
         g_topmostUnfixable = true;
         Wh_Log(L"card still covered after raise #%d", g_topmostRaises);
+        // Nothing more can be done for this tip, and the timer would otherwise
+        // keep firing - at 30 ms once the raise count passed the fast limit -
+        // for as long as the card stays up.
+        StopTopmostGuard();
+        return;
     }
 
     // Something is raising itself over the card over and over. Speed up rather
@@ -3765,6 +4364,13 @@ void HandleClipboardUpdate() {
 // The card window itself is the sink: 1x1, hidden most of the time, and
 // INPUTSINK does not care about either. Keys therefore arrive on the UI thread
 // and go straight to HandleTip - no cross-thread post, no extra window.
+//
+// It is listened to only while the keyboard hook is blind (an elevated window in
+// front). Raw Input reports the physical key even when a low-level-hook remapper
+// - PowerToys Keyboard Manager, AutoHotkey - swallows it, so a Caps Lock remapped
+// to Esc or Ctrl would raise a Caps Lock card on every press and flip the tracked
+// state for a toggle the system never made. Where the hook does see the press,
+// the hook is the better witness and Raw Input has nothing to add.
 // =============================================================================
 
 bool RegisterRawInputKeys(HWND hwnd, bool enable) {
@@ -3777,24 +4383,39 @@ bool RegisterRawInputKeys(HWND hwnd, bool enable) {
 }
 
 int RawKeyIndex(const RAWKEYBOARD& key) {
-    if (key.VKey != 0xFF) {
-        for (int i = 0; i < kPollKeyCount; i++) {
-            if (KindToVk((TipKind)i) == key.VKey) {
-                return i;
+    // Real Insert and numpad 0 share the scan code 0x52; only the E0 prefix
+    // tells them apart. With Num Lock off, numpad 0 reports VK_INSERT as its
+    // virtual key, so even the VKey match below must check that flag - a
+    // numpad 0 press must never come back as kInsert.
+    const bool e0 = (key.Flags & RI_KEY_E0) != 0;
+
+    for (int i = 0; i < kPollKeyCount; i++) {
+        if (KindToVk((TipKind)i) == key.VKey) {
+            if ((TipKind)i == kInsert && !e0) {
+                return -1;  // numpad 0 with Num Lock off
             }
+            return i;
         }
     }
-    // Some keys arrive with no virtual key at all (0xFF), most visibly Insert
-    // behind an E0 prefix; the scan code is the remaining handle.
+    // Nothing matched, so the virtual key either names some other key or is
+    // missing altogether - 0xFF, which happens for a few keys that only ever
+    // arrive by scan code. Only that second case may fall through to the scan
+    // code, because a scan code alone does not identify a key: numpad 0 with
+    // Num Lock on is 0x52 like Insert, and Ctrl+Break is 0x46 like Scroll Lock.
+    // The E0 prefix is what separates each pair, and the numpad copies are the
+    // ones without it.
+    if (key.VKey != 0xFF) {
+        return -1;
+    }
     switch (key.MakeCode) {
         case 0x3A:
             return kCapsLock;
         case 0x45:
             return kNumLock;
         case 0x46:
-            return kScrollLock;
+            return e0 ? -1 : kScrollLock;
         case 0x52:
-            return kInsert;
+            return e0 ? kInsert : -1;
         default:
             return -1;
     }
@@ -3812,9 +4433,16 @@ void HandleRawKey(const RAWKEYBOARD& key, ULONGLONG at) {
     }
 
     ULONGLONG now = GetTickCount64();
-    if (g_rawDown[index] &&
-        now - g_rawDownAt[index] < (ULONGLONG)kRawRepeatGuardMs) {
-        return;  // auto-repeat of a key that is still held
+    if (g_rawDown[index]) {
+        if (now - g_rawDownAt[index] < (ULONGLONG)kRawRepeatGuardMs) {
+            // Auto-repeat of a key that is still held. Refresh the stamp: a
+            // hold longer than the guard must not turn into a new press every
+            // guard period, which would flip the tracked state over and over.
+            g_rawDownAt[index] = now;
+            return;
+        }
+        // Nothing arrived for this key in a long time, so the key-up was lost;
+        // this is a new press after all.
     }
     g_rawDown[index] = true;
     g_rawDownAt[index] = now;
@@ -3827,7 +4455,7 @@ void HandleRawKey(const RAWKEYBOARD& key, ULONGLONG at) {
         if (CtrlDown() || ShiftDown()) {
             return;
         }
-        if (!AllowTip(kind, at)) {
+        if (!AllowTip(kind, at, kSourceRaw)) {
             return;
         }
         HandleTip(kind, false);
@@ -3837,8 +4465,8 @@ void HandleRawKey(const RAWKEYBOARD& key, ULONGLONG at) {
     if (!IsToggleKind(kind)) {
         return;
     }
-    if (!AllowTip(kind, at)) {
-        return;  // another path got there first; flipping again would desync
+    if (!AllowTip(kind, at, kSourceRaw)) {
+        return;  // another path claimed this press and already flipped
     }
     bool state = !g_toggleState[index];
     g_toggleState[index] = state;
@@ -3846,6 +4474,13 @@ void HandleRawKey(const RAWKEYBOARD& key, ULONGLONG at) {
 }
 
 void HandleRawInput(LPARAM lParam) {
+    // Nothing to add while the hook is working - and a press it would report
+    // here but the hook never saw is a press the hook (or a remapper ahead of
+    // it) ate, not a lock toggle. See the note above.
+    if (InterlockedCompareExchange(&g_hookBlind, 0, 0) == 0) {
+        return;
+    }
+
     const UINT header = sizeof(RAWINPUTHEADER);
 
     UINT size = 0;
@@ -3906,6 +4541,9 @@ void OnTimer(UINT_PTR id) {
         case kTimerTopmost:
             OnTopmostTick();
             break;
+        case kTimerInput:
+            InputTick();
+            break;
         case kTimerClip:
             if (g_hwnd) {
                 KillTimer(g_hwnd, kTimerClip);
@@ -3942,8 +4580,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_APP_POLL:
             HandlePoll((TipKind)wParam, lParam != 0);
             return 0;
-        case WM_APP_LANGUAGE:
-            HandleLanguageTip((int)wParam, (HKL)lParam);
+        case WM_APP_LANGUAGE_WATCH:
+            StartInputWatch();
             return 0;
         case WM_APP_SETTINGS:
             ApplySettings();
@@ -3984,7 +4622,10 @@ constexpr wchar_t kWindowClass[] = L"WindhawkWinTipsOsd";
 
 DWORD WINAPI UiThreadProc(LPVOID) {
     // Only this thread gets per-monitor DPI awareness; the host process
-    // (windhawk.exe) must keep whatever mode it already has.
+    // (windhawk.exe) must keep whatever mode it already has. In Windhawk this
+    // is a no-op - windhawk.exe declares PerMonitorV2 in its manifest - but the
+    // standalone harness that includes this file has no manifest, so the call
+    // is what makes the overlay render at the right size there.
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     if (user32) {
         auto setContext = (SetThreadDpiAwarenessContext_t)GetProcAddress(
@@ -4030,7 +4671,8 @@ DWORD WINAPI UiThreadProc(LPVOID) {
     // to be undone on the way out as well: Windhawk unloads a mod inside the
     // live process, so a leftover registration would keep posting WM_INPUT to a
     // window that no longer exists.
-    if (!RegisterRawInputKeys(g_hwnd, true)) {
+    g_rawInputOk = RegisterRawInputKeys(g_hwnd, true);
+    if (!g_rawInputOk) {
         Wh_Log(L"RegisterRawInputDevices failed: %lu", GetLastError());
     } else {
         Wh_Log(L"raw input keyboard sink registered");
@@ -4056,6 +4698,7 @@ DWORD WINAPI UiThreadProc(LPVOID) {
     g_backdrop.image.Release();
     DestroyWindow(g_hwnd);
     g_hwnd = nullptr;
+    DWriteShutdown();
     GdiplusShutdown(g_gdiplusToken);
     return 0;
 }
@@ -4104,6 +4747,30 @@ DWORD IntegrityRid(HANDLE process) {
     return rid;
 }
 
+// True while the input desktop is the one this process runs on. A locked
+// workstation or a UAC prompt puts the secure desktop in front: it delivers no
+// window events to us, the keyboard hook isn't called for it, and
+// GetAsyncKeyState can't see its keys either. Nothing can be observed there, so
+// nothing needs watching - and the poll would otherwise tick for hours behind a
+// lock screen.
+bool InputDesktopIsUser() {
+    HDESK desktop = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+    if (!desktop) {
+        return false;
+    }
+    // The interactive desktop is named "Default" in every language; Winlogon's
+    // secure desktop is "Winlogon", UAC's is "Secure Desktop".
+    wchar_t name[64] = {};
+    DWORD needed = 0;
+    bool user = false;
+    if (GetUserObjectInformationW(desktop, UOI_NAME, name,
+                                  sizeof(name) - sizeof(wchar_t), &needed)) {
+        user = _wcsicmp(name, L"Default") == 0;
+    }
+    CloseDesktop(desktop);
+    return user;
+}
+
 // True when the foreground window outranks this process. The verdict is cached
 // by window handle: the foreground doesn't change between two polls, so this
 // opens one process token per window rather than one per tick.
@@ -4111,6 +4778,9 @@ DWORD IntegrityRid(HANDLE process) {
 // A window whose process can't be opened at all (a protected one) counts as
 // higher: polling a little too much costs nothing, missing it costs the tip.
 bool ForegroundOutranksSelf() {
+    if (!InputDesktopIsUser()) {
+        return false;
+    }
     HWND foreground = GetForegroundWindow();
     if (!foreground) {
         // No foreground window does not mean the hook is working. Fullscreen
@@ -4155,6 +4825,7 @@ void StartFallbackPoll() {
         g_pollDown[i] = (GetAsyncKeyState(KindToVk((TipKind)i)) & 0x8000) != 0;
     }
     g_pollRunning = true;
+    InterlockedExchange(&g_hookBlind, 1);
     SetTimer(nullptr, kThreadTimerPoll, kPollMs, nullptr);
     Wh_Log(L"fallback poll started");
 }
@@ -4164,6 +4835,7 @@ void StopFallbackPoll() {
         return;
     }
     g_pollRunning = false;
+    InterlockedExchange(&g_hookBlind, 0);
     KillTimer(nullptr, kThreadTimerPoll);
     ZeroMemory(g_pollDown, sizeof(g_pollDown));
     Wh_Log(L"fallback poll stopped");
@@ -4185,6 +4857,86 @@ void CALLBACK ForegroundChangedProc(HWINEVENTHOOK, DWORD event, HWND, LONG, LONG
     RefreshFallbackPoll();
 }
 
+// Reads the real lock state and adopts it.
+//
+// On a thread of its own, and that is the point: GetKeyState answers out of the
+// calling thread's own copy of the key state, which starts as the live state
+// when the thread is created and only moves forward as that thread processes
+// keyboard input. A thread that has not processed any yet therefore reports the
+// live state - the same reason the startup seed can trust its read, and exactly
+// what the hook thread, whose copy froze at load time, cannot offer.
+//
+// It reads and nothing else: g_vkDown and g_pollDown belong to the hook thread,
+// which resets them itself before starting this thread.
+DWORD WINAPI ResyncKeyStateThread(LPVOID) {
+    // The event arrives as the switch happens; give the desktop a moment to
+    // finish coming back, then make sure it really is ours.
+    Sleep(150);
+    if (!InputDesktopIsUser()) {
+        return 0;
+    }
+
+    for (int kind = 0; kind <= kScrollLock; kind++) {
+        g_toggleState[kind] = (GetKeyState(KindToVk((TipKind)kind)) & 1) != 0;
+    }
+    Wh_Log(L"key state resynced: caps %d num %d scroll %d",
+           (int)g_toggleState[kCapsLock], (int)g_toggleState[kNumLock],
+           (int)g_toggleState[kScrollLock]);
+    return 0;
+}
+
+void ResyncKeyState() {
+    // A resync already sleeping is as good as a new one: it reads the state
+    // after the switch either way.
+    if (g_resyncThread) {
+        if (WaitForSingleObject(g_resyncThread, 0) == WAIT_TIMEOUT) {
+            return;
+        }
+        CloseHandle(g_resyncThread);
+        g_resyncThread = nullptr;
+    }
+    g_resyncThread =
+        CreateThread(nullptr, 0, ResyncKeyStateThread, nullptr, 0, nullptr);
+}
+
+void StopResync() {
+    if (!g_resyncThread) {
+        return;
+    }
+    WaitForSingleObject(g_resyncThread, 1000);
+    CloseHandle(g_resyncThread);
+    g_resyncThread = nullptr;
+}
+
+// The input desktop changed: to the lock screen, to a UAC prompt, or back.
+//
+// This is the one place the tracked state is corrected against the system.
+// Presses made on the secure desktop (typing a password is the classic moment to
+// notice Caps Lock is on) go past the hook, past Raw Input and past the poll,
+// which would leave every later card inverted until the mod restarted.
+void CALLBACK DesktopChangedProc(HWINEVENTHOOK, DWORD event, HWND, LONG, LONG,
+                                 DWORD, DWORD) {
+    if (event != EVENT_SYSTEM_DESKTOPSWITCH) {
+        return;
+    }
+    if (InputDesktopIsUser()) {
+        // Anything held when the desktop went away was released somewhere
+        // nothing could see it, so the press state from before the switch is
+        // wrong. Cleared here rather than in the resync thread: this is the
+        // thread that owns both tables.
+        ZeroMemory(g_vkDown, sizeof(g_vkDown));
+        for (int i = 0; i < kPollKeyCount; i++) {
+            g_pollDown[i] =
+                (GetAsyncKeyState(KindToVk((TipKind)i)) & 0x8000) != 0;
+        }
+        ResyncKeyState();
+        RefreshFallbackPoll();
+        return;
+    }
+    // Gone to the secure desktop: nothing to observe, nothing to poll.
+    StopFallbackPoll();
+}
+
 // =============================================================================
 // Language watch
 // =============================================================================
@@ -4195,37 +4947,54 @@ void CALLBACK ForegroundChangedProc(HWINEVENTHOOK, DWORD event, HWND, LONG, LONG
 // key starts a short watch that samples the focused thread's state until it
 // differs from what was there before the press, or until the window closes.
 
-void ReportInput(int mode, HKL hkl) {
-    if (g_hwnd) {
-        PostMessageW(g_hwnd, WM_APP_LANGUAGE, (WPARAM)mode, (LPARAM)hkl);
-    }
-}
+// Everything below runs on the UI thread: the hook posts WM_APP_LANGUAGE_WATCH
+// and returns, so the questions asked here - which are cross-process and can
+// each take tens of milliseconds - never sit in the way of the keyboard.
+//
+// Starting a few milliseconds later is harmless: the baseline only has to be
+// older than the switch, and no switch happens on the key-down that starts the
+// watch. Shift alone toggles the IME mode on its release, Ctrl+Shift and
+// Alt+Shift on the release of the combination, and Win+Space goes through the
+// shell - in every case a later event, tens of milliseconds later.
 
 void StopInputWatch() {
     if (!g_inputWatching) {
         return;
     }
     g_inputWatching = false;
-    KillTimer(nullptr, kThreadTimerInput);
+    if (g_hwnd) {
+        KillTimer(g_hwnd, kTimerInput);
+    }
     g_inputHasLast = false;
 }
 
 void StartInputWatch() {
-    InputState baseline = CurrentInputState();
-    if (baseline.Usable()) {
-        g_inputLast = baseline;
-        g_inputHasLast = true;
-    } else {
-        // Unreadable in the middle of a switch (fullscreen transition, desktop
-        // recomposition): a baseline from some other app would report the wrong
-        // language, so drop it and take the first good sample instead.
-        g_inputHasLast = false;
+    if (!g_hwnd) {
+        return;
+    }
+    // A watch that is already running holds a baseline from before the first
+    // key of the combination, which is a better baseline than one taken now:
+    // Win+Space switches on the Space press, and this runs a message later, so
+    // a busy UI thread (a backdrop grab, a frame) could read the *new* layout
+    // and then wait for a change that already happened. Keep what we have.
+    if (!g_inputWatching || !g_inputHasLast) {
+        InputState baseline = CurrentInputState();
+        if (baseline.Usable()) {
+            g_inputLast = baseline;
+            g_inputHasLast = true;
+        } else {
+            // Unreadable in the middle of a switch (fullscreen transition,
+            // desktop recomposition): a baseline from some other app would
+            // report the wrong language, so drop it and take the first good
+            // sample instead.
+            g_inputHasLast = false;
+        }
     }
     g_inputTicks = 0;
-    if (!g_inputWatching) {
-        g_inputWatching = true;
-        SetTimer(nullptr, kThreadTimerInput, kInputPollMs, nullptr);
-    }
+    // SetTimer on an id that already runs restarts it, which is what a second
+    // switch key during a watch should do.
+    g_inputWatching = true;
+    SetTimer(g_hwnd, kTimerInput, kInputPollMs, nullptr);
 }
 
 void InputTick() {
@@ -4256,7 +5025,7 @@ void InputTick() {
         bool hklChanged = now.hkl != g_inputLast.hkl;
         g_inputLast = now;
         if (sameApp && hklChanged) {
-            ReportInput(0, now.hkl);
+            HandleLanguageTip(0, now.hkl);
             StopInputWatch();
         }
         return;
@@ -4264,7 +5033,7 @@ void InputTick() {
 
     if (now.hkl != g_inputLast.hkl) {
         g_inputLast = now;
-        ReportInput(0, now.hkl);
+        HandleLanguageTip(0, now.hkl);
         StopInputWatch();
         return;
     }
@@ -4276,7 +5045,7 @@ void InputTick() {
         }
         bool native = now.IsNative();
         g_inputLast = now;
-        ReportInput(native ? 1 : 2, nullptr);
+        HandleLanguageTip(native ? 1 : 2, nullptr);
         StopInputWatch();
         return;
     }
@@ -4301,14 +5070,13 @@ void PollTick() {
 
     // Ctrl+Insert is a copy and Shift+Insert a paste, exactly as in the hook
     // path, so a modified Insert must not be reported as a bare press.
-    bool insertModified = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 ||
-                          (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool insertModified = CtrlDown() || ShiftDown();
 
-    // Nothing below corrects the tracked state against GetKeyState any more.
-    // That read is this thread's message-queue mirror, and the hook thread
-    // never receives keyboard messages: the mirror freezes at load time, so a
-    // "correction" would rewrite a correct state into a stale one. Four taps in
-    // a row reading back the same value is exactly that bug.
+    // Nothing below corrects the tracked state against GetKeyState: that read is
+    // this thread's message-queue mirror, and the hook thread never receives
+    // keyboard messages, so the mirror freezes at load time and a "correction"
+    // would rewrite a correct state into a stale one. ResyncKeyState() is where
+    // the real state is read, on a thread whose mirror is still fresh.
     for (int i = 0; i < kPollKeyCount; i++) {
         int vk = KindToVk((TipKind)i);
         bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -4316,8 +5084,14 @@ void PollTick() {
         g_pollDown[i] = down;
 
         if (i == kInsert) {
-            if (pressed && !insertModified && g_hwnd &&
-                AllowTip((TipKind)kInsert, GetTickCount64())) {
+            // GetAsyncKeyState sees only the virtual key: with Num Lock off,
+            // numpad 0 presses read as VK_INSERT here, and there is no scan
+            // code to disprove it. Raw Input, which can see the E0 prefix,
+            // reports Insert on its own when registered - so the poll stays
+            // out of its way and only covers the registration-failed case,
+            // where the rare numpad-0 misreport beats losing Insert entirely.
+            if (pressed && !insertModified && !g_rawInputOk && g_hwnd &&
+                AllowTip((TipKind)kInsert, GetTickCount64(), kSourcePoll)) {
                 // Same path as a hooked Insert: notify switch, fullscreen
                 // check and the tip itself all live in HandleTip.
                 PostMessageW(g_hwnd, WM_APP_TIP, (WPARAM)kInsert, 0);
@@ -4329,8 +5103,8 @@ void PollTick() {
             // A lock key toggles exactly once per press, so flipping the state
             // we track is exact - and unlike reading it here, it can't catch the
             // old value before the system has applied the toggle.
-            if (!AllowTip((TipKind)i, GetTickCount64())) {
-                continue;  // the hook already reported this press
+            if (!AllowTip((TipKind)i, GetTickCount64(), kSourcePoll)) {
+                continue;  // the hook or Raw Input already reported this press
             }
             bool state = !g_toggleState[i];
             g_toggleState[i] = state;
@@ -4355,14 +5129,25 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
                 // Start the language watch before anything else: a switch key
                 // is the only hint that the language may be about to change.
+                // Posted rather than called: finding the input state means
+                // asking the foreground app's IME window a question and waiting
+                // for the answer, and every keystroke in the session waits for
+                // this hook to return. The UI thread asks instead.
                 if (InterlockedCompareExchange(&g_languageEnabled, 1, 1) != 0 &&
-                    SwitchCandidate(vk)) {
-                    StartInputWatch();
+                    SwitchCandidate(vk) && g_hwnd) {
+                    PostMessageW(g_hwnd, WM_APP_LANGUAGE_WATCH, 0, 0);
                 }
 
-                int kind = TipKindForVk(vk, CtrlDown(), ShiftDown());
+                // ClipCtrlDown, not CtrlDown: with Right Alt held this is AltGr
+                // and the letter is a character, not a clipboard shortcut.
+                // The extended flag is what marks the real Insert key: with
+                // Num Lock off, numpad 0 also arrives as VK_INSERT, and only
+                // the E0-prefixed (extended) copy is Insert.
+                const bool extended = (info->flags & LLKHF_EXTENDED) != 0;
+                int kind = TipKindForVk(vk, extended, ClipCtrlDown(), ShiftDown());
 
-                if (kind >= 0 && AllowTip((TipKind)kind, GetTickCount64())) {
+                if (kind >= 0 &&
+                    AllowTip((TipKind)kind, GetTickCount64(), kSourceHook)) {
                     bool predicted = false;
                     if (IsToggleKind((TipKind)kind)) {
                         // Flip our own copy of the state instead of reading the
@@ -4398,7 +5183,9 @@ DWORD WINAPI HookThreadProc(LPVOID) {
     }
 
     // Seed the known state so the polling fallback doesn't report a bogus tip
-    // for keys that are already on when the mod loads.
+    // for keys that are already on when the mod loads. Read on this thread
+    // before it pumps a message, which is the one moment its key-state mirror is
+    // the live state rather than a snapshot of it.
     for (int kind = 0; kind <= kScrollLock; kind++) {
         g_toggleState[kind] = (GetKeyState(KindToVk((TipKind)kind)) & 1) != 0;
     }
@@ -4424,6 +5211,17 @@ DWORD WINAPI HookThreadProc(LPVOID) {
         Wh_Log(L"SetWinEventHook failed: %lu", GetLastError());
     }
 
+    // The same for the input desktop, which is where presses the mod can't see
+    // happen: the lock screen and UAC prompts. Coming back from one of those is
+    // the moment to re-read the real lock state, and going to one is the moment
+    // to stop polling.
+    g_desktopHook = SetWinEventHook(
+        EVENT_SYSTEM_DESKTOPSWITCH, EVENT_SYSTEM_DESKTOPSWITCH, nullptr,
+        DesktopChangedProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+    if (!g_desktopHook) {
+        Wh_Log(L"SetWinEventHook(desktop) failed: %lu", GetLastError());
+    }
+
     // The probe runs either way. Without the window event it is the only way to
     // notice an elevated window at all; with it, it is the insurance against
     // the event being filtered - which is the same UIPI rule that swallows the
@@ -4442,8 +5240,6 @@ DWORD WINAPI HookThreadProc(LPVOID) {
                 PollTick();
             } else if (msg.wParam == kThreadTimerProbe) {
                 RefreshFallbackPoll();
-            } else if (msg.wParam == kThreadTimerInput) {
-                InputTick();
             }
             continue;
         }
@@ -4455,9 +5251,15 @@ DWORD WINAPI HookThreadProc(LPVOID) {
         UnhookWinEvent(g_foregroundHook);
         g_foregroundHook = nullptr;
     }
+    if (g_desktopHook) {
+        UnhookWinEvent(g_desktopHook);
+        g_desktopHook = nullptr;
+    }
     KillTimer(nullptr, kThreadTimerProbe);
-    StopInputWatch();
     StopFallbackPoll();
+    // The resync thread writes the state this thread reads; it must be gone
+    // before the thread that owns it is.
+    StopResync();
 
     if (g_hook) {
         UnhookWindowsHookEx(g_hook);

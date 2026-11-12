@@ -10,6 +10,13 @@ internal static partial class NativeMethods
     public const uint WM_SYSKEYDOWN = 0x0104;
     public const uint WM_SYSKEYUP = 0x0105;
 
+    /// <summary>
+    /// KBDLLHOOKSTRUCT.flags 里的扩展键位。带 E0 前缀的键（真 Insert、两颗 Ctrl 等）
+    /// 都有它；小键盘 0 在 Num Lock 关闭时上报的 VK_INSERT (0x2D) 没有——这是把
+    /// 小键盘 0 和真 Insert 分开的唯一线索。
+    /// </summary>
+    public const uint LLKHF_EXTENDED = 0x01;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct KBDLLHOOKSTRUCT
     {
@@ -497,6 +504,7 @@ internal static partial class NativeMethods
 
     public const int VK_SHIFT = 0x10;
     public const int VK_CONTROL = 0x11;
+    public const int VK_DELETE = 0x2E;
 
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;

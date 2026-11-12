@@ -77,7 +77,7 @@ internal static class LockState
 
         lock (Gate)
         {
-            if (!Allow(kind, at, since)) return false;
+            if (!Allow(kind, at, since, SameKindWindowMs)) return false;
 
             On[index] = !On[index];
             on = On[index];
@@ -89,7 +89,21 @@ internal static class LockState
     /// <summary>不涉及状态切换的键（Insert）也要走去重。</summary>
     public static bool Accept(TipKind kind, long at, long since = NoFloor)
     {
-        lock (Gate) return Allow(kind, at, since);
+        lock (Gate) return Allow(kind, at, since, SameKindWindowMs);
+    }
+
+    /// <summary>
+    /// 剪贴板组合键（Ctrl+C/V/X、Shift+Delete）的去重：不带 200ms 同键窗口。
+    /// </summary>
+    /// <remarks>
+    /// 200ms 窗口对锁定键成立——人不可能那么快连按两次 CapsLock；对 Ctrl+V 不成立，
+    /// 快速连按粘贴是真实操作，窗口会把第二次按下当重复挡掉。同一次按下在钩子与轮询
+    /// 两条路径上的重合，由 since 区间（轮询知道自己是在哪一段里看见按下的）与「按键
+    /// 时刻单调」两条规则兜住，不依赖这个窗口，所以这里设 0。
+    /// </remarks>
+    public static bool AcceptClipboard(TipKind kind, long at, long since = NoFloor)
+    {
+        lock (Gate) return Allow(kind, at, since, 0);
     }
 
     /// <summary>
@@ -102,7 +116,7 @@ internal static class LockState
     /// 钩子的那次；拿处理时刻去比，一次按键看着像两次，状态被翻两遍，卡片显示的就和真实的
     /// 锁定态相反——而且当场看不出来，要等下一次按键才暴露。比按键时刻就没这个问题。
     /// </remarks>
-    private static bool Allow(TipKind kind, long at, long since)
+    private static bool Allow(TipKind kind, long at, long since, int windowMs)
     {
         int index = (int)kind;
         if ((uint)index >= (uint)LastFired.Length) return true;
@@ -119,8 +133,8 @@ internal static class LockState
 
         // 两条路径对同一次按下的时刻本就该相等：钩子的 KBDLLHOOKSTRUCT.time 与 Raw Input
         // 的 GetMessageTime 实测完全一致。留 200ms 是给路径间的抖动——人手不可能在 200ms
-        // 内连按两次同一个锁定键。
-        if (at - last < SameKindWindowMs) return false;
+        // 内连按两次同一个锁定键。剪贴板组合键传 0 跳过这条，见 <see cref="AcceptClipboard"/>。
+        if (at - last < windowMs) return false;
 
         LastFired[index] = at;
         return true;

@@ -61,7 +61,11 @@ public sealed class KeyboardHook : IDisposable
                         0x14 => TipKind.CapsLock,
                         0x90 => TipKind.NumLock,
                         0x91 => TipKind.ScrollLock,
-                        0x2D => TipKind.Insert,
+                        // Num Lock 关闭时，小键盘 0 上报的虚拟键就是 0x2D (VK_INSERT)
+                        // —— Windows 一直如此。真 Insert 是扩展键（E0 前缀，钩子里是
+                        // LLKHF_EXTENDED），小键盘 0 不是，扩展键位是把两者分开的唯一
+                        // 线索。不查它，Num Lock 关着时每按一个 0 都会弹出 Insert 提示。
+                        0x2D when (info.flags & NativeMethods.LLKHF_EXTENDED) != 0 => TipKind.Insert,
                         _ => null,
                     };
                     if (kind == null && ctrl)
@@ -88,7 +92,10 @@ public sealed class KeyboardHook : IDisposable
                         {
                             if (TipInfo.IsToggle(k)) ToggleChanged?.Invoke(k, at);
                             else if (k == TipKind.Insert) Pressed?.Invoke(k, at);
-                            else ClipboardPressed?.Invoke(k);
+                            // 剪贴板组合键也走去重：前台级别判错时轮询兜底也在盯着同样的
+                            // 组合键，两边各报一次就是两条重复提示。这里先到先记录，轮询
+                            // 那头靠采样区间挡掉（见 AcceptClipboard 的注释）。
+                            else if (LockState.AcceptClipboard(k, at)) ClipboardPressed?.Invoke(k);
                         });
                     }
                 }

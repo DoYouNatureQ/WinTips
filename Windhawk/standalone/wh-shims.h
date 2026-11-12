@@ -90,6 +90,7 @@ static int Wh_GetIntSetting(const wchar_t* name, ...) {
         {L"notifyScrollLock", 1}, {L"notifyInsert", 1},
         {L"notifyCopy", 1},      {L"notifyPaste", 1},
         {L"notifyCut", 1},       {L"notifyAnyCopy", 1},
+        {L"countBadge", 1},
         {L"notifyLanguage", 1},  {L"displayMs", 2000},
         {L"animationPercent", 100},
         {L"tipScale", 100},      {L"tintOpacity", 55},

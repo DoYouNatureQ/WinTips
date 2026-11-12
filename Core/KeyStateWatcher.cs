@@ -34,6 +34,21 @@ internal sealed class KeyStateWatcher : IDisposable
     private static readonly TipKind[] Keys =
         { TipKind.CapsLock, TipKind.NumLock, TipKind.ScrollLock, TipKind.Insert };
 
+    /// <summary>
+    /// 剪贴板组合键的判定表，修饰键要求与钩子路径完全一致：C/V/X 看 Ctrl，
+    /// Delete 看 Shift 且不要 Ctrl（Shift+Delete 是剪切）。0x2E 是 Delete，
+    /// 其余与 <see cref="TipInfo.VirtualKey"/> 对 Copy/Paste/Cut 的取值相同。
+    /// </summary>
+    private static readonly (int Vk, TipKind Kind, bool NeedCtrl)[] ClipCombos =
+    {
+        (0x43, TipKind.Copy, true),
+        (0x56, TipKind.Paste, true),
+        (0x58, TipKind.Cut, true),
+        (0x2E, TipKind.Cut, false),
+    };
+
+    private readonly bool[] _clipDown = new bool[ClipCombos.Length];
+
     private readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(PollIntervalMs) };
 
     private readonly DispatcherTimer _probe = new() { Interval = TimeSpan.FromMilliseconds(FallbackProbeMs) };
@@ -56,6 +71,22 @@ internal sealed class KeyStateWatcher : IDisposable
 
     /// <summary>Insert 被单独按下。</summary>
     public event Action<TipKind>? Pressed;
+
+    /// <summary>
+    /// 剪贴板组合键被按下（Ctrl+C/V/X、Shift+Delete）。钩子被 UIPI 掐断时（前台提权或
+    /// 受保护进程），粘贴不动剪贴板、没有剪贴板监听可以兜，只有这条路能把提示补上；
+    /// 复制还有监听兜着，粘贴是唯一信号源就在这里。
+    /// </summary>
+    public event Action<TipKind>? ClipboardPressed;
+
+    /// <summary>
+    /// 返回 true 时轮询不再上报 Insert。GetAsyncKeyState 只有虚拟键、没有扫描码，
+    /// 分不清 0x2D 是真 Insert 还是小键盘 0（Num Lock 关闭时后者上报的虚拟键就是
+    /// VK_INSERT）。Raw Input 拿得到 E0 前缀，能分——所以它注册成功后 Insert 由它
+    /// 独家负责，轮询闭嘴；注册失败时保持 null，兜底链路照常工作，代价是提权窗口
+    /// 加 Num Lock 关闭的组合下按小键盘 0 仍可能误报一次（已知限制，见 README）。
+    /// </summary>
+    public Func<bool>? InsertCoveredByRawInput { get; set; }
 
     public KeyStateWatcher()
     {
@@ -106,6 +137,9 @@ internal sealed class KeyStateWatcher : IDisposable
             _down[i] = (NativeMethods.GetAsyncKeyState(vk) & 0x8000) != 0;
         }
 
+        for (int i = 0; i < _clipDown.Length; i++)
+            _clipDown[i] = (NativeMethods.GetAsyncKeyState(ClipCombos[i].Vk) & 0x8000) != 0;
+
         // 区间起点也要重置：上次轮询可能是几分钟前停的，拿那个时刻当起点，会把这段时间里
         // 任何一次按下都算进"我的区间"，把新按下的当成旧上报挡掉。
         _lastSampleAt = EventTime.Now;
@@ -120,6 +154,7 @@ internal sealed class KeyStateWatcher : IDisposable
 
         _poll.Stop();
         Array.Clear(_down);
+        Array.Clear(_clipDown);
         Diag.Write($"poll stop ({source})");
     }
 
@@ -155,6 +190,7 @@ internal sealed class KeyStateWatcher : IDisposable
             if (kind == TipKind.Insert)
             {
                 if (insertModified) continue;
+                if (InsertCoveredByRawInput?.Invoke() == true) continue;
                 if (!LockState.Accept(kind, sampledAt, since)) continue;
                 Diag.Write("poll edge Insert");
                 Pressed?.Invoke(kind);
@@ -165,6 +201,28 @@ internal sealed class KeyStateWatcher : IDisposable
                 Diag.Write($"poll edge {kind} on={on}");
                 ToggleChanged?.Invoke(kind, on);
             }
+        }
+
+        // 剪贴板组合键。修饰键在本轮采样里读，就是按下时刻的状态——同一拍里它不会变，
+        // 而钩子也是在字母键 keydown 那一刻看 Ctrl 在不在，两边的判定天然一致。
+        bool ctrl = IsDown(NativeMethods.VK_CONTROL);
+        bool shift = IsDown(NativeMethods.VK_SHIFT);
+
+        for (int i = 0; i < ClipCombos.Length; i++)
+        {
+            bool down = (NativeMethods.GetAsyncKeyState(ClipCombos[i].Vk) & 0x8000) != 0;
+            bool edge = down && !_clipDown[i];
+            _clipDown[i] = down;
+            if (!edge) continue;
+
+            bool combo = ClipCombos[i].NeedCtrl ? ctrl : shift && !ctrl;
+            if (!combo) continue;
+
+            // 钩子活着（前台级别判错、保护进程没真提权）时它会先报，这里按采样区间
+            // 挡掉；钩子死了这里就是唯一上报。窗口设 0，见 AcceptClipboard。
+            if (!LockState.AcceptClipboard(ClipCombos[i].Kind, sampledAt, since)) continue;
+            Diag.Write($"poll edge {ClipCombos[i].Kind} (clipboard)");
+            ClipboardPressed?.Invoke(ClipCombos[i].Kind);
         }
 
         _lastSampleAt = sampledAt;
