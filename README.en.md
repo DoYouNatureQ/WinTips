@@ -75,7 +75,7 @@ Every option is set in the Settings window and saved as you change it; no restar
 | Limitation | Explanation |
 | --- | --- |
 | Elevated windows | The low-level hook receives nothing while an elevated window is in the foreground; keys fall back to Raw Input and polling, with up to about 50 ms extra latency. Copy / paste / cut are covered by the polling fallback recognizing the key combos; the input-method tip depends on the hook and does not appear |
-| Input methods | Depends on the IME reporting its conversion mode; a few third-party IMEs do not. Switching from the language bar with the mouse produces no tip |
+| Input methods | Chinese/English toggles follow the conversion mode the IME reports to the system. Third-party IMEs that never report it (some Sogou, WeChat IME and Weasel builds) are inferred from a solo Shift press-and-release instead; pressing Shift twice in a row (net zero change) produces no tip. No tip when the toggle key is not Shift, or when switching from the language bar with the mouse. With Windows' "Let me use a different input method for each app window" on, language and Chinese/English changes caused by switching windows are tipped too (can be turned off in settings) |
 | Exclusive fullscreen | True exclusive fullscreen owns the display pipeline and the flyout cannot be drawn; borderless and windowed modes are fine |
 | Screenshots | With blur on, the flyout is excluded from capture for the second or two it is visible; Remote Desktop and older Windows 10 builds fall back to a single capture, in which case it does show up |
 | Non-keyboard cut | The "Cut" context-menu item cannot be told apart from a copy and uses the copy style |

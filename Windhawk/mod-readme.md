@@ -69,7 +69,9 @@ Chinese/English mode.
   when turned off.
 - **Input language & Chinese/English tip** — off by default; shows the globe card
   after a language switch. Set it back to off if it fires more often than it
-  helps.
+  helps. *Tip when switching windows* adds the same card for the input state a
+  window restores as it takes focus — the case Windows' "Let me use a different
+  input method for each app window" option creates.
 - **Behaviour** — *Display duration* 500–10000 ms; *Animation speed* 100 is
   normal (300 ms), 0 disables it; *Skip while a fullscreen app is in front*.
 - **Placement** — *Vertical* above the taskbar or below the top edge,
@@ -97,8 +99,12 @@ Chinese/English mode.
   falls back to a solid card. The language is still reported there, the IME mode
   is not. Copy, paste and cut are not either: they need the key the hook is
   denied, and Raw Input only answers for the lock keys and Insert.
-- The language card needs a keystroke to hang on: switching with the mouse from
-  the language bar or an IME status window shows nothing.
+- The language card needs a keystroke to hang on, or a foreground change:
+  switching with the mouse from the language bar or an IME status window shows
+  nothing. Window switches are covered when Windows' per-window input method
+  option is on (a watch starts on the focus event); a mouse-driven language-bar
+  switch still is not, because it changes the input state behind the very
+  window that keeps its focus.
 - The card is **left out of screen capture** while the live backdrop runs
   (`WDA_EXCLUDEFROMCAPTURE`): screenshots, recordings, streams and screen sharing
   don't show it. That is what keeps the live blur from feeding on itself. Pick

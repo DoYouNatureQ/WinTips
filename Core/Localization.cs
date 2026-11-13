@@ -109,6 +109,20 @@ public static class Loc
             "Показывать текущее состояние после переключения 中/EN (Shift) или языка ввода (Win+Space)",
             "Muestra el estado actual al alternar chino/inglés (Shift) o cambiar de idioma (Win+Space)",
             "Mostra o estado atual ao alternar chinês/inglês (Shift) ou trocar de idioma (Win+Space)");
+        Add("RowLanguageOnSwitch",
+            "切换窗口时提示输入状态", "切換視窗時提示輸入狀態", "Tip when switching windows",
+            "Hinweis beim Fensterwechsel", "ウィンドウ切り替え時の通知",
+            "Уведомление при переключении окон",
+            "Aviso al cambiar de ventana", "Aviso ao alternar janelas");
+        Add("RowLanguageOnSwitchDesc",
+            "开启系统的“允许我为每个应用窗口使用不同输入法”后，切窗口引起的语言或中英文变化也弹出提示（需开启上面的输入法提示）",
+            "開啟系統的「允許我為每個應用程式視窗使用不同輸入法」後，切換視窗引起的語言或中英文變化也會提示（需開啟上面的輸入法提示）",
+            "With Windows' \"Let me use a different input method for each app window\" on, a language or Chinese/English change caused by switching windows also shows the tip (requires the input language tip)",
+            "Bei aktiviertem „Eine andere Eingabemethode für jedes App-Fenster verwenden“ meldet auch ein Sprach- oder Chinesisch/Englisch-Wechsel durch einen Fensterwechsel (erfordert den Eingabesprache-Hinweis)",
+            "Windows の「アプリごとに異なる入力方法を使う」が有効な場合、ウィンドウ切り替えによる言語・中英文の変化も通知します（入力言語の通知が必要）",
+            "При включённой настройке «Разрешить отдельный метод ввода для каждого окна приложения» уведомлять и о смене языка или режима 中/EN при переключении окон (нужно уведомление о языке ввода)",
+            "Con «Permitir usar un método de entrada diferente para cada ventana de aplicación» activado, el cambio de idioma o de chino/inglés al cambiar de ventana también muestra el aviso (requiere el aviso de idioma de entrada)",
+            "Com «Permitir usar um método de entrada diferente para cada janela de aplicativo» ativado, a mudança de idioma ou de chinês/inglês ao alternar janelas também mostra o aviso (requer o aviso de idioma de entrada)");
 
         Add("SectionGeneral",
             "通用", "一般", "General",
@@ -418,14 +432,14 @@ public static class Loc
             "Lizenzen & Danksagung", "ライセンスと謝辞", "Лицензии и благодарности",
             "Licencias y créditos", "Licenças e créditos");
         Add("LicenseSubtitle",
-            "WinTips {0}，以 GPL-3.0 许可发布。界面字体 HarmonyOS Sans 随程序原样分发。",
-            "WinTips {0}，以 GPL-3.0 授權釋出。介面字型 HarmonyOS Sans 隨程式原樣分送。",
-            "WinTips {0}, released under the GPL-3.0 license. The UI font HarmonyOS Sans ships unmodified with the app.",
-            "WinTips {0}, veröffentlicht unter der GPL-3.0-Lizenz. Die UI-Schrift HarmonyOS Sans wird unverändert mitgeliefert.",
-            "WinTips {0}（GPL-3.0 ライセンス）。UI フォント HarmonyOS Sans を無改変のまま同梱しています。",
-            "WinTips {0}, распространяется по лицензии GPL-3.0. Шрифт интерфейса HarmonyOS Sans поставляется без изменений.",
-            "WinTips {0}, publicado bajo la licencia GPL-3.0. La fuente de la interfaz HarmonyOS Sans se incluye sin modificar.",
-            "WinTips {0}, distribuído sob a licença GPL-3.0. A fonte da interface HarmonyOS Sans acompanha o app sem alterações.");
+            "WinTips {0} · © 2026 NatureQ（自然卷），以 GPL-3.0 许可发布。界面字体 HarmonyOS Sans 随程序原样分发。",
+            "WinTips {0} · © 2026 NatureQ（自然卷），以 GPL-3.0 授權釋出。介面字型 HarmonyOS Sans 隨程式原樣分送。",
+            "WinTips {0} · © 2026 NatureQ, released under the GPL-3.0 license. The UI font HarmonyOS Sans ships unmodified with the app.",
+            "WinTips {0} · © 2026 NatureQ, veröffentlicht unter der GPL-3.0-Lizenz. Die UI-Schrift HarmonyOS Sans wird unverändert mitgeliefert.",
+            "WinTips {0} · © 2026 NatureQ（GPL-3.0 ライセンス）。UI フォント HarmonyOS Sans を無改変のまま同梱しています。",
+            "WinTips {0} · © 2026 NatureQ, распространяется по лицензии GPL-3.0. Шрифт интерфейса HarmonyOS Sans поставляется без изменений.",
+            "WinTips {0} · © 2026 NatureQ, publicado bajo la licencia GPL-3.0. La fuente de la interfaz HarmonyOS Sans se incluye sin modificar.",
+            "WinTips {0} · © 2026 NatureQ, distribuído sob a licença GPL-3.0. A fonte da interface HarmonyOS Sans acompanha o app sem alterações.");
         Add("LicenseFontDesc",
             "随程序原样分发：字体文件未做任何修改（因此没有做子集裁剪），也不单独分发。",
             "隨程式原樣分送：字型檔未做任何修改（因此沒有做子集裁剪），也不單獨分送。",

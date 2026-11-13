@@ -92,6 +92,10 @@ internal static partial class NativeMethods
     [DllImport("imm32.dll")]
     public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
 
+    /// <summary>判断给定键盘布局是否挂了输入法。用来把"美式键盘"这类无 IME 布局挡在推断之外。</summary>
+    [DllImport("imm32.dll")]
+    public static extern bool ImmIsIME(IntPtr hkl);
+
     public const uint WM_IME_CONTROL = 0x0283;
     public const int IMC_GETCONVERSIONMODE = 0x0001;
 

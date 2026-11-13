@@ -18,6 +18,7 @@ public partial class App : Application
     private RawInputWatcher? _raw;
     private OsdController? _osd;
     private InputStateWatcher? _input;
+    private ForegroundWatcher? _focus;
     private TrayService? _tray;
     private SettingsWindow? _settings;
 
@@ -64,8 +65,13 @@ public partial class App : Application
 
         _osd = new OsdController();
         _input = new InputStateWatcher();
+        _focus = new ForegroundWatcher();
+        // 按键监听每读到一份可用状态就喂给焦点监听当基准：语言只会因为按键或焦点
+        // 切换而变，两条路都记下来，焦点基准才不会陈旧。
+        _input.Sampled += s => _focus.Observe(s);
         _input.LanguageChanged += hkl => _osd!.OnLanguageChanged(hkl);
         _input.ImeModeChanged += native => _osd!.OnImeModeChanged(native);
+        _focus.InputStateRestored += (now, before) => _osd!.OnInputStateRestored(now, before);
         _hook = new KeyboardHook();
 
         // 三条捕获路径统一走 LockState.Toggle：谁先到谁翻转，后到的由去重挡掉。
@@ -79,6 +85,9 @@ public partial class App : Application
         _hook.Pressed += (k, at) => { if (LockState.Accept(k, at)) _osd!.OnInsertPressed(k); };
         _hook.ClipboardPressed += k => _osd!.OnClipboardPressed(k);
         _hook.SwitchKeyDown += s => _input!.Touch(s);
+        // Shift 单独按下并抬起：第三方输入法的中英切换动作。读数不规范的输入法
+        // （不把内部状态同步进 IMM32 转换模式）靠它推断翻面，见 InputStateWatcher。
+        _hook.SoloShiftReleased += () => _input!.OnSoloShift();
 
         // 调试用：设 WINTIPS_NO_HOOK=1 就不装低级钩子。目的是能单独验证"没有钩子时
         // Raw Input 是否自足"——提权的管理员窗口前台时，钩子本来就等于不存在，
@@ -108,6 +117,8 @@ public partial class App : Application
         _poll.InsertCoveredByRawInput = () => _raw!.Registered;
 
         _raw.Start();
+
+        _focus.Start();
 
         _tray = new TrayService(ShowSettings, Shutdown, (k, s) => _osd.ShowTest(k, s));
 
@@ -201,6 +212,7 @@ public partial class App : Application
         _poll?.Dispose();
         _raw?.Dispose();
         _input?.Dispose();
+        _focus?.Dispose();
         _tray?.Dispose();
         if (_ownsMutex)
         {

@@ -72,7 +72,9 @@ Chinese/English mode.
   when turned off.
 - **Input language & Chinese/English tip** — off by default; shows the globe card
   after a language switch. Set it back to off if it fires more often than it
-  helps.
+  helps. *Tip when switching windows* adds the same card for the input state a
+  window restores as it takes focus — the case Windows' "Let me use a different
+  input method for each app window" option creates.
 - **Behaviour** — *Display duration* 500–10000 ms; *Animation speed* 100 is
   normal (300 ms), 0 disables it; *Skip while a fullscreen app is in front*.
 - **Placement** — *Vertical* above the taskbar or below the top edge,
@@ -100,8 +102,12 @@ Chinese/English mode.
   falls back to a solid card. The language is still reported there, the IME mode
   is not. Copy, paste and cut are not either: they need the key the hook is
   denied, and Raw Input only answers for the lock keys and Insert.
-- The language card needs a keystroke to hang on: switching with the mouse from
-  the language bar or an IME status window shows nothing.
+- The language card needs a keystroke to hang on, or a foreground change:
+  switching with the mouse from the language bar or an IME status window shows
+  nothing. Window switches are covered when Windows' per-window input method
+  option is on (a watch starts on the focus event); a mouse-driven language-bar
+  switch still is not, because it changes the input state behind the very
+  window that keeps its focus.
 - The card is **left out of screen capture** while the live backdrop runs
   (`WDA_EXCLUDEFROMCAPTURE`): screenshots, recordings, streams and screen sharing
   don't show it. That is what keeps the live blur from feeding on itself. Pick
@@ -229,6 +235,19 @@ complete corresponding source under the GPL.
     switch often and on purpose, it shows up more often than it helps.
   $description:zh-CN: >-
     Win+Space、Ctrl+Shift、Alt+Shift 换输入语言，或输入法内按 Shift 切中英文时，浮窗显示当前状态。默认关闭：除非确实经常刻意切换，否则它出现得比帮到你的次数多。
+- notifyLanguageOnWindowSwitch: true
+  $name: Tip when switching windows
+  $name:zh-CN: 切换窗口时提示输入状态
+  $description: >-
+    With Windows' "Let me use a different input method for each app window"
+    turned on, also show the card when switching to a window whose input
+    language or Chinese/English mode differs from the one before. Without that
+    system option, switching windows does not change the input state, so the
+    card stays quiet anyway. Requires the input language tip above.
+  $description:zh-CN: >-
+    开启系统的「允许我为每个应用窗口使用不同输入法」后，切换到语言或中英文状态与之前不同的窗口时也弹出提示。没开该系统选项时，切换窗口不会改变输入状态，浮窗自然不会出现。
+
+    需要同时开启上面的“输入法语言与中英文提示”。
 - displayMs: 2000
   $name: Display duration (milliseconds)
   $name:zh-CN: 显示时长（毫秒）
@@ -492,13 +511,15 @@ constexpr UINT WM_APP_QUIT = WM_APP + 2;
 // so the sampling it starts reads another process's IME window without holding
 // up the hook. Window message, handled on the UI thread.
 constexpr UINT WM_APP_LANGUAGE_WATCH = WM_APP + 7;
+constexpr UINT WM_APP_LANGUAGE_FOCUS = WM_APP + 8;  // a foreground change, per-window IME
 
 constexpr UINT_PTR kTimerAnim = 1;
 constexpr UINT_PTR kTimerHold = 2;
 constexpr UINT_PTR kTimerFollow = 3;
 constexpr UINT_PTR kTimerLiveBackdrop = 6;
 constexpr UINT_PTR kTimerTopmost = 7;
-constexpr UINT_PTR kTimerInput = 8;  // the language watch, on the UI thread
+constexpr UINT_PTR kTimerInput = 8;       // the language watch, on the UI thread
+constexpr UINT_PTR kTimerFocusInput = 9;  // the per-window focus watch, same thread
 
 // Thread timers on the hook thread (window timers would need the card window).
 constexpr UINT_PTR kThreadTimerPoll = 1;
@@ -507,6 +528,11 @@ constexpr UINT_PTR kThreadTimerProbe = 2;
 // The language watch: poll this often for this long after a switch key.
 constexpr int kInputPollMs = 50;
 constexpr int kInputWindowMs = 2000;
+
+// The per-window focus watch is shorter: the restored language lands within the
+// first few samples after the switch, and the focus event already knows where
+// to look, unlike a switch key that may be mid-combination.
+constexpr int kFocusWindowMs = 1000;
 
 // =============================================================================
 // Settings
@@ -540,6 +566,7 @@ struct Settings {
     int language = kLangAuto;
     bool notify[kKindCount] = {true, true, true, true,
                                true, true, true, false}; // language tip off
+    bool notifyLanguageOnWindowSwitch = true;
     bool notifyAnyCopy = true;
     bool countBadge = true; // ×N badge on copy/paste/cut cards (issue #7304)
     int displayMs = 2000;
@@ -653,6 +680,8 @@ void LoadSettings() {
     s.notifyAnyCopy = Wh_GetIntSetting(L"notifyAnyCopy") != 0;
     s.countBadge = Wh_GetIntSetting(L"countBadge") != 0;
     s.notify[kLanguage] = Wh_GetIntSetting(L"notifyLanguage") != 0;
+    s.notifyLanguageOnWindowSwitch =
+        Wh_GetIntSetting(L"notifyLanguageOnWindowSwitch") != 0;
 
     s.displayMs = Clamp(Wh_GetIntSetting(L"displayMs"), 500, 10000);
     s.animationPercent = Clamp(Wh_GetIntSetting(L"animationPercent"), 0, 300);
@@ -830,6 +859,11 @@ const wchar_t* KeyName(TipKind kind) {
 // resolved to, either an input language name or an IME mode. Written when the
 // tip is raised and read while it is drawn, both on the UI thread.
 std::wstring g_languageText;
+
+// The text and time of the previous language card, for the two-watch dedup
+// (see LanguageTipRepeated). UI thread only, like everything else here.
+std::wstring g_lastLanguageTipText;
+ULONGLONG g_lastLanguageTipTick = 0;
 
 void FormatTip(TipKind kind, bool on, std::wstring& out) {
     switch (kind) {
@@ -2592,13 +2626,32 @@ bool g_rawInputOk;
 // the session waits behind it. The hook only posts a message; the sampling runs
 // on the thread that draws the card, where a slow answer costs a frame.
 volatile LONG g_languageEnabled;  // mirrors the setting, read by the hook
+volatile LONG g_focusLanguageEnabled;  // same, for the per-window focus watch
 bool g_inputWatching;             // UI thread only, here and below
 int g_inputTicks;
 bool g_inputHasLast;
 InputState g_inputLast;
 
+// The last usable input state seen by either watch. The focus watch needs it as
+// its baseline: by the time the foreground event arrives, the window that just
+// lost focus is gone and its state can no longer be read. The language only
+// ever changes through a key press (the switch watch feeds this) or a focus
+// switch (the focus watch samples its own), so it stays fresh.
+InputState g_inputObserved;
+bool g_inputHasObserved;
+
+// The per-window focus watch. Windows' "Let me use a different input method
+// for each app window" restores the language as focus lands, with no keystroke
+// behind it - the switch-key watch never runs for that change (issue #12).
+bool g_focusWatching;
+int g_focusTicks;
+bool g_focusHasBase;
+InputState g_focusBase;
+
 void StartInputWatch();
 void InputTick();
+void StartFocusWatch();
+void FocusInputTick();
 
 // =============================================================================
 // DirectWrite text
@@ -4284,6 +4337,20 @@ std::wstring LanguageDisplayName(HKL hkl) {
     return fallback;
 }
 
+// The switch-key watch and the focus watch can both land on one change (their
+// windows overlap, and the Win+Space input indicator raises foreground events
+// on its own). Showing the same words twice in quick succession reads as a
+// glitch, so keep the last card's text and tick; the two paths are written to
+// produce identical words for identical states so this can catch them.
+bool LanguageTipRepeated(const std::wstring& text) {
+    ULONGLONG tick = GetTickCount64();
+    bool repeated = text == g_lastLanguageTipText &&
+                    tick - g_lastLanguageTipTick < 700;
+    g_lastLanguageTipText = text;
+    g_lastLanguageTipTick = tick;
+    return repeated;
+}
+
 // A language or IME-mode change reported by the hook thread.
 void HandleLanguageTip(int mode, HKL hkl) {
     if (!g_settings.notify[kLanguage]) {
@@ -4304,6 +4371,41 @@ void HandleLanguageTip(int mode, HKL hkl) {
             break;
     }
     if (g_languageText.empty()) {
+        return;
+    }
+    if (LanguageTipRepeated(g_languageText)) {
+        return;
+    }
+    ShowTip(kLanguage, true);
+}
+
+// The per-window focus watch: the state the window being switched to carries.
+// Same words as the switch watch would pick - the language name for a layout
+// change, the Chinese/English label for a conversion-mode change - so the
+// dedup above sees one change reported by both watches as one.
+void HandleFocusLanguageTip(const InputState& now, const InputState& before) {
+    if (!g_settings.notify[kLanguage]) {
+        return;
+    }
+    if (ShouldSkip(true)) {
+        return;
+    }
+    if (now.hkl != before.hkl) {
+        g_languageText = LanguageDisplayName(now.hkl);
+    } else {
+        // Same layout, a restored conversion mode. CurrentInputState only asks
+        // for the mode where the label makes sense (Chinese layouts), so a
+        // mode-only change reaching here implies the label fits.
+        if (!now.HasIme()) {
+            return;
+        }
+        g_languageText = now.IsNative() ? Strings().imeChinese
+                                        : Strings().imeEnglish;
+    }
+    if (g_languageText.empty()) {
+        return;
+    }
+    if (LanguageTipRepeated(g_languageText)) {
         return;
     }
     ShowTip(kLanguage, true);
@@ -4507,6 +4609,11 @@ void ApplySettings() {
     DetectLanguage();
     InterlockedExchange(&g_languageEnabled,
                         g_settings.notify[kLanguage] ? 1 : 0);
+    InterlockedExchange(&g_focusLanguageEnabled,
+                        g_settings.notify[kLanguage] &&
+                                g_settings.notifyLanguageOnWindowSwitch
+                            ? 1
+                            : 0);
     g_theme = CurrentTheme();
     g_backdrop.Invalidate();
     if (g_phase != kPhaseHidden) {
@@ -4543,6 +4650,9 @@ void OnTimer(UINT_PTR id) {
             break;
         case kTimerInput:
             InputTick();
+            break;
+        case kTimerFocusInput:
+            FocusInputTick();
             break;
         case kTimerClip:
             if (g_hwnd) {
@@ -4582,6 +4692,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         case WM_APP_LANGUAGE_WATCH:
             StartInputWatch();
+            return 0;
+        case WM_APP_LANGUAGE_FOCUS:
+            StartFocusWatch();
             return 0;
         case WM_APP_SETTINGS:
             ApplySettings();
@@ -4855,6 +4968,14 @@ void CALLBACK ForegroundChangedProc(HWINEVENTHOOK, DWORD event, HWND, LONG, LONG
         return;
     }
     RefreshFallbackPoll();
+    // The per-window input method restores the language as focus lands, with
+    // no keystroke behind it, so the switch-key watch alone can't see it.
+    // Posted rather than sampled: CurrentInputState asks the foreground app's
+    // IME window a question that can block for tens of milliseconds, and every
+    // keystroke in the session waits behind this hook thread.
+    if (InterlockedCompareExchange(&g_focusLanguageEnabled, 1, 1) != 0 && g_hwnd) {
+        PostMessageW(g_hwnd, WM_APP_LANGUAGE_FOCUS, 0, 0);
+    }
 }
 
 // Reads the real lock state and adopts it.
@@ -4982,6 +5103,8 @@ void StartInputWatch() {
         if (baseline.Usable()) {
             g_inputLast = baseline;
             g_inputHasLast = true;
+            g_inputObserved = baseline;
+            g_inputHasObserved = true;
         } else {
             // Unreadable in the middle of a switch (fullscreen transition,
             // desktop recomposition): a baseline from some other app would
@@ -5010,6 +5133,8 @@ void InputTick() {
     if (!now.Usable()) {
         return;
     }
+    g_inputObserved = now;
+    g_inputHasObserved = true;
     if (!g_inputHasLast) {
         g_inputLast = now;
         g_inputHasLast = true;
@@ -5058,6 +5183,86 @@ void InputTick() {
     }
 
     g_inputLast = now;
+}
+
+// =============================================================================
+// Per-window focus watch
+// =============================================================================
+
+// Windows' "Let me use a different input method for each app window" gives
+// every window its own language and IME mode, restored silently as focus
+// lands. There is no keystroke behind that change, so the switch-key watch
+// never starts; a foreground change is the event to hang on instead. The
+// baseline is the last state observed before the switch - fed by the
+// switch-key watch on every usable sample, and refreshed here - so a language
+// that changed in the old window right before the switch still compares
+// correctly. With the system option off, switching windows does not change
+// the input state and this watch stays quiet on its own; no need to read that
+// setting's (undocumented) registry state.
+
+// Same rule the switch watch follows, plus the IME mode: per-window input
+// methods restore the conversion mode too, so a window sitting in the other
+// half of Chinese/English is worth a card even with the same layout.
+bool FocusStateDiffers(const InputState& now, const InputState& base) {
+    if (now.hkl != base.hkl) {
+        return true;
+    }
+    return now.HasIme() && base.HasIme() && now.IsNative() != base.IsNative();
+}
+
+void StopFocusWatch() {
+    if (!g_focusWatching) {
+        return;
+    }
+    g_focusWatching = false;
+    if (g_hwnd) {
+        KillTimer(g_hwnd, kTimerFocusInput);
+    }
+}
+
+void StartFocusWatch() {
+    if (!g_hwnd) {
+        return;
+    }
+    // The baseline must predate the switch: the window that just lost focus
+    // cannot be read anymore. Whatever the switch-key watch observed last is
+    // the freshest known state; without one (first change after load, or
+    // nothing readable so far) the first good sample becomes the baseline and
+    // says nothing.
+    g_focusBase = g_inputObserved;
+    g_focusHasBase = g_inputHasObserved;
+    g_focusTicks = 0;
+    g_focusWatching = true;
+    SetTimer(g_hwnd, kTimerFocusInput, kInputPollMs, nullptr);
+}
+
+void FocusInputTick() {
+    if (++g_focusTicks * kInputPollMs > kFocusWindowMs) {
+        StopFocusWatch();
+        return;
+    }
+
+    InputState now = CurrentInputState();
+    if (!now.Usable()) {
+        // Same as the switch watch: wait out the fullscreen transition instead
+        // of giving up, the restore may land a few samples late.
+        return;
+    }
+    g_inputObserved = now;
+    g_inputHasObserved = true;
+
+    if (!g_focusHasBase) {
+        g_focusBase = now;
+        g_focusHasBase = true;
+        return;
+    }
+
+    if (!FocusStateDiffers(now, g_focusBase)) {
+        return;
+    }
+
+    StopFocusWatch();
+    HandleFocusLanguageTip(now, g_focusBase);
 }
 
 void PollTick() {
@@ -5280,6 +5485,11 @@ BOOL WhTool_ModInit() {
     DetectLanguage();
     InterlockedExchange(&g_languageEnabled,
                         g_settings.notify[kLanguage] ? 1 : 0);
+    InterlockedExchange(&g_focusLanguageEnabled,
+                        g_settings.notify[kLanguage] &&
+                                g_settings.notifyLanguageOnWindowSwitch
+                            ? 1
+                            : 0);
 
     g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     g_uiThread = CreateThread(nullptr, 0, UiThreadProc, nullptr, 0, nullptr);

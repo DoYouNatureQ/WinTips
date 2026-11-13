@@ -17,6 +17,12 @@ public sealed class AppSettings
 
     public bool ShowLanguageTip { get; set; }
 
+    /// <summary>
+    /// 窗口焦点切换导致的输入状态变化也提示。只有系统开了「允许我为每个应用窗口使用
+    /// 不同输入法」时才会实际弹卡（否则切窗口不改输入状态），所以默认开着。
+    /// </summary>
+    public bool ShowLanguageOnWindowSwitch { get; set; } = true;
+
     public bool ShowAnyCopy { get; set; } = true;
     public double DisplaySeconds { get; set; } = 2.0;
 

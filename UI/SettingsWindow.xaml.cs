@@ -129,6 +129,7 @@ public partial class SettingsWindow : Window
         CutToggle.IsChecked = s.ShowCut;
         AnyCopyToggle.IsChecked = s.ShowAnyCopy;
         LanguageToggle.IsChecked = s.ShowLanguageTip;
+        LangWindowSwitchToggle.IsChecked = s.ShowLanguageOnWindowSwitch;
         DurationSlider.Value = Math.Clamp(s.DisplaySeconds, 0.5, 5);
         UpdateDurationText(DurationSlider.Value);
         AnimSpeedSlider.Value = Math.Clamp(s.AnimationSpeed, 0, 3);
@@ -294,6 +295,8 @@ public partial class SettingsWindow : Window
         AnyCopyToggle.Unchecked += (_, _) => Save(v => v.ShowAnyCopy = false);
         LanguageToggle.Checked += (_, _) => Save(v => v.ShowLanguageTip = true);
         LanguageToggle.Unchecked += (_, _) => Save(v => v.ShowLanguageTip = false);
+        LangWindowSwitchToggle.Checked += (_, _) => Save(v => v.ShowLanguageOnWindowSwitch = true);
+        LangWindowSwitchToggle.Unchecked += (_, _) => Save(v => v.ShowLanguageOnWindowSwitch = false);
 
         DurationSlider.ValueChanged += (_, e) =>
         {

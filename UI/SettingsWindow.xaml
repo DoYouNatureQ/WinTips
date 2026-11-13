@@ -109,6 +109,15 @@
                                                Text="{loc:Tr RowLanguageTipDesc}"/>
                                 </StackPanel>
                             </Grid>
+                            <Border x:Name="SepK8c" Height="1" Margin="0,3" Opacity="0.5"/>
+                            <Grid Margin="0,8">
+                                <ToggleButton x:Name="LangWindowSwitchToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
+                                <StackPanel Margin="58,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{loc:Tr RowLanguageOnSwitch}" FontSize="14" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="LangWindowSwitchDesc" FontSize="11.5" Margin="0,2,0,0" TextWrapping="Wrap"
+                                               Text="{loc:Tr RowLanguageOnSwitchDesc}"/>
+                                </StackPanel>
+                            </Grid>
                             <Border x:Name="SepK8b" Height="1" Margin="0,3" Opacity="0.5"/>
                             <Grid Margin="0,8">
                                 <ToggleButton x:Name="FocusMonitorToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Left"/>
@@ -236,9 +245,12 @@
                            TextWrapping="Wrap" TextAlignment="Center">
                     <Hyperlink x:Name="VersionLink" Click="VersionLink_Click" TextDecorations="{x:Null}">
                         <Hyperlink.ToolTip>
-                            <ToolTip Style="{StaticResource Win11ToolTip}" Placement="Top">
+                            <ToolTip Style="{StaticResource Win11ToolTip}">
                                 <StackPanel MaxWidth="300">
-                                    <TextBlock Text="HarmonyOS Sans SC" FontWeight="Medium"/>
+                                    <TextBlock Text="WinTips © 2026 NatureQ" FontWeight="Medium"/>
+                                    <TextBlock Text="GPL-3.0 · github.com/DoYouNatureQ/WinTips" FontSize="11.5" Margin="0,1,0,0"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                    <TextBlock Text="HarmonyOS Sans SC" FontWeight="Medium" Margin="0,6,0,0"/>
                                     <TextBlock Text="© Huawei Device Co., Ltd." FontSize="11.5" Margin="0,1,0,0"
                                                Foreground="{DynamicResource SecondaryTextBrush}"/>
                                     <TextBlock Text="{loc:Tr LicenseTip}" FontSize="11.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
@@ -246,7 +258,7 @@
                             </ToolTip>
                         </Hyperlink.ToolTip>
                         <Run x:Name="VersionRun" Text="V0.0"/>
-                    </Hyperlink><Run Text="&#160;·&#160;"/><Hyperlink NavigateUri="https://natureq.top/" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
+                    </Hyperlink><Run Text="&#160;·&#160;"/><Hyperlink NavigateUri="https://github.com/DoYouNatureQ/WinTips" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}">By NatureQ</Hyperlink>
                 </TextBlock>
             </Grid>
         </ScrollViewer>

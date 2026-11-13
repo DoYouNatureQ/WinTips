@@ -122,9 +122,38 @@ internal sealed class OsdController
         ShowLanguageTip(Loc.T(native ? "ImeChinese" : "ImeEnglish"));
     }
 
+    /// <summary>
+    /// 焦点切换带来的输入状态变化（对应系统的「允许我为每个应用窗口使用不同输入法」）。
+    /// 文案与按键路径完全一致：语言变了报语言名，只有中英文模式变了报模式——这样
+    /// 两条路径对同一次变化弹出的卡逐字相同，<see cref="ShowLanguageTip"/> 的去重
+    /// 才认得出来。
+    /// </summary>
+    public void OnInputStateRestored(InputState now, InputState before)
+    {
+        if (!IsEnabled(TipKind.Language)) return;
+        if (now.Hkl != before.Hkl)
+        {
+            ShowLanguageTip(LanguageNames.Display(now.Hkl));
+        }
+        else
+        {
+            ShowLanguageTip(Loc.T(now.IsNative ? "ImeChinese" : "ImeEnglish"));
+        }
+    }
+
+    private string _lastLanguageText = string.Empty;
+    private long _lastLanguageTick;
+
     private void ShowLanguageTip(string text)
     {
-        _lastShowTick = Environment.TickCount64;
+        long tick = Environment.TickCount64;
+        // 按键监听和焦点监听可能对同一次变化各报一次（观察窗重叠、Win+Space 的
+        // 输入指示器浮层也会送来前台事件），同一句话 700ms 内弹两次看起来像故障，
+        // 挡掉。两条路径的文案格式刻意保持一致，这里才比得出"同一句话"。
+        if (text == _lastLanguageText && tick - _lastLanguageTick < 700) return;
+        _lastLanguageText = text;
+        _lastLanguageTick = tick;
+        _lastShowTick = tick;
         Window.ShowLanguage(text, AppSettings.Instance.DisplaySeconds);
     }
 

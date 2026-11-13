@@ -20,6 +20,18 @@ public sealed class KeyboardHook : IDisposable
 
     internal event Action<InputState>? SwitchKeyDown;
 
+    /// <summary>
+    /// Shift 单独按下又抬起（按下与抬起时都没有别的键在按着，中间也没碰过键）。
+    /// 这是第三方中文输入法最常用的中英切换动作——输入法在 Shift 抬起那一刻翻转
+    /// 内部状态，而相当一部分第三方输入法不把这个状态同步给系统的 IMM32 读数，
+    /// 只能靠这个动作自己推断（见 <see cref="InputStateWatcher.OnSoloShift"/>）。
+    /// </summary>
+    internal event Action? SoloShiftReleased;
+
+    private bool _shiftSolo;
+
+    private static bool IsShift(uint vk) => vk is 0xA0 or 0xA1 or 0x10;
+
     public KeyboardHook() => _proc = HookProc;
 
     public bool Installed => _hook != IntPtr.Zero;
@@ -40,6 +52,11 @@ public sealed class KeyboardHook : IDisposable
             {
                 if (_down.Add(info.vkCode))
                 {
+                    // Shift 是否算"单独按下"：按下那一刻只有它自己在按着。Alt+Shift、
+                    // Ctrl+Shift 这类组合在按下瞬间就能排除；Shift 按住期间再碰任何
+                    // 别的键（比如 Shift+字母）也会在下面把标志作废。
+                    _shiftSolo = IsShift(info.vkCode) && _down.Count == 1;
+
                     if (IsSwitchCandidate(info.vkCode))
                     {
                         try { SwitchKeyDown?.Invoke(InputState.Current()); } catch { }
@@ -103,6 +120,15 @@ public sealed class KeyboardHook : IDisposable
             else if (msg is NativeMethods.WM_KEYUP or NativeMethods.WM_SYSKEYUP)
             {
                 _down.Remove(info.vkCode);
+                if (IsShift(info.vkCode))
+                {
+                    bool solo = _shiftSolo && _down.Count == 0;
+                    _shiftSolo = false;
+                    if (solo)
+                    {
+                        try { SoloShiftReleased?.Invoke(); } catch { }
+                    }
+                }
             }
         }
         return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -120,6 +146,9 @@ public sealed class KeyboardHook : IDisposable
         return vk switch
         {
             0x20 => ctrl || win || alt,
+            // Caps Lock：不少第三方输入法（小狼毫默认、搜狗等可选）拿它当中英切换键，
+            // 也让观察窗口开起来——读数规范的照常报，不规范的走 Shift 推断兜底。
+            0x14 => true,
             _ => vk is 0xA0 or 0xA1 or 0x10
                       or 0xA2 or 0xA3 or 0x11
                       or 0xA4 or 0xA5 or 0x12
