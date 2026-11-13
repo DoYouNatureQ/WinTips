@@ -2551,6 +2551,14 @@ ULONGLONG g_lastShowTick;
 bool g_clipIntentActive;
 TipKind g_clipIntentKind = kCopy;
 
+// The clipboard sequence number at the last update seen. MMC hosts - Device
+// Manager, services.msc, any mmc.exe console - broadcast WM_CLIPBOARDUPDATE at
+// startup without changing the clipboard at all, and only when the clipboard
+// already holds content. The message is a phantom: the sequence number does
+// not move, so comparing it here filters the phantom out without touching the
+// intent path below, which only real updates can satisfy anyway.
+DWORD g_clipboardSeq;
+
 // Hook thread only, and only as an auto-repeat filter: a key-down for a key
 // that is already in here is the keyboard repeating, not a new press. It is
 // deliberately not used to answer "is Ctrl down" - a key-up the hook never sees
@@ -4427,6 +4435,13 @@ void HandlePoll(TipKind kind, bool state) {
 }
 
 void HandleClipboardUpdate() {
+    DWORD seq = GetClipboardSequenceNumber();
+    if (seq == g_clipboardSeq) {
+        // Content did not change - a phantom update, see g_clipboardSeq.
+        return;
+    }
+    g_clipboardSeq = seq;
+
     if (g_clipIntentActive) {
         g_clipIntentActive = false;
         if (g_hwnd) {
@@ -4779,6 +4794,9 @@ DWORD WINAPI UiThreadProc(LPVOID) {
     }
 
     AddClipboardFormatListener(g_hwnd);
+    // Baseline for the phantom-update filter: everything the listener reports
+    // is judged against the sequence number as of registration.
+    g_clipboardSeq = GetClipboardSequenceNumber();
 
     // Session-wide keyboard capture that does not go through the hook. It has
     // to be undone on the way out as well: Windhawk unloads a mod inside the

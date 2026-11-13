@@ -49,6 +49,15 @@ public partial class OsdWindow : Window
 
     public event Action? ClipboardUpdated;
 
+    /// <summary>
+    /// 上一次剪贴板更新的序号，注册监听时取基线。MMC 宿主程序（设备管理器、
+    /// services.msc 等一切 mmc.exe 控制台）启动时会向所有剪贴板监听窗口广播
+    /// WM_CLIPBOARDUPDATE，但剪贴板内容根本没有变——序号不动。只在剪贴板里
+    /// 已有内容时才现形，正好撞上"有旧内容就弹卡"的回退路径。序号不变即视为
+    /// 幻影消息，在这里拦掉，不让它消耗按键意图或触发非键盘复制提示。
+    /// </summary>
+    private uint _clipboardSeq;
+
     private int _clipCount;
     private bool _countIncreased;
 
@@ -233,6 +242,8 @@ public partial class OsdWindow : Window
 
         src.AddHook(WndProc);
         NativeMethods.AddClipboardFormatListener(hwnd);
+        // 幻影消息过滤的基线：注册之后送来的每条消息都以此刻的序号为准。
+        _clipboardSeq = NativeMethods.GetClipboardSequenceNumber();
     }
 
     protected override void OnClosed(EventArgs e)
@@ -253,7 +264,13 @@ public partial class OsdWindow : Window
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == NativeMethods.WM_CLIPBOARDUPDATE)
+        {
+            // 序号没动 = 内容没变，MMC 等程序启动时的幻影广播，直接吞掉。
+            uint seq = NativeMethods.GetClipboardSequenceNumber();
+            if (seq == _clipboardSeq) { handled = true; return IntPtr.Zero; }
+            _clipboardSeq = seq;
             ClipboardUpdated?.Invoke();
+        }
         else if (msg == NativeMethods.WM_DISPLAYCHANGE || msg == NativeMethods.WM_SETTINGCHANGE)
         {
             RefreshTarget();
