@@ -26,21 +26,26 @@ internal static class UpdateChecker
     /// <summary>发现新版本时触发；可能来自后台线程，订阅方需自行调度回 UI 线程。</summary>
     public static event Action? Changed;
 
-    public static bool IsPackaged
-    {
-        get
-        {
-            try { _ = Windows.ApplicationModel.Package.Current.Id; return true; }
-            catch { return false; }
-        }
-    }
-
     /// <summary>
     /// 启动后台检查。先用上次联网结果做纯本地比对（节流窗口内重启也能立即亮小红点），
     /// 再决定是否真的发起网络请求。settings 打开时也会以 delayMs=0 调它，命中节流就只是空跑。
     /// </summary>
     public static void StartBackgroundCheck(int delayMs = 30_000)
     {
+        // Store 打包版更新由商店负责：不做任何检查，也不碰 GitHub。顺手清掉可能残留的
+        // 缓存版本号（比如用户从独立版迁移到 Store 版），避免红点永远点不掉。
+        if (StartupManager.IsPackaged)
+        {
+            var s = AppSettings.Instance;
+            if (s.LatestReleaseVersion != null || s.LastUpdateCheckAt != null)
+            {
+                s.LatestReleaseVersion = null;
+                s.LastUpdateCheckAt = null;
+                s.Save();
+            }
+            return;
+        }
+
         var settings = AppSettings.Instance;
 
         if (settings.LatestReleaseVersion is { } cached && Compare(cached, AppInfo.Version) > 0)
@@ -49,7 +54,7 @@ internal static class UpdateChecker
             Changed?.Invoke();
         }
 
-        if (!settings.CheckForUpdates || IsPackaged) return;
+        if (!settings.CheckForUpdates) return;
         if (settings.LastUpdateCheckAt is { } at && DateTime.UtcNow - at < Throttle) return;
 
         _ = Task.Run(async () =>

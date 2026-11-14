@@ -238,7 +238,7 @@
                                            Margin="0,3,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                             <Border x:Name="SepB7" Height="1" Margin="0,3" Opacity="0.5"/>
-                            <StackPanel Margin="0,8">
+                            <StackPanel x:Name="UpdateRowPanel" Margin="0,8">
                                 <Grid>
                                     <TextBlock Text="{loc:Tr RowCheckUpdates}" FontSize="14" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="UpdateToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
@@ -266,7 +266,7 @@
                             </ToolTip>
                         </Hyperlink.ToolTip>
                         <Run x:Name="VersionRun" Text="V0.0"/>
-                    </Hyperlink><Run Text="&#160;·&#160;"/><Hyperlink NavigateUri="https://github.com/DoYouNatureQ/WinTips/releases" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}"><Run Text="{loc:Tr GetLatestVersion}"/><InlineUIContainer BaselineAlignment="Top"><Ellipse x:Name="UpdateDot" Width="7" Height="7" Fill="#E5484D" Margin="4,1,0,0" Visibility="Collapsed"/></InlineUIContainer></Hyperlink>
+                    </Hyperlink><Run x:Name="FooterSepRun" Text="&#160;·&#160;"/><Hyperlink x:Name="ReleasesLink" NavigateUri="https://github.com/DoYouNatureQ/WinTips/releases" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}"><Run Text="{loc:Tr GetLatestVersion}"/><InlineUIContainer BaselineAlignment="Top"><Ellipse x:Name="UpdateDot" Width="7" Height="7" Fill="#E5484D" Margin="4,1,0,0" Visibility="Collapsed"/></InlineUIContainer></Hyperlink>
                 </TextBlock>
             </Grid>
         </ScrollViewer>

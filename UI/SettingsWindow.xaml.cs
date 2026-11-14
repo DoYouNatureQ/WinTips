@@ -55,6 +55,15 @@ public partial class SettingsWindow : Window
             UpdateChecker.Changed -= OnUpdateCheckChanged;
         };
 
+        // Store 打包版的更新走商店，GitHub 检查相关的设置项与页脚链接一并移除。
+        if (StartupManager.IsPackaged)
+        {
+            SepB7.Visibility = Visibility.Collapsed;
+            UpdateRowPanel.Visibility = Visibility.Collapsed;
+            FooterText.Inlines.Remove(FooterSepRun);
+            FooterText.Inlines.Remove(ReleasesLink);
+        }
+
         // 打开设置页时顺手补一次检查：命中 24h 节流就是空跑，没命中则后台查完后红点会亮起来。
         ApplyUpdateDot();
         UpdateChecker.StartBackgroundCheck(0);
