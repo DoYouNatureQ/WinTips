@@ -53,6 +53,15 @@ public sealed class AppSettings
 
     public bool WelcomeShown { get; set; }
 
+    /// <summary>独立版启动后后台检查 GitHub Releases 是否有新版本（24h 节流，Store 打包版忽略此项）。</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>上次成功查询到 Releases API 的时间（UTC），用于 24 小时节流。</summary>
+    public DateTime? LastUpdateCheckAt { get; set; }
+
+    /// <summary>上次查询到的远程版本号。比本地新则设置页脚注亮小红点；追平后清空。</summary>
+    public string? LatestReleaseVersion { get; set; }
+
     public string Language { get; set; } = "System";
 
     public string UiFont { get; set; } = "";

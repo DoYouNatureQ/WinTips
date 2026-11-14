@@ -483,6 +483,19 @@ public static class Loc
             "获取最新版本", "取得最新版本", "Get latest version",
             "Neueste Version laden", "最新版を入手", "Скачать последнюю версию",
             "Obtener la última versión", "Obter a última versão");
+        Add("RowCheckUpdates",
+            "检查更新", "檢查更新", "Check for updates",
+            "Nach Updates suchen", "更新を確認", "Проверять обновления",
+            "Buscar actualizaciones", "Verificar atualizações");
+        Add("RowCheckUpdatesDesc",
+            "启动后每天最多查询一次 GitHub Releases，发现新版本时在下方「获取最新版本」旁点亮小红点。除此之外不联网。",
+            "啟動後每天最多查詢一次 GitHub Releases，發現新版本時在下方「取得最新版本」旁亮起小紅點。除此之外不連網。",
+            "Queries GitHub Releases at most once a day after launch; when a new version is found, a red dot lights up next to \"Get latest version\" below. No other network access.",
+            "Prüft nach dem Start höchstens einmal täglich GitHub Releases; bei einer neuen Version leuchtet unten neben \"Neueste Version laden\" ein roter Punkt. Keine weiteren Netzwerkzugriffe.",
+            "起動後 1 日 1 回まで GitHub Releases を確認し、新しいバージョンがあれば下の「最新版を入手」の横に赤い点を表示します。それ以外は通信しません。",
+            "После запуска запрашивает GitHub Releases не чаще одного раза в сутки; при новой версии рядом с «Скачать последнюю версию» появится красная точка. Других обращений к сети нет.",
+            "Consulta GitHub Releases como máximo una vez al día tras iniciarse; si hay una versión nueva, se ilumina un punto rojo junto a «Obtener la última versión». Sin otras conexiones.",
+            "Consulta o GitHub Releases no máximo uma vez por dia após iniciar; se houver uma versão nova, um ponto vermelho acende ao lado de «Obter a última versão». Sem outras conexões.");
     }
 
     private static void Add(

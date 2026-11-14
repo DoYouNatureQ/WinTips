@@ -137,6 +137,10 @@ public partial class App : Application
             if (e.Args.Contains("--settings")) ShowSettings();
 
             ShowWelcomeIfFirstRun(settings);
+
+            // 独立版新版本检查：延迟 30 秒后台查 GitHub Releases，失败静默。
+            // Store 打包版与用户关闭开关时内部会自行跳过。
+            UpdateChecker.StartBackgroundCheck();
         }));
     }
 

@@ -47,11 +47,17 @@ public partial class SettingsWindow : Window
 
         Loc.Changed += RefreshValueLabels;
         ThemeHelper.Changed += OnSystemThemeChanged;
+        UpdateChecker.Changed += OnUpdateCheckChanged;
         Closed += (_, _) =>
         {
             Loc.Changed -= RefreshValueLabels;
             ThemeHelper.Changed -= OnSystemThemeChanged;
+            UpdateChecker.Changed -= OnUpdateCheckChanged;
         };
+
+        // 打开设置页时顺手补一次检查：命中 24h 节流就是空跑，没命中则后台查完后红点会亮起来。
+        ApplyUpdateDot();
+        UpdateChecker.StartBackgroundCheck(0);
     }
 
     private void OnSystemThemeChanged()
@@ -76,6 +82,11 @@ public partial class SettingsWindow : Window
     private void LegacyClose_Click(object sender, RoutedEventArgs e) => Close();
 
     private void ApplyVersionText() => VersionRun.Text = $"WinTips {AppInfo.DisplayVersion}";
+
+    private void OnUpdateCheckChanged() => Dispatcher.InvokeAsync(ApplyUpdateDot);
+
+    private void ApplyUpdateDot() =>
+        UpdateDot.Visibility = UpdateChecker.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
 
     private void RefreshValueLabels()
     {
@@ -143,6 +154,7 @@ public partial class SettingsWindow : Window
         LoadPlacement();
         FocusMonitorToggle.IsChecked = s.TipFollowFocus;
         StartupToggle.IsChecked = StartupManager.IsEnabled();
+        UpdateToggle.IsChecked = AppSettings.Instance.CheckForUpdates;
         LangCombo.ItemsSource = Loc.Options;
         SyncLanguageUi();
         RefreshPlacementUi();
@@ -325,6 +337,9 @@ public partial class SettingsWindow : Window
 
         StartupToggle.Checked += (_, _) => ApplyStartup(true);
         StartupToggle.Unchecked += (_, _) => ApplyStartup(false);
+
+        UpdateToggle.Checked += (_, _) => Save(v => v.CheckForUpdates = true);
+        UpdateToggle.Unchecked += (_, _) => Save(v => v.CheckForUpdates = false);
 
         LangSystemToggle.Checked += (_, _) =>
         {
