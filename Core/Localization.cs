@@ -479,6 +479,10 @@ public static class Loc
             "关闭", "關閉", "Close",
             "Schließen", "閉じる", "Закрыть",
             "Cerrar", "Fechar");
+        Add("GetLatestVersion",
+            "获取最新版本", "取得最新版本", "Get latest version",
+            "Neueste Version laden", "最新版を入手", "Скачать последнюю версию",
+            "Obtener la última versión", "Obter a última versão");
     }
 
     private static void Add(

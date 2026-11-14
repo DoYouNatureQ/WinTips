@@ -93,6 +93,9 @@ Chinese/English mode.
   the two startup entries.
 - Insert is event-based: Windows keeps no global Insert state, and only a bare
   Insert counts (with Ctrl or Shift held it is a copy or a paste).
+- Copy, paste and cut are keyed to Ctrl (+ Shift), never to combos that also
+  hold **Win**: Win+Ctrl+V opens the Volume Mixer, Win+Ctrl+C toggles color
+  filters, and none of those should read as clipboard actions.
 - An **exclusive-fullscreen** game covers the card, since that mode owns the
   display pipeline. Borderless and windowed games are fine.
 - Behind an **elevated window** the backdrop grab comes back black, so that tip

@@ -4,7 +4,7 @@
 // @name:zh-CN      WinTips 键盘状态提示
 // @description     Shows a Win11-style floating OSD for Caps/Num/Scroll Lock, Insert and copy/paste/cut
 // @description:zh-CN 按下大写/数字/滚动锁定、Insert 或复制/粘贴/剪切时弹出 Win11 质感的浮窗提示
-// @version         1.6.0
+// @version         1.6.2
 // @author          DoYouNatureQ
 // @github          https://github.com/DoYouNatureQ
 // @homepage        https://github.com/DoYouNatureQ/WinTips
@@ -27,9 +27,11 @@ programs and no system functions are hooked.
 of the nearest screen edge — a padlock that rotates and bounces, the state in
 words, an accent bar. **Ctrl+C / V / X**, plus the classic **Ctrl+Insert**,
 **Shift+Insert** and **Shift+Delete**, show a check mark or scissors with a `×N`
-badge counting consecutive actions. **Win+Space**, **Ctrl+Shift**, **Alt+Shift**
-and **Shift** inside an IME show a globe with the input language or the
-Chinese/English mode.
+badge counting consecutive actions. **Win+Space**, **Ctrl+Shift**,
+**Alt+Shift** and **Shift** inside an IME show a globe with the input language
+or the Chinese/English mode; **Caps Lock** works too when the IME is set to
+toggle with it. IMEs that never report their mode to the system (a good number
+of third-party builds) are tracked by the solo-Shift gesture instead.
 
 ![Light theme, frosted card over a wallpaper](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-acrylic-light-en.png)
 
@@ -96,6 +98,9 @@ Chinese/English mode.
   the two startup entries.
 - Insert is event-based: Windows keeps no global Insert state, and only a bare
   Insert counts (with Ctrl or Shift held it is a copy or a paste).
+- Copy, paste and cut are keyed to Ctrl (+ Shift), never to combos that also
+  hold **Win**: Win+Ctrl+V opens the Volume Mixer, Win+Ctrl+C toggles color
+  filters, and none of those should read as clipboard actions.
 - An **exclusive-fullscreen** game covers the card, since that mode owns the
   display pipeline. Borderless and windowed games are fine.
 - Behind an **elevated window** the backdrop grab comes back black, so that tip
@@ -234,7 +239,7 @@ complete corresponding source under the GPL.
     Chinese/English mode after Shift inside an IME. Off by default: unless you
     switch often and on purpose, it shows up more often than it helps.
   $description:zh-CN: >-
-    Win+Space、Ctrl+Shift、Alt+Shift 换输入语言，或输入法内按 Shift 切中英文时，浮窗显示当前状态。默认关闭：除非确实经常刻意切换，否则它出现得比帮到你的次数多。
+    Win+Space、Ctrl+Shift、Alt+Shift 换输入语言，或输入法内按 Shift 切中英文时，浮窗显示当前状态。第三方输入法不上报模式时改按「Shift 单独按下并抬起」推断（连按两次净变化为零则不提示）。默认关闭：除非确实经常刻意切换，否则它出现得比帮到你的次数多。
 - notifyLanguageOnWindowSwitch: true
   $name: Tip when switching windows
   $name:zh-CN: 切换窗口时提示输入状态
@@ -512,6 +517,11 @@ constexpr UINT WM_APP_QUIT = WM_APP + 2;
 // up the hook. Window message, handled on the UI thread.
 constexpr UINT WM_APP_LANGUAGE_WATCH = WM_APP + 7;
 constexpr UINT WM_APP_LANGUAGE_FOCUS = WM_APP + 8;  // a foreground change, per-window IME
+// Posted by the hook when Shift went down and up with no other key involved.
+// That gesture is the classic Chinese/English toggle of third-party IMEs, and
+// the IMEs that never answer WM_IME_CONTROL can only be tracked by watching
+// for it. Window message, handled on the UI thread.
+constexpr UINT WM_APP_SOLO_SHIFT = WM_APP + 9;
 
 constexpr UINT_PTR kTimerAnim = 1;
 constexpr UINT_PTR kTimerHold = 2;
@@ -528,6 +538,10 @@ constexpr UINT_PTR kThreadTimerProbe = 2;
 // The language watch: poll this often for this long after a switch key.
 constexpr int kInputPollMs = 50;
 constexpr int kInputWindowMs = 2000;
+
+// After a solo Shift release, how long the system read gets to reflect the
+// toggle before the inference below concludes the IME never reports it.
+constexpr int kInferGraceMs = 350;
 
 // The per-window focus watch is shorter: the restored language lands within the
 // first few samples after the switch, and the focus event already knows where
@@ -2455,8 +2469,11 @@ HWND FocusWindow() {
     return GetForegroundWindow();
 }
 
-// WM_IME_CONTROL's "get conversion mode" sub-command: IMEs all implement it,
-// but the SDK headers only ship the neighbouring values, so spell it out.
+// WM_IME_CONTROL's "get conversion mode" sub-command. The system IMEs answer
+// it reliably; a good number of third-party builds never do, and a few have
+// no default IME window to ask at all - that gap is what the solo-Shift
+// inference in the language watch is for. The SDK headers only ship the
+// neighbouring values, so spell it out.
 constexpr WPARAM kImeGetConversionMode = 0x0001;
 
 // Synchronous message with a short timeout: the target thread can be busy
@@ -2476,6 +2493,15 @@ int ReadConversionMode(HWND imeWnd) {
 // the mode only where the label makes sense.
 bool ChineseLayout(HKL hkl) {
     return PRIMARYLANGID(LOWORD((ULONG_PTR)hkl)) == LANG_CHINESE;
+}
+
+// The solo-Shift inference only applies to Chinese IME layouts: on the plain
+// "Chinese - US keyboard" Shift is just typing, and other IME families label
+// their modes with different words. ImmIsIME filters the IME-less layout out;
+// TSF-only IMEs answer ImmIsIME imperfectly, so any HKL carrying a device
+// number in the high word is let through as well.
+bool ChineseImeLayout(HKL hkl) {
+    return ChineseLayout(hkl) && (HIWORD((ULONG_PTR)hkl) != 0 || ImmIsIME(hkl));
 }
 
 InputState CurrentInputState() {
@@ -2564,6 +2590,11 @@ DWORD g_clipboardSeq;
 // deliberately not used to answer "is Ctrl down" - a key-up the hook never sees
 // (the secure desktop, an elevated window) would stay in here forever.
 bool g_vkDown[256];
+// Hook thread only: whether Shift was pressed with no other key already down
+// and nothing else pressed while it was held - the shape of a third-party
+// IME's Chinese/English toggle. Cleared by any other new key-down, completed
+// on the Shift key-up.
+bool g_shiftSolo;
 
 // The lock state itself, and the one place it is allowed to change.
 //
@@ -2640,6 +2671,18 @@ int g_inputTicks;
 bool g_inputHasLast;
 InputState g_inputLast;
 
+// Inference fallback for the IMEs that never answer WM_IME_CONTROL (a good
+// number of third-party builds don't): their Chinese/English state is tracked
+// by flipping this on every solo Shift release. Such IMEs sync the state
+// globally across windows, so the cache survives thread and window changes;
+// whenever the system read does answer, it re-seeds the cache. The one flaw
+// that follows: if the mod loads while the IME sits in English mode, the first
+// inferred report points the wrong way and corrects itself on the next flip.
+// UI thread only, here and below.
+bool g_inferNative = true;
+int g_hintCount;         // solo Shift releases inside the running watch
+ULONGLONG g_hintAt;      // when the last one landed, 0 = none pending
+
 // The last usable input state seen by either watch. The focus watch needs it as
 // its baseline: by the time the foreground event arrives, the window that just
 // lost focus is gone and its state can no longer be read. The language only
@@ -2660,6 +2703,10 @@ void StartInputWatch();
 void InputTick();
 void StartFocusWatch();
 void FocusInputTick();
+bool ModeTick(const InputState& now);
+bool InferTick();
+bool InferFlip();
+void OnSoloShift();
 
 // =============================================================================
 // DirectWrite text
@@ -3509,6 +3556,22 @@ bool ShiftDown() {
     return KeyDownNow(VK_LSHIFT) || KeyDownNow(VK_RSHIFT);
 }
 
+bool IsShiftVk(DWORD vk) {
+    return vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT;
+}
+
+// Hook thread only. g_vkDown is an auto-repeat filter, not a held-key table -
+// a key-up the hook never sees leaves a stale entry in it - but for the
+// solo-Shift gesture a stale entry can only suppress a hint, never fake one.
+bool AnyOtherKeyDown(DWORD vk) {
+    for (int i = 0; i < 256; i++) {
+        if (i != (int)vk && g_vkDown[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool AltDown() {
     return KeyDownNow(VK_LMENU) || KeyDownNow(VK_RMENU);
 }
@@ -3538,6 +3601,11 @@ bool SwitchCandidate(DWORD vk) {
         case VK_RMENU:
         case VK_LWIN:
         case VK_RWIN:
+        // Caps Lock: several third-party IMEs (Weasel by default, Sogou as an
+        // option) toggle Chinese/English with it, so it opens the watch too -
+        // IMEs that report the mode get it read, the rest ride the Shift
+        // inference.
+        case VK_CAPITAL:
             return true;
         default:
             return false;
@@ -3549,19 +3617,27 @@ bool SwitchCandidate(DWORD vk) {
 // reports VK_INSERT too, and the E0 prefix is the only thing marking the real
 // Insert key: without this check, every 0 on the numpad would raise an Insert
 // card - or a copied/pasted one under Ctrl/Shift.
+//
+// A Win held alongside Ctrl never means the clipboard: Win+Ctrl+V opens the
+// Volume Mixer and Win+Ctrl+C toggles color filters, so with Win down every
+// clipboard answer becomes -1. The early return on the legacy branch matters:
+// falling through would let Shift+Insert land on the bare-Insert answer and
+// raise the wrong card. Ctrl+Shift+V (paste without formatting) stays a paste
+// - Shift is still allowed, Win is not.
 int TipKindForVk(DWORD vk, bool extended, bool ctrl, bool shift) {
     if (vk == VK_INSERT && !extended) {
         return -1;
     }
+    const bool win = WinDown();
     int kind = LegacyClipKindFromVk(vk, ctrl, shift);
     if (kind >= 0) {
-        return kind;
+        return win ? -1 : kind;
     }
     kind = KindFromVk(vk);
     if (kind >= 0) {
         return kind;
     }
-    return ctrl ? ClipKindFromVk(vk) : -1;
+    return ctrl && !win ? ClipKindFromVk(vk) : -1;
 }
 
 // Which capture path is reporting. Two paths can see the same press; one path
@@ -4708,6 +4784,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_APP_LANGUAGE_WATCH:
             StartInputWatch();
             return 0;
+        case WM_APP_SOLO_SHIFT:
+            OnSoloShift();
+            return 0;
         case WM_APP_LANGUAGE_FOCUS:
             StartFocusWatch();
             return 0;
@@ -5105,6 +5184,8 @@ void StopInputWatch() {
         KillTimer(g_hwnd, kTimerInput);
     }
     g_inputHasLast = false;
+    g_hintCount = 0;
+    g_hintAt = 0;
 }
 
 void StartInputWatch() {
@@ -5136,6 +5217,25 @@ void StartInputWatch() {
     // switch key during a watch should do.
     g_inputWatching = true;
     SetTimer(g_hwnd, kTimerInput, kInputPollMs, nullptr);
+}
+
+// A solo Shift landed (the hook saw Shift go down alone and come up alone):
+// the classic third-party IME toggle, happening right now. Arm the same watch
+// the switch keys use - it was probably already running from the Shift key-
+// down, which makes its baseline pre-toggle - and remember the release so
+// ModeTick can infer the flip when the system read stays silent about it.
+void OnSoloShift() {
+    if (!g_settings.notify[kLanguage]) {
+        return;
+    }
+    InputState now = CurrentInputState();
+    if (!now.Usable() || !ChineseImeLayout(now.hkl)) {
+        return;
+    }
+    g_hintCount++;
+    StartInputWatch();
+    g_hintAt = GetTickCount64();
+    Wh_Log(L"solo shift hint #%d", g_hintCount);
 }
 
 void InputTick() {
@@ -5181,26 +5281,99 @@ void InputTick() {
         return;
     }
 
-    if (now.HasIme() && g_inputLast.HasIme()) {
-        if (now.IsNative() == g_inputLast.IsNative()) {
-            g_inputLast = now;
-            return;
-        }
-        bool native = now.IsNative();
-        g_inputLast = now;
-        HandleLanguageTip(native ? 1 : 2, nullptr);
-        StopInputWatch();
+    if (ModeTick(now)) {
+        // Settled: reported, still waiting on the inference grace, or nothing
+        // to do. The baseline was updated by whoever settled it.
         return;
+    }
+
+    g_inputLast = now;
+}
+
+// The IME-mode half of the switch watch, split out once it grew a second
+// signal source: the system read (IMM32 conversion mode) first, and - for the
+// third-party IMEs that never answer that question - the solo-Shift gesture
+// second. Returns true when this sample is settled.
+bool ModeTick(const InputState& now) {
+    if (now.HasIme()) {
+        if (g_inputLast.HasIme()) {
+            if (now.IsNative() == g_inputLast.IsNative()) {
+                // The read lives but says nothing new: the cache still
+                // follows it, then the Shift gesture gets its turn below.
+                g_inferNative = now.IsNative();
+                return InferTick();
+            }
+            bool native = now.IsNative();
+            g_inputLast = now;
+            g_inferNative = native;
+            HandleLanguageTip(native ? 1 : 2, nullptr);
+            StopInputWatch();
+            return true;
+        }
+
+        // The baseline never read a mode (the thread was busy at the switch
+        // key) but this sample did. A solo Shift landing meanwhile plus a
+        // read that disagrees with the cache means the toggle happened during
+        // the unreadable stretch - report by the read. When they agree it is
+        // not a change: the cache follows reads whenever they answer.
+        if (g_hintCount > 0 && now.IsNative() != g_inferNative) {
+            bool native = now.IsNative();
+            g_inputLast = now;
+            g_inferNative = native;
+            HandleLanguageTip(native ? 1 : 2, nullptr);
+            StopInputWatch();
+            return true;
+        }
+
+        g_inputLast = now;
+        g_inferNative = now.IsNative();
+        return InferTick();
     }
 
     if (g_inputLast.HasIme()) {
         // The baseline had an IME mode and this sample has none: the target
         // thread was probably busy and the 40 ms message timed out. Keep the
-        // baseline - overwriting it with "no IME" would silence Shift for good.
-        return;
+        // baseline - overwriting it with "no IME" would silence Shift for
+        // good. An IME that answered once will answer again, so no inference
+        // here either.
+        return true;
     }
 
-    g_inputLast = now;
+    // Neither the baseline nor this sample can read a mode: this IME does not
+    // answer WM_IME_CONTROL at all. A solo Shift has already flipped its
+    // state by now, so infer directly - there is no read to wait for.
+    if (g_hintCount > 0) {
+        return InferFlip();
+    }
+    return false;
+}
+
+// The read lives but did not move within the grace after a solo Shift: this
+// IME keeps its Chinese/English state to itself, so flip the tracked cache.
+bool InferTick() {
+    if (g_hintCount == 0) {
+        return false;
+    }
+    if (g_hintAt && GetTickCount64() - g_hintAt < kInferGraceMs) {
+        return true;
+    }
+    return InferFlip();
+}
+
+// Apply the pending solo-Shift releases to the cache and report the result.
+// Two releases net out to no change: settle silently.
+bool InferFlip() {
+    bool native = g_inferNative;
+    if (g_hintCount % 2 == 1) {
+        native = !native;
+    }
+    g_inferNative = native;
+    StopInputWatch();
+    if (g_hintCount % 2 == 1) {
+        Wh_Log(L"ime mode change (inferred from shift) native=%d", (int)native);
+        HandleLanguageTip(native ? 1 : 2, nullptr);
+    }
+    return true;
 }
 
 // =============================================================================
@@ -5350,6 +5523,13 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             if (!g_vkDown[vk]) {
                 g_vkDown[vk] = true;
 
+                // Track the solo-Shift gesture: Shift pressed with nothing
+                // else already held, and no other key pressed while held.
+                // Any new key-down re-evaluates this, so a non-Shift press
+                // clears it and Shift+letter, Alt+Shift, Ctrl+Shift all drop
+                // out on their own.
+                g_shiftSolo = IsShiftVk(vk) && !AnyOtherKeyDown(vk);
+
                 // Start the language watch before anything else: a switch key
                 // is the only hint that the language may be about to change.
                 // Posted rather than called: finding the input state means
@@ -5389,6 +5569,18 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             }
         } else if (up) {
             g_vkDown[vk] = false;
+            if (IsShiftVk(vk)) {
+                // Shift released with nothing else held: a third-party IME
+                // flips Chinese/English at this exact moment. The IMEs whose
+                // read works get it from the watch; the rest are inferred.
+                bool solo = g_shiftSolo && !AnyOtherKeyDown(vk);
+                g_shiftSolo = false;
+                if (solo &&
+                    InterlockedCompareExchange(&g_languageEnabled, 1, 1) != 0 &&
+                    g_hwnd) {
+                    PostMessageW(g_hwnd, WM_APP_SOLO_SHIFT, 0, 0);
+                }
+            }
         }
     }
 

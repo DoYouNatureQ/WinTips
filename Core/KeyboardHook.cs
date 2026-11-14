@@ -62,8 +62,14 @@ public sealed class KeyboardHook : IDisposable
                         try { SwitchKeyDown?.Invoke(InputState.Current()); } catch { }
                     }
 
-                    bool ctrl = IsDown(0xA2, 0xA3, 0x11);
+                    // AltGr 到达为 Left Ctrl + Right Alt（钩子里是 0xA2 + 0xA5），
+                    // 此时字母是字符而非快捷键：捷克/波兰/匈牙利等布局 AltGr+V 输入
+                    // "@"，不排除就会在每次打邮箱时弹出粘贴提示。只看 Right Alt——
+                    // Ctrl+LeftAlt 在任何布局上都不是 AltGr，排除它会丢掉真实的
+                    // Ctrl+Alt+C（与模组版 ClipCtrlDown 同一取舍）。
+                    bool ctrl = IsDown(0xA2, 0xA3, 0x11) && !_down.Contains(0xA5);
                     bool shift = IsDown(0xA0, 0xA1, 0x10);
+                    bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
 
                     TipKind? kind = info.vkCode switch
                     {
@@ -72,9 +78,14 @@ public sealed class KeyboardHook : IDisposable
                         // cuts). Two of them land on keys this hook reports by
                         // itself, so the modifier is what tells a plain Insert —
                         // the overwrite toggle — apart from a copy or a paste.
-                        0x2D when ctrl => TipKind.Copy,
-                        0x2D when shift => TipKind.Paste,
-                        0x2E when shift && !ctrl => TipKind.Cut,
+                        // Win 按着时这一切都不算：Win+Ctrl+V 是音量混合器、
+                        // Win+Ctrl+C 是颜色滤镜，没有哪个剪贴板组合带 Win。
+                        0x2D when ctrl && !win => TipKind.Copy,
+                        0x2D when shift && !win => TipKind.Paste,
+                        0x2E when shift && !ctrl && !win => TipKind.Cut,
+                        // Win+Ctrl/Shift+Insert 被上面挡掉后不能落进下面的裸 Insert
+                        // 分支——那会把一个非组合键当成改写键弹出提示。直接吞掉。
+                        0x2D when win && (ctrl || shift) => null,
                         0x14 => TipKind.CapsLock,
                         0x90 => TipKind.NumLock,
                         0x91 => TipKind.ScrollLock,
@@ -85,7 +96,7 @@ public sealed class KeyboardHook : IDisposable
                         0x2D when (info.flags & NativeMethods.LLKHF_EXTENDED) != 0 => TipKind.Insert,
                         _ => null,
                     };
-                    if (kind == null && ctrl)
+                    if (kind == null && ctrl && !win)
                     {
                         kind = info.vkCode switch
                         {

@@ -512,6 +512,7 @@ internal static partial class NativeMethods
     public const int VK_SHIFT = 0x10;
     public const int VK_CONTROL = 0x11;
     public const int VK_DELETE = 0x2E;
+    public const int VK_RMENU = 0xA5;
 
     public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     public const uint WINEVENT_OUTOFCONTEXT = 0x0000;

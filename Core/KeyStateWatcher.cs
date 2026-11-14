@@ -207,6 +207,12 @@ internal sealed class KeyStateWatcher : IDisposable
         // 而钩子也是在字母键 keydown 那一刻看 Ctrl 在不在，两边的判定天然一致。
         bool ctrl = IsDown(NativeMethods.VK_CONTROL);
         bool shift = IsDown(NativeMethods.VK_SHIFT);
+        // AltGr 以 Left Ctrl + Right Alt 到达，此时字母是字符而非快捷键（AltGr+V 输入
+        // "@"）：Right Alt 按着时 Ctrl 不算剪贴板修饰键，与钩子路径同一取舍。
+        bool altGr = IsDown(NativeMethods.VK_RMENU);
+        // 带着 Win 的组合不是剪贴板操作（Win+Ctrl+V 是音量混合器、Win+Ctrl+C 是颜色
+        // 滤镜），与钩子路径同样排除。
+        bool win = IsDown(0x5B) || IsDown(0x5C);
 
         for (int i = 0; i < ClipCombos.Length; i++)
         {
@@ -215,7 +221,8 @@ internal sealed class KeyStateWatcher : IDisposable
             _clipDown[i] = down;
             if (!edge) continue;
 
-            bool combo = ClipCombos[i].NeedCtrl ? ctrl : shift && !ctrl;
+            bool clipCtrl = ctrl && !altGr;
+            bool combo = ClipCombos[i].NeedCtrl ? clipCtrl && !win : shift && !clipCtrl && !win;
             if (!combo) continue;
 
             // 钩子活着（前台级别判错、保护进程没真提权）时它会先报，这里按采样区间
