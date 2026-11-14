@@ -65,7 +65,7 @@ public partial class SettingsWindow : Window
         }
 
         // 打开设置页时顺手补一次检查：命中 24h 节流就是空跑，没命中则后台查完后红点会亮起来。
-        ApplyUpdateDot();
+        ApplyUpdateState();
         UpdateChecker.StartBackgroundCheck(0);
     }
 
@@ -92,10 +92,18 @@ public partial class SettingsWindow : Window
 
     private void ApplyVersionText() => VersionRun.Text = $"WinTips {AppInfo.DisplayVersion}";
 
-    private void OnUpdateCheckChanged() => Dispatcher.InvokeAsync(ApplyUpdateDot);
+    private void OnUpdateCheckChanged() => Dispatcher.InvokeAsync(ApplyUpdateState);
 
-    private void ApplyUpdateDot() =>
-        UpdateDot.Visibility = UpdateChecker.HasUpdate ? Visibility.Visible : Visibility.Collapsed;
+    private void ApplyUpdateState()
+    {
+        bool hasUpdate = UpdateChecker.HasUpdate;
+        UpdateDot.Visibility = hasUpdate ? Visibility.Visible : Visibility.Collapsed;
+
+        // 只有成功联网查过至少一次才敢说"已是最新版本"；结果出来前保持
+        // "获取最新版本"，避免打开设置页瞬间（检查尚未返回）闪一下假状态。
+        bool checkedOnce = AppSettings.Instance.LastUpdateCheckAt is not null;
+        ReleasesLinkRun.Text = Loc.T(hasUpdate || !checkedOnce ? "GetLatestVersion" : "AlreadyLatest");
+    }
 
     private void RefreshValueLabels()
     {
@@ -104,6 +112,7 @@ public partial class SettingsWindow : Window
         UpdateTipScaleText(TipScaleSlider.Value);
         if (StartupHint.Visibility == Visibility.Visible) ShowStartupHint(_lastStartupResult);
         RebuildFontChoices();
+        ApplyUpdateState();
     }
 
     private void ApplyTheme()
@@ -133,7 +142,7 @@ public partial class SettingsWindow : Window
         LblBehavior.Foreground = secondary;
 
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK8b, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK8b, SepK8c, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6, SepB7 })
             sep.Background = divider;
     }
 

@@ -483,6 +483,10 @@ public static class Loc
             "获取最新版本", "取得最新版本", "Get latest version",
             "Neueste Version laden", "最新版を入手", "Скачать последнюю версию",
             "Obtener la última versión", "Obter a última versão");
+        Add("AlreadyLatest",
+            "已是最新版本", "已是最新版本", "Up to date",
+            "Bereits aktuell", "最新バージョンです", "Уже последняя версия",
+            "Ya está actualizado", "Já está atualizado");
         Add("RowCheckUpdates",
             "检查更新", "檢查更新", "Check for updates",
             "Nach Updates suchen", "更新を確認", "Проверять обновления",

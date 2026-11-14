@@ -24,107 +24,80 @@ programs and no system functions are hooked.
 of the nearest screen edge — a padlock that rotates and bounces, the state in
 words, an accent bar. **Ctrl+C / V / X**, plus the classic **Ctrl+Insert**,
 **Shift+Insert** and **Shift+Delete**, show a check mark or scissors with a `×N`
-badge counting consecutive actions. **Win+Space**, **Ctrl+Shift**, **Alt+Shift**
-and **Shift** inside an IME show a globe with the input language or the
-Chinese/English mode.
+badge counting consecutive actions. **Win+Space**, **Ctrl+Shift**,
+**Alt+Shift** and **Shift** inside an IME show a globe with the input language
+or the Chinese/English mode; IMEs that never report their mode to the system
+(a good number of third-party builds) are tracked by the solo-Shift gesture
+instead.
 
 ![Light theme, frosted card over a wallpaper](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-acrylic-light-en.png)
 
 ## Features
 
-- **Blurred backdrop, live.** The card blurs what is behind it, the way the
-  Windows 11 OSD does, and keeps it refreshing (Windows 10 2004 and later) so
-  video and scrolling pages move through as a soft wash instead of a frozen
-  frame. *Card material → Solid* for an opaque card.
+- **Blurred backdrop, live.** The card blurs what is behind it and keeps it
+  refreshing (Windows 10 2004 and later), so video and scrolling pages move
+  through as a soft wash, with the same saturation lift the system acrylic
+  applies. *Card material → Solid* for an opaque card.
 - **Windows 11 look, Windows 10 included.** The mod paints the card itself, so
-  it needs neither system acrylic nor system rounded corners. Per-monitor DPI,
-  light/dark theme and the system accent color are followed. The labels are
-  drawn by DirectWrite — the same engine the native OSD uses — so they stay
-  smooth at every DPI scale, with a GDI+ fallback where dwrite.dll is not
-  available.
-- **Stays in front.** A fullscreen game, recorder or launcher overlay that covers
-  the card is noticed within 100 ms and the card is re-raised; when nothing
-  covers it, no other window is touched.
+  it needs neither system acrylic nor rounded corners. Per-monitor DPI,
+  light/dark theme and the accent color are followed; labels are drawn by
+  DirectWrite with a GDI+ fallback.
+- **Stays in front.** Anything covering the card is noticed within 100 ms and
+  the card is re-raised; when nothing covers it, no other window is touched.
 - **Hugs the taskbar.** Anchored to the taskbar's live edge, so an auto-hiding
-  bar never covers the card, and the card slides in from the nearest edge.
+  bar never covers the card.
 - **Clipboard aware.** Copy and cut tips wait for the clipboard to actually
-  change, so a `Ctrl+C` that interrupts a console app and a permanent
-  `Shift+Delete` stay quiet. Context-menu copies can be reported too.
-- **Works under elevated windows.** Windows stops calling the keyboard hook while
-  an administrator window has focus; the lock keys and Insert then come from Raw
-  Input, which is delivered per device and ignores both focus and integrity
-  level. A key-state poll stays behind it for anything Raw Input cannot see, such
-  as a remote or a virtual keyboard. See below for what does not work there.
-- **Light on resources.** Nothing runs while the card is hidden. A frame takes
-  about 0.5 ms at 100% size; the live backdrop and the topmost guard only tick
-  while a card is up.
+  change, so a stray `Ctrl+C` in a console app stays quiet. Context-menu copies
+  can be reported too.
+- **Works under elevated windows.** While an administrator window has focus,
+  the lock keys and Insert come from Raw Input, with a key-state poll behind it
+  for anything Raw Input cannot see.
+- **Light on resources.** Nothing runs while the card is hidden.
 
 ![Paste tip with an ×3 badge](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-paste-en.png)
 
 ## Settings
 
-- **Tips** — Caps Lock, Num Lock, Scroll Lock, Insert, Copy, Paste and Cut, each
-  on or off. *Also notify non-keyboard copies* adds context-menu and in-app
-  copies; *Show the ×N count badge* hides the badge on the copy/paste/cut cards
-  when turned off.
-- **Input language & Chinese/English tip** — off by default; shows the globe card
-  after a language switch. Set it back to off if it fires more often than it
-  helps. *Tip when switching windows* adds the same card for the input state a
-  window restores as it takes focus — the case Windows' "Let me use a different
-  input method for each app window" option creates.
-- **Behaviour** — *Display duration* 500–10000 ms; *Animation speed* 100 is
-  normal (300 ms), 0 disables it; *Skip while a fullscreen app is in front*.
-- **Placement** — *Vertical* above the taskbar or below the top edge,
-  *Horizontal* left, center or right, *Show on* the active window's display
-  (default), the mouse's display or the primary one, plus pixel offsets. The
-  taskbar edge is tracked live.
-- **Look** — *Theme* follow Windows, dark or light; *Card material* acrylic or
-  solid; *Tint opacity* 20–90% (55% by default, acrylic only); *Blur radius*
-  0–40 px; *Accent color* `#RRGGBB`, empty for the system accent; *Card size*
-  60–200%, gap to the screen edge unchanged.
-- **Language** — language of the text on the card: Follow Windows (eight UI
-  languages built in, English for anything else) or pin one.
+- **Tips** — Caps Lock, Num Lock, Scroll Lock, Insert, Copy, Paste and Cut,
+  each on or off. *Also notify non-keyboard copies*; *Show the ×N count badge*.
+- **Input language & Chinese/English tip** — off by default. *Tip when
+  switching windows* covers Windows' "Let me use a different input method for
+  each app window" option.
+- **Behaviour** — display duration 500–10000 ms; animation speed (100 is
+  normal, 0 disables it); skip while a fullscreen app is in front.
+- **Placement** — vertical and horizontal anchors, which display to show on,
+  and pixel offsets; the taskbar edge is tracked live.
+- **Look** — theme, card material, tint opacity 20–90%, blur radius 0–40 px,
+  accent color `#RRGGBB`, card size 60–200%.
+- **Language** — the text on the card: follow Windows (eight UI languages
+  built in) or pin one.
 
 ## Things to know
 
-- Runs as a **tool mod**: it keeps working when Explorer restarts and never loads
-  into other processes. The standalone **WinTips.exe** does the same job and the
-  mod stays quiet while it runs, so both can be installed — but keep only one of
-  the two startup entries.
-- Insert is event-based: Windows keeps no global Insert state, and only a bare
-  Insert counts (with Ctrl or Shift held it is a copy or a paste).
+- Runs as a **tool mod**: never loads into other processes. The standalone
+  **WinTips.exe** does the same job and the mod stays quiet while it runs —
+  but keep only one of the two startup entries.
+- Insert is event-based; only a bare Insert counts (with Ctrl or Shift held it
+  is a copy or a paste).
 - Copy, paste and cut are keyed to Ctrl (+ Shift), never to combos that also
-  hold **Win**: Win+Ctrl+V opens the Volume Mixer, Win+Ctrl+C toggles color
-  filters, and none of those should read as clipboard actions.
-- An **exclusive-fullscreen** game covers the card, since that mode owns the
-  display pipeline. Borderless and windowed games are fine.
-- Behind an **elevated window** the backdrop grab comes back black, so that tip
-  falls back to a solid card. The language is still reported there, the IME mode
-  is not. Copy, paste and cut are not either: they need the key the hook is
-  denied, and Raw Input only answers for the lock keys and Insert.
-- The language card needs a keystroke to hang on, or a foreground change:
-  switching with the mouse from the language bar or an IME status window shows
-  nothing. Window switches are covered when Windows' per-window input method
-  option is on (a watch starts on the focus event); a mouse-driven language-bar
-  switch still is not, because it changes the input state behind the very
-  window that keeps its focus.
+  hold **Win**.
+- An **exclusive-fullscreen** game covers the card; borderless and windowed
+  games are fine.
+- Behind an **elevated window** the backdrop grab comes back black (solid card
+  fallback) and copy / paste / cut are not reported either.
+- The language card needs a keystroke or a window switch to hang on; switching
+  with the mouse from the language bar shows nothing.
 - The card is **left out of screen capture** while the live backdrop runs
-  (`WDA_EXCLUDEFROMCAPTURE`): screenshots, recordings, streams and screen sharing
-  don't show it. That is what keeps the live blur from feeding on itself. Pick
-  *Card material → Solid* if you want the card in a recording — it uses the
-  one-shot backdrop, which needs no exclusion.
+  (`WDA_EXCLUDEFROMCAPTURE`); pick *Card material → Solid* if you want it in a
+  recording.
 - Without the live-refresh capability the backdrop is a snapshot taken when the
-  card appeared; sliding in and following the taskbar still work, because the
-  grab includes a margin around the card.
+  card appeared.
 
 ## Compared to Lock Keys Notifier
 
-[Lock Keys Notifier](https://windhawk.net/mods/lock-keys-notifier) reports the
-same lock keys but aims elsewhere: it draws a configurable toast on a solid
-background, while this mod reproduces the native Windows 11 OSD and adds
-clipboard tips. Want to tune every pixel of the card — layouts, fonts, shadows,
-sounds? Lock Keys Notifier fits better. Want the native look or clipboard tips?
-This one.
+[Lock Keys Notifier](https://windhawk.net/mods/lock-keys-notifier) draws a
+configurable toast on a solid background — tune every pixel of it if you like.
+This mod reproduces the native Windows 11 OSD and adds clipboard tips.
 
 ## Links
 
@@ -135,5 +108,4 @@ This one.
 
 GPL-3.0-or-later, as the standalone WinTips app. The look and motion take
 reference from the LockWindow design in FluentFlyout (also GPL-3.0); the code
-here is an independent implementation, and redistributed versions must ship the
-complete corresponding source under the GPL.
+here is an independent implementation.

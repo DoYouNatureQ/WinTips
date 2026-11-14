@@ -266,7 +266,7 @@
                             </ToolTip>
                         </Hyperlink.ToolTip>
                         <Run x:Name="VersionRun" Text="V0.0"/>
-                    </Hyperlink><Run x:Name="FooterSepRun" Text="&#160;·&#160;"/><Hyperlink x:Name="ReleasesLink" NavigateUri="https://github.com/DoYouNatureQ/WinTips/releases" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}"><Run Text="{loc:Tr GetLatestVersion}"/><InlineUIContainer BaselineAlignment="Top"><Ellipse x:Name="UpdateDot" Width="7" Height="7" Fill="#E5484D" Margin="4,1,0,0" Visibility="Collapsed"/></InlineUIContainer></Hyperlink>
+                    </Hyperlink><Run x:Name="FooterSepRun" Text="&#160;·&#160;"/><Hyperlink x:Name="ReleasesLink" NavigateUri="https://github.com/DoYouNatureQ/WinTips/releases" RequestNavigate="Hyperlink_RequestNavigate" TextDecorations="{x:Null}"><Run x:Name="ReleasesLinkRun"/><InlineUIContainer BaselineAlignment="Top"><Ellipse x:Name="UpdateDot" Width="7" Height="7" Fill="#E5484D" Margin="4,1,0,0" Visibility="Collapsed"/></InlineUIContainer></Hyperlink>
                 </TextBlock>
             </Grid>
         </ScrollViewer>
