@@ -64,9 +64,10 @@ public partial class SettingsWindow : Window
             FooterText.Inlines.Remove(ReleasesLink);
         }
 
-        // 打开设置页时顺手补一次检查：命中 24h 节流就是空跑，没命中则后台查完后红点会亮起来。
+        // 打开设置页时强制检查一次（绕过 24h 节流；CheckForUpdates 关闭时不查）。
+        // 已有检查在跑或刚查完也安全：_busy 防并发，结果落盘即刷新红点。
         ApplyUpdateState();
-        UpdateChecker.StartBackgroundCheck(0);
+        UpdateChecker.StartBackgroundCheck(0, bypassThrottle: true);
     }
 
     private void OnSystemThemeChanged()

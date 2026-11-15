@@ -5,8 +5,9 @@ namespace WinTips.Core;
 
 /// <summary>
 /// 独立版（安装包 / 便携版）的新版本检查。
-/// 只访问 GitHub Releases API 拿 tag_name，不带任何遥测；失败完全静默，
-/// 24 小时节流。Store 打包版由商店负责更新，直接跳过。
+/// 只访问 GitHub Releases API 拿 tag_name，不带任何遥测；失败完全静默。
+/// 启动时后台检查（24 小时节流），设置页每次打开时再强制检查一次。
+/// Store 打包版由商店负责更新，直接跳过。
 /// </summary>
 internal static class UpdateChecker
 {
@@ -28,9 +29,10 @@ internal static class UpdateChecker
 
     /// <summary>
     /// 启动后台检查。先用上次联网结果做纯本地比对（节流窗口内重启也能立即亮小红点），
-    /// 再决定是否真的发起网络请求。settings 打开时也会以 delayMs=0 调它，命中节流就只是空跑。
+    /// 再决定是否真的发起网络请求。settings 打开时以 bypassThrottle=true 调它，
+    /// 跳过 24h 节流强制联网查一次（CheckForUpdates 关闭时仍然尊重用户开关不查）。
     /// </summary>
-    public static void StartBackgroundCheck(int delayMs = 30_000)
+    public static void StartBackgroundCheck(int delayMs = 30_000, bool bypassThrottle = false)
     {
         // Store 打包版更新由商店负责：不做任何检查，也不碰 GitHub。顺手清掉可能残留的
         // 缓存版本号（比如用户从独立版迁移到 Store 版），避免红点永远点不掉。
@@ -55,7 +57,7 @@ internal static class UpdateChecker
         }
 
         if (!settings.CheckForUpdates) return;
-        if (settings.LastUpdateCheckAt is { } at && DateTime.UtcNow - at < Throttle) return;
+        if (!bypassThrottle && settings.LastUpdateCheckAt is { } at && DateTime.UtcNow - at < Throttle) return;
 
         _ = Task.Run(async () =>
         {
