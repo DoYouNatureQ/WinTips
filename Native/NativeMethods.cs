@@ -492,6 +492,18 @@ internal static partial class NativeMethods
     [DllImport("kernel32.dll")]
     public static extern IntPtr GetCurrentProcess();
 
+    /// <summary>
+    /// 把进程工作集收缩到最小（min/max 传 -1 即「清空工作集」）。空闲时省下任务管理器
+    /// 里的占用数字；被换出的页下次访问时按需缺页回来，代价是一次短暂的软页错误。
+    /// </summary>
+    [DllImport("kernel32.dll")]
+    private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize,
+        IntPtr dwMaximumWorkingSetSize);
+
+    /// <summary>收缩本进程的工作集（由 <see cref="Core.MemoryTrim"/> 在空闲时调用）。</summary>
+    public static void EmptyWorkingSet() =>
+        SetProcessWorkingSetSize(GetCurrentProcess(), new IntPtr(-1), new IntPtr(-1));
+
     [DllImport("advapi32.dll", SetLastError = true)]
     public static extern bool OpenProcessToken(IntPtr hProcess, uint dwDesiredAccess, out IntPtr phToken);
 

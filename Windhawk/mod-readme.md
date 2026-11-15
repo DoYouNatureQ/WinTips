@@ -27,8 +27,8 @@ words, an accent bar. **Ctrl+C / V / X**, plus the classic **Ctrl+Insert**,
 badge counting consecutive actions. **Win+Space**, **Ctrl+Shift**,
 **Alt+Shift** and **Shift** inside an IME show a globe with the input language
 or the Chinese/English mode; IMEs that never report their mode to the system
-(a good number of third-party builds) are tracked by the solo-Shift gesture
-instead.
+(a good number of third-party builds) can be tracked by the solo-Shift
+gesture instead, behind an optional setting that is off by default.
 
 ![Light theme, frosted card over a wallpaper](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-acrylic-light-en.png)
 
@@ -62,7 +62,8 @@ instead.
   each on or off. *Also notify non-keyboard copies*; *Show the ×N count badge*.
 - **Input language & Chinese/English tip** — off by default. *Tip when
   switching windows* covers Windows' "Let me use a different input method for
-  each app window" option.
+  each app window" option; *Infer Chinese/English from Shift* is an opt-in
+  fallback for IMEs that never report their mode.
 - **Behaviour** — display duration 500–10000 ms; animation speed (100 is
   normal, 0 disables it); skip while a fullscreen app is in front.
 - **Placement** — vertical and horizontal anchors, which display to show on,
@@ -87,6 +88,10 @@ instead.
   fallback) and copy / paste / cut are not reported either.
 - The language card needs a keystroke or a window switch to hang on; switching
   with the mouse from the language bar shows nothing.
+- The *Infer Chinese/English from Shift* fallback has no way to check itself:
+  when the mode is also changed by other means (Caps Lock, the IME's status
+  bar), the card can stay one toggle out of sync until the system reports a
+  switch again. Leave it off unless your IME never reports its mode.
 - The card is **left out of screen capture** while the live backdrop runs
   (`WDA_EXCLUDEFROMCAPTURE`); pick *Card material → Solid* if you want it in a
   recording.

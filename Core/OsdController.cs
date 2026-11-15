@@ -34,6 +34,13 @@ internal sealed class OsdController
     public void PreWarm() => Window.PreWarm();
 
     /// <summary>
+    /// 卡片或它的前置状态（剪贴板合并窗口期）是否在场。空闲收缩（<see cref="MemoryTrim"/>）
+    /// 靠它判断「UI 上没有任何东西」。WPF 的 IsVisible 在 Show 后、隐藏动画期间都是 true，
+    /// 所以这里不会在卡片淡出 halfway 时误判空闲。
+    /// </summary>
+    public bool IsBusyShowing => _clipPending.IsEnabled || (_window?.IsVisible ?? false);
+
+    /// <summary>
     /// 锁定键的显示入口。状态由 <see cref="LockState"/> 统一给出，这里不再自己去问系统。
     /// </summary>
     /// <remarks>

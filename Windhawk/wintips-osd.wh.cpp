@@ -30,8 +30,8 @@ words, an accent bar. **Ctrl+C / V / X**, plus the classic **Ctrl+Insert**,
 badge counting consecutive actions. **Win+Space**, **Ctrl+Shift**,
 **Alt+Shift** and **Shift** inside an IME show a globe with the input language
 or the Chinese/English mode; IMEs that never report their mode to the system
-(a good number of third-party builds) are tracked by the solo-Shift gesture
-instead.
+(a good number of third-party builds) can be tracked by the solo-Shift
+gesture instead, behind an optional setting that is off by default.
 
 ![Light theme, frosted card over a wallpaper](https://raw.githubusercontent.com/DoYouNatureQ/WinTips/main/Windhawk/preview/osd-acrylic-light-en.png)
 
@@ -65,7 +65,8 @@ instead.
   each on or off. *Also notify non-keyboard copies*; *Show the ×N count badge*.
 - **Input language & Chinese/English tip** — off by default. *Tip when
   switching windows* covers Windows' "Let me use a different input method for
-  each app window" option.
+  each app window" option; *Infer Chinese/English from Shift* is an opt-in
+  fallback for IMEs that never report their mode.
 - **Behaviour** — display duration 500–10000 ms; animation speed (100 is
   normal, 0 disables it); skip while a fullscreen app is in front.
 - **Placement** — vertical and horizontal anchors, which display to show on,
@@ -90,6 +91,10 @@ instead.
   fallback) and copy / paste / cut are not reported either.
 - The language card needs a keystroke or a window switch to hang on; switching
   with the mouse from the language bar shows nothing.
+- The *Infer Chinese/English from Shift* fallback has no way to check itself:
+  when the mode is also changed by other means (Caps Lock, the IME's status
+  bar), the card can stay one toggle out of sync until the system reports a
+  switch again. Leave it off unless your IME never reports its mode.
 - The card is **left out of screen capture** while the live backdrop runs
   (`WDA_EXCLUDEFROMCAPTURE`); pick *Card material → Solid* if you want it in a
   recording.
@@ -207,9 +212,11 @@ here is an independent implementation.
   $description: >-
     Shows the input language after Win+Space, Ctrl+Shift or Alt+Shift, and the
     Chinese/English mode after Shift inside an IME. Off by default: unless you
-    switch often and on purpose, it shows up more often than it helps.
+    switch often and on purpose, it shows up more often than it helps. For IMEs
+    that never report their mode, a separate setting below can infer it from
+    the Shift gesture.
   $description:zh-CN: >-
-    Win+Space、Ctrl+Shift、Alt+Shift 换输入语言，或输入法内按 Shift 切中英文时，浮窗显示当前状态。第三方输入法不上报模式时改按「Shift 单独按下并抬起」推断（连按两次净变化为零则不提示）。默认关闭：除非确实经常刻意切换，否则它出现得比帮到你的次数多。
+    Win+Space、Ctrl+Shift、Alt+Shift 换输入语言，或输入法内按 Shift 切中英文时，浮窗显示当前状态。第三方输入法不上报模式时，可在下方开启「由 Shift 推断中英文状态」。默认关闭：除非确实经常刻意切换，否则它出现得比帮到你的次数多。
 - notifyLanguageOnWindowSwitch: true
   $name: Tip when switching windows
   $name:zh-CN: 切换窗口时提示输入状态
@@ -221,6 +228,22 @@ here is an independent implementation.
     card stays quiet anyway. Requires the input language tip above.
   $description:zh-CN: >-
     开启系统的「允许我为每个应用窗口使用不同输入法」后，切换到语言或中英文状态与之前不同的窗口时也弹出提示。没开该系统选项时，切换窗口不会改变输入状态，浮窗自然不会出现。
+
+    需要同时开启上面的“输入法语言与中英文提示”。
+- notifyLanguageInferShift: false
+  $name: Infer Chinese/English from Shift
+  $name:zh-CN: 由 Shift 推断中英文状态
+  $description: >-
+    For IMEs that never report their Chinese/English mode to the system
+    (Weasel and a good number of third-party builds), treat a solo Shift
+    press-and-release as a toggle and report the opposite of the tracked
+    state. The guess survives across windows but has no way to self-correct:
+    if the mode is also changed by other means (Caps Lock, the IME's status
+    bar), it can stay backwards until a switch the system does report lands.
+    Turn this on only if your IME toggles on Shift and the card never follows
+    it otherwise. Requires the input language tip above.
+  $description:zh-CN: >-
+    对从不上报中英文模式的输入法（如小狼毫 Weasel 及不少第三方输入法），把「单独按下并抬起 Shift」当作一次中英文切换，按缓存状态的相反面提示（连按两次净变化为零则不提示）。推断无法自我纠正：Caps Lock、输入法状态栏等其他途径切换模式后，推断可能一直反向，直到下一次被系统上报的切换碰巧纠正。仅当你的输入法确实用 Shift 切换、且不开此项时卡片完全不跟随时再开启。
 
     需要同时开启上面的“输入法语言与中英文提示”。
 - displayMs: 2000
@@ -551,6 +574,9 @@ struct Settings {
     bool notify[kKindCount] = {true, true, true, true,
                                true, true, true, false}; // language tip off
     bool notifyLanguageOnWindowSwitch = true;
+    // Solo-Shift inference for IMEs that never report their mode. Off: the
+    // guess can drift backwards with no way to notice, so it is opt-in.
+    bool notifyLanguageInferShift = false;
     bool notifyAnyCopy = true;
     bool countBadge = true; // ×N badge on copy/paste/cut cards (issue #7304)
     int displayMs = 2000;
@@ -666,6 +692,8 @@ void LoadSettings() {
     s.notify[kLanguage] = Wh_GetIntSetting(L"notifyLanguage") != 0;
     s.notifyLanguageOnWindowSwitch =
         Wh_GetIntSetting(L"notifyLanguageOnWindowSwitch") != 0;
+    s.notifyLanguageInferShift =
+        Wh_GetIntSetting(L"notifyLanguageInferShift") != 0;
 
     s.displayMs = Clamp(Wh_GetIntSetting(L"displayMs"), 500, 10000);
     s.animationPercent = Clamp(Wh_GetIntSetting(L"animationPercent"), 0, 300);
@@ -2669,15 +2697,21 @@ InputState g_inputLast;
 
 // Inference fallback for the IMEs that never answer WM_IME_CONTROL (a good
 // number of third-party builds don't): their Chinese/English state is tracked
-// by flipping this on every solo Shift release. Such IMEs sync the state
-// globally across windows, so the cache survives thread and window changes;
-// whenever the system read does answer, it re-seeds the cache. The one flaw
-// that follows: if the mod loads while the IME sits in English mode, the first
-// inferred report points the wrong way and corrects itself on the next flip.
+// by flipping this on every solo Shift release, behind the (default-off)
+// notifyLanguageInferShift setting. Such IMEs sync the state globally across
+// windows, so the cache survives thread and window changes. A read that
+// actually moves re-seeds the cache; a read that merely answers without
+// moving never does, for re-seeding from a silent read would undo every
+// inferred flip on the next sample. There is no self-correction: once the
+// cache drifts (Caps Lock, the IME's status bar, a wrong first guess), it
+// stays backwards until a read change or an odd/even accident lands it on
+// the truth again - which is why the whole gesture is opt-in.
 // UI thread only, here and below.
 bool g_inferNative = true;
-int g_hintCount;         // solo Shift releases inside the running watch
-ULONGLONG g_hintAt;      // when the last one landed, 0 = none pending
+bool g_readMoved = false; // the system read was seen to actually follow a toggle
+int g_hintCount;          // solo Shift releases inside the running watch
+ULONGLONG g_hintAt;       // when the last one landed, 0 = none pending
+bool g_loggedReadLost = false; // logged "mode read lost" once for the running watch
 
 // The last usable input state seen by either watch. The focus watch needs it as
 // its baseline: by the time the foreground event arrives, the window that just
@@ -5182,6 +5216,9 @@ void StopInputWatch() {
     g_inputHasLast = false;
     g_hintCount = 0;
     g_hintAt = 0;
+    g_loggedReadLost = false;
+    // g_readMoved stays: once a read has proven itself, it stays trusted for
+    // the session - an IME's answering habits don't change mid-session.
 }
 
 void StartInputWatch() {
@@ -5221,7 +5258,8 @@ void StartInputWatch() {
 // down, which makes its baseline pre-toggle - and remember the release so
 // ModeTick can infer the flip when the system read stays silent about it.
 void OnSoloShift() {
-    if (!g_settings.notify[kLanguage]) {
+    if (!g_settings.notify[kLanguage] ||
+        !g_settings.notifyLanguageInferShift) {
         return;
     }
     InputState now = CurrentInputState();
@@ -5236,6 +5274,16 @@ void OnSoloShift() {
 
 void InputTick() {
     if (++g_inputTicks * kInputPollMs > kInputWindowMs) {
+        // Expiring with hints pending means this round can never report
+        // anything - the silent drop from GitHub issue #13. Leave one line
+        // showing the readout at expiry so the next such case is diagnosable.
+        if (g_hintCount > 0) {
+            Wh_Log(L"input watch timed out, drop %d shift hint(s), "
+                   L"last[hkl=%08llX tid=%u ime=%p cmode=%d]",
+                   g_hintCount,
+                   (unsigned long long)g_inputLast.hkl, g_inputLast.threadId,
+                   (void*)g_inputLast.imeWnd, g_inputLast.conversionMode);
+        }
         StopInputWatch();
         return;
     }
@@ -5288,31 +5336,44 @@ void InputTick() {
 
 // The IME-mode half of the switch watch, split out once it grew a second
 // signal source: the system read (IMM32 conversion mode) first, and - for the
-// third-party IMEs that never answer that question - the solo-Shift gesture
-// second. Returns true when this sample is settled.
+// third-party IMEs that never answer that question, and only when the
+// notifyLanguageInferShift setting is on - the solo-Shift gesture second.
+// Returns true when this sample is settled.
 bool ModeTick(const InputState& now) {
     if (now.HasIme()) {
         if (g_inputLast.HasIme()) {
             if (now.IsNative() == g_inputLast.IsNative()) {
-                // The read lives but says nothing new: the cache still
-                // follows it, then the Shift gesture gets its turn below.
-                g_inferNative = now.IsNative();
+                if (g_readMoved) {
+                    // The read has actually followed a toggle at least once:
+                    // trust it. Silence now means no change, so the Shift
+                    // gesture is worth nothing here - reporting the opposite
+                    // of a read this reliable would be wrong every time an
+                    // IME uses Ctrl (or nothing) for the mode toggle.
+                    return true;
+                }
+                // The read lives but has never been seen to move: this IME
+                // keeps its mode to itself. The Shift gesture gets its turn
+                // below, and the cache is left alone - re-seeding it from a
+                // read that cannot change would undo every inferred flip on
+                // the very next sample and pin the card to one wrong label.
                 return InferTick();
             }
             bool native = now.IsNative();
             g_inputLast = now;
             g_inferNative = native;
+            g_readMoved = true;
             HandleLanguageTip(native ? 1 : 2, nullptr);
             StopInputWatch();
             return true;
         }
 
         // The baseline never read a mode (the thread was busy at the switch
-        // key) but this sample did. A solo Shift landing meanwhile plus a
-        // read that disagrees with the cache means the toggle happened during
-        // the unreadable stretch - report by the read. When they agree it is
-        // not a change: the cache follows reads whenever they answer.
-        if (g_hintCount > 0 && now.IsNative() != g_inferNative) {
+        // key) but this sample did. Once the read has proven itself, a read
+        // that disagrees with the cache means the toggle happened during the
+        // unreadable stretch - report by the read. Before that proof the
+        // cache stays with the inference, and the Shift gesture decides.
+        if (g_hintCount > 0 && g_readMoved &&
+            now.IsNative() != g_inferNative) {
             bool native = now.IsNative();
             g_inputLast = now;
             g_inferNative = native;
@@ -5321,8 +5382,10 @@ bool ModeTick(const InputState& now) {
             return true;
         }
 
-        g_inputLast = now;
-        g_inferNative = now.IsNative();
+        if (g_readMoved) {
+            g_inputLast = now;
+            g_inferNative = now.IsNative();
+        }
         return InferTick();
     }
 
@@ -5331,14 +5394,38 @@ bool ModeTick(const InputState& now) {
         // thread was probably busy and the 40 ms message timed out. Keep the
         // baseline - overwriting it with "no IME" would silence Shift for
         // good. An IME that answered once will answer again, so no inference
-        // here either.
+        // here either - but not forever: GitHub issue #13 showed a TSF-only
+        // IME (WeChat IME) answering at the Shift moment and going silent
+        // right after, and the old code then sat out the full 2 s window and
+        // dropped the switch silently. With an unproven read, the pending
+        // Shift gesture wins once the grace is over; with a proven one, keep
+        // waiting - a reliable read going dark is most likely transient
+        // busy-ness, and a wrong flip costs more than another beat of wait.
+        if (!g_loggedReadLost) {
+            g_loggedReadLost = true;
+            Wh_Log(L"mode read lost: last[hkl=%08llX tid=%u ime=%p cmode=%d] "
+                   L"now[hkl=%08llX tid=%u ime=%p cmode=%d] hint=%d provenRead=%d",
+                   (unsigned long long)g_inputLast.hkl, g_inputLast.threadId,
+                   (void*)g_inputLast.imeWnd, g_inputLast.conversionMode,
+                   (unsigned long long)now.hkl, now.threadId,
+                   (void*)now.imeWnd, now.conversionMode,
+                   g_hintCount, (int)g_readMoved);
+        }
+
+        if (g_hintCount > 0 && !g_readMoved && g_hintAt &&
+            GetTickCount64() - g_hintAt > kInferGraceMs) {
+            Wh_Log(L"mode read not restored %lu ms after shift, infer fallback",
+                   (unsigned long)(GetTickCount64() - g_hintAt));
+            return InferFlip();
+        }
         return true;
     }
 
     // Neither the baseline nor this sample can read a mode: this IME does not
     // answer WM_IME_CONTROL at all. A solo Shift has already flipped its
-    // state by now, so infer directly - there is no read to wait for.
-    if (g_hintCount > 0) {
+    // state by now, so infer directly - there is no read to wait for. Hints
+    // only ever get armed when the inference setting is on.
+    if (g_hintCount > 0 && g_settings.notifyLanguageInferShift) {
         return InferFlip();
     }
     return false;
@@ -5359,6 +5446,11 @@ bool InferTick() {
 // Apply the pending solo-Shift releases to the cache and report the result.
 // Two releases net out to no change: settle silently.
 bool InferFlip() {
+    if (!g_settings.notifyLanguageInferShift) {
+        // The setting went off mid-watch: settle silently, no flip, no card.
+        StopInputWatch();
+        return true;
+    }
     bool native = g_inferNative;
     if (g_hintCount % 2 == 1) {
         native = !native;

@@ -124,6 +124,14 @@ public partial class App : Application
 
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
 
+        // 空闲内存收缩：UI 上没有任何窗口/卡片、闲满一个周期就 GC + 清工作集。
+        // 设置页关闭（重 UI 峰值刚落地）时额外补一次即时收缩。卡片的剪贴板合并
+        // 窗口期（还没显示但即将显示）由 OsdController.IsBusyShowing 单独覆盖。
+        MemoryTrim.Start(Dispatcher, () =>
+            _settings is not null ||
+            _osd.IsBusyShowing ||
+            Current.Windows.OfType<Window>().Any(w => w.IsVisible));
+
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
         {
             _osd?.PreWarm();
@@ -204,7 +212,11 @@ public partial class App : Application
             (k, s) => _osd!.ShowTest(k, s),
             s => _osd!.PreviewSize(s),
             s => _osd!.PreviewAppearance(s));
-        _settings.Closed += (_, _) => _settings = null;
+        _settings.Closed += (_, _) =>
+        {
+            _settings = null;
+            MemoryTrim.TrimSoon(Dispatcher);
+        };
         _settings.Show();
     }
 
