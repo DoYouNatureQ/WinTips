@@ -41,11 +41,15 @@
 
                 <Grid Grid.Row="1" Margin="0,20,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="348"/>
-                        <ColumnDefinition Width="18"/>
-                        <ColumnDefinition Width="*"/>
+                        <!-- 窄屏（宽度 < CompactThreshold）时由 code-behind 切成单列 -->
+                        <ColumnDefinition x:Name="ColCard1" Width="348"/>
+                        <ColumnDefinition x:Name="ColGap" Width="18"/>
+                        <ColumnDefinition x:Name="ColCard2" Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
+                        <!-- 行 2/3 仅窄屏单列模式使用，宽屏下无子元素自动塌缩 -->
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>

@@ -29,6 +29,11 @@ public partial class SettingsWindow : Window
 
     private const double PreferredWidth = 800;
 
+    // 低于该宽度时双列卡片装不下，切单列纵向堆叠（小屏 / 高缩放场景）。
+    private const double CompactWidthThreshold = 740;
+
+    private bool _compactLayout;
+
     private bool _glassApplied;
 
     public SettingsWindow(Action<TipKind, bool?>? showTest = null, Action<double>? previewSize = null,
@@ -308,6 +313,8 @@ public partial class SettingsWindow : Window
 
     private void WireEvents()
     {
+        SizeChanged += (_, _) => UpdateCompactLayout();
+
         CapsToggle.Checked += (_, _) => Save(v => v.ShowCapsLock = true);
         CapsToggle.Unchecked += (_, _) => Save(v => v.ShowCapsLock = false);
         NumToggle.Checked += (_, _) => Save(v => v.ShowNumLock = true);
@@ -549,6 +556,39 @@ public partial class SettingsWindow : Window
     }
 
     private void FitToScreen() => WindowFit.ClampToScreen(this, PreferredWidth);
+
+    private void UpdateCompactLayout()
+    {
+        bool compact = ActualWidth > 0 && ActualWidth < CompactWidthThreshold;
+        if (compact == _compactLayout) return;
+        _compactLayout = compact;
+
+        if (compact)
+        {
+            ColCard1.Width = new GridLength(1, GridUnitType.Star);
+            ColGap.Width = new GridLength(0);
+            ColCard2.Width = new GridLength(0);
+            Grid.SetColumn(LblBehavior, 0);
+            Grid.SetRow(LblBehavior, 2);
+            Grid.SetColumn(Card2, 0);
+            Grid.SetRow(Card2, 3);
+            Panel.Margin = new Thickness(16, 16, 16, 18);
+        }
+        else
+        {
+            ColCard1.Width = new GridLength(348);
+            ColGap.Width = new GridLength(18);
+            ColCard2.Width = new GridLength(1, GridUnitType.Star);
+            Grid.SetColumn(LblBehavior, 2);
+            Grid.SetRow(LblBehavior, 0);
+            Grid.SetColumn(Card2, 2);
+            Grid.SetRow(Card2, 1);
+            Panel.Margin = new Thickness(26, 20, 26, 22);
+        }
+
+        // 单列会让内容变高、实际尺寸变化，位置钳制重新排一次。
+        WindowFit.SchedulePositionClamp(this);
+    }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
     {
