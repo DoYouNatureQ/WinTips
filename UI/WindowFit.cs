@@ -11,11 +11,11 @@ internal static class WindowFit
 
     private const double MinimumHeight = 220;
 
-    private const double MinimumWidth = 620;
-
     public static void ClampToScreen(Window window, double preferredWidth)
     {
         var (width, height) = UsableSize(window);
+        // 宽度不设下限：小屏高缩放下可用宽度可能比任何"最小窗口宽度"都小，
+        // 硬兜底只会把窗口撑出屏幕（窄屏改由 SettingsWindow 的单列布局承接）。
         window.Width = Math.Min(preferredWidth, width);
         window.MaxHeight = height;
 
@@ -33,12 +33,12 @@ internal static class WindowFit
         var area = WorkArea(window);
         if (area.Width > 0 && area.Height > 0)
             return (
-                Math.Max(MinimumWidth, area.Width / area.Scale - EdgeMargin * 2),
+                Math.Max(0, area.Width / area.Scale - EdgeMargin * 2),
                 Math.Max(MinimumHeight, area.Height / area.Scale - EdgeMargin * 2));
 
         var work = SystemParameters.WorkArea;
         return (
-            Math.Max(MinimumWidth, work.Width - EdgeMargin * 2),
+            Math.Max(0, work.Width - EdgeMargin * 2),
             Math.Max(MinimumHeight, work.Height - EdgeMargin * 2));
     }
 
@@ -78,11 +78,14 @@ internal static class WindowFit
             double top = window.Top;
             if (double.IsNaN(left) || double.IsNaN(top)) return;
 
-            // 窗口整体收进工作区；比工作区还大时（MinimumWidth 兜底等）钉在左上。
-            double minLeft = workLeft;
-            double maxLeft = width >= workWidth ? minLeft : workLeft + workWidth - width;
-            double minTop = workTop;
-            double maxTop = height >= workHeight ? minTop : workTop + workHeight - height;
+            // 窗口整体收进工作区，四周留 EdgeMargin 不贴边；比工作区还大时
+            // （极端小屏兜底）钉在工作区左上，保证标题栏可见。
+            double minLeft = workLeft + EdgeMargin;
+            double maxLeft = workLeft + workWidth - EdgeMargin - width;
+            if (maxLeft < minLeft) maxLeft = minLeft;
+            double minTop = workTop + EdgeMargin;
+            double maxTop = workTop + workHeight - EdgeMargin - height;
+            if (maxTop < minTop) maxTop = minTop;
 
             double clampedLeft = Math.Min(Math.Max(left, minLeft), maxLeft);
             double clampedTop = Math.Min(Math.Max(top, minTop), maxTop);
