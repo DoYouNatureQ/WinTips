@@ -2466,6 +2466,7 @@ struct InputState {
     HKL hkl = nullptr;
     HWND imeWnd = nullptr;
     int conversionMode = -1; // -1 = no IME window, or it refused to answer
+    int openStatus = -1;     // -1 = not read (no IME window, or timeout)
 
     bool Usable() const {
         return hkl != nullptr;
@@ -2473,8 +2474,22 @@ struct InputState {
     bool HasIme() const {
         return imeWnd != nullptr && conversionMode >= 0;
     }
+    // Whether the IME is in a native (Chinese) input mode. Conversion mode alone
+    // can't tell: pure-TSF IMEs like WeType (微信输入法) keep
+    // IMC_GETCONVERSIONMODE constant across the Chinese/English toggle (issue
+    // #14) and flip IMC_GETOPENSTATUS instead (Chinese=1, English=0). Composite
+    // rule: when the open status can't be read, fall back to the legacy NATIVE
+    // bit; when it can, closed means English, and an open IME is native only if
+    // the NATIVE bit is set. Microsoft Pinyin (open always 1, cmode 0<->1) keeps
+    // walking the NATIVE bit; WeType (cmode always 1, open 0<->1) walks the open
+    // status. Don't trust the open status whenever cmode is 0: Microsoft
+    // Pinyin's English state is exactly cmode=0 with open still 1, and that
+    // would misread it as Chinese.
     bool IsNative() const {
-        return (conversionMode & IME_CMODE_NATIVE) != 0;
+        if (openStatus < 0) {
+            return (conversionMode & IME_CMODE_NATIVE) != 0;
+        }
+        return openStatus > 0 && (conversionMode & IME_CMODE_NATIVE) != 0;
     }
 };
 
@@ -2500,11 +2515,25 @@ HWND FocusWindow() {
 // neighbouring values, so spell it out.
 constexpr WPARAM kImeGetConversionMode = 0x0001;
 
+// WM_IME_CONTROL's "get open status" sub-command. The default IME window answers
+// it itself, so IMEs whose conversion mode never moves (WeType) still expose
+// their Chinese/English state through it.
+constexpr WPARAM kImeGetOpenStatus = 0x0005;
+
 // Synchronous message with a short timeout: the target thread can be busy
 // loading a level, and a language tip is never worth stalling the hook for.
 int ReadConversionMode(HWND imeWnd) {
     DWORD_PTR result = 0;
     if (!SendMessageTimeoutW(imeWnd, WM_IME_CONTROL, kImeGetConversionMode, 0,
+                             SMTO_ABORTIFHUNG, 40, &result)) {
+        return -1;
+    }
+    return (int)result;
+}
+
+int ReadOpenStatus(HWND imeWnd) {
+    DWORD_PTR result = 0;
+    if (!SendMessageTimeoutW(imeWnd, WM_IME_CONTROL, kImeGetOpenStatus, 0,
                              SMTO_ABORTIFHUNG, 40, &result)) {
         return -1;
     }
@@ -2550,6 +2579,7 @@ InputState CurrentInputState() {
         state.imeWnd = ImmGetDefaultIMEWnd(hwnd);
         if (state.imeWnd) {
             state.conversionMode = ReadConversionMode(state.imeWnd);
+            state.openStatus = ReadOpenStatus(state.imeWnd);
         }
     }
     return state;
@@ -5279,7 +5309,7 @@ void InputTick() {
         // showing the readout at expiry so the next such case is diagnosable.
         if (g_hintCount > 0) {
             Wh_Log(L"input watch timed out, drop %d shift hint(s), "
-                   L"last[hkl=%08llX tid=%u ime=%p cmode=%d]",
+                   L"last[hkl=%08llX tid=%u ime=%p cmode=%d open=%d]",
                    g_hintCount,
                    (unsigned long long)g_inputLast.hkl, g_inputLast.threadId,
                    (void*)g_inputLast.imeWnd, g_inputLast.conversionMode);
@@ -5403,12 +5433,13 @@ bool ModeTick(const InputState& now) {
         // busy-ness, and a wrong flip costs more than another beat of wait.
         if (!g_loggedReadLost) {
             g_loggedReadLost = true;
-            Wh_Log(L"mode read lost: last[hkl=%08llX tid=%u ime=%p cmode=%d] "
-                   L"now[hkl=%08llX tid=%u ime=%p cmode=%d] hint=%d provenRead=%d",
+            Wh_Log(L"mode read lost: last[hkl=%08llX tid=%u ime=%p cmode=%d open=%d] "
+                   L"now[hkl=%08llX tid=%u ime=%p cmode=%d open=%d] hint=%d provenRead=%d",
                    (unsigned long long)g_inputLast.hkl, g_inputLast.threadId,
                    (void*)g_inputLast.imeWnd, g_inputLast.conversionMode,
+                   g_inputLast.openStatus,
                    (unsigned long long)now.hkl, now.threadId,
-                   (void*)now.imeWnd, now.conversionMode,
+                   (void*)now.imeWnd, now.conversionMode, now.openStatus,
                    g_hintCount, (int)g_readMoved);
         }
 

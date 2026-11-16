@@ -98,6 +98,7 @@ internal static partial class NativeMethods
 
     public const uint WM_IME_CONTROL = 0x0283;
     public const int IMC_GETCONVERSIONMODE = 0x0001;
+    public const int IMC_GETOPENSTATUS = 0x0005;
 
     public const int IME_CMODE_NATIVE = 0x0001;
 

@@ -5,20 +5,34 @@ using WinTips.Native;
 
 namespace WinTips.Core;
 
-internal readonly record struct InputState(uint ThreadId, uint ProcessId, IntPtr Hkl, IntPtr ImeWnd, int ConversionMode)
+internal readonly record struct InputState(uint ThreadId, uint ProcessId, IntPtr Hkl, IntPtr ImeWnd, int ConversionMode, int OpenStatus)
 {
     public bool IsUsable => Hkl != IntPtr.Zero;
 
     public bool HasIme => ImeWnd != IntPtr.Zero && ConversionMode >= 0;
 
-    public bool IsNative => (ConversionMode & NativeMethods.IME_CMODE_NATIVE) != 0;
+    /// <summary>
+    /// 是否处于中文（_native_）输入模式。中英判定不能只看转换模式：微信输入法这类纯
+    /// TSF 输入法切中英文时 IMC_GETCONVERSIONMODE 恒定不变（issue #14），状态改在
+    /// IMC_GETOPENSTATUS 上精确翻转（中文=1、英文=0）。复合判定：
+    /// - 开启状态读不到（无 IME 窗口、消息超时）→ 退回只看转换模式的老判定；
+    /// - 读得到 → 关闭即英文；开着再看转换模式的 NATIVE 位。
+    /// 微软拼音（开启状态恒 1、转换模式 0↔1）照旧走 NATIVE 位；微信输入法（转换
+    /// 模式恒 1、开启状态 0↔1）走开启状态。两个应答习惯相反的输入法都判定正确。
+    /// 注意不能照抄"转换模式为 0 就信开启状态"的兜底：微软拼音的英文态恰是
+    /// cmode=0 且开启状态恒 1，那样会把它的英文态误判成中文。
+    /// </summary>
+    public bool IsNative =>
+        OpenStatus < 0
+            ? (ConversionMode & NativeMethods.IME_CMODE_NATIVE) != 0
+            : OpenStatus > 0 && (ConversionMode & NativeMethods.IME_CMODE_NATIVE) != 0;
 
     /// <summary>
-    /// 诊断用的一行状态：HKL、线程、IME 窗口、转换模式读数。排查"读数丢失"类
-    /// 问题（issue #13）时，靠它区分窗口不存在、消息超时和线程/HKL 变化。
+    /// 诊断用的一行状态：HKL、线程、IME 窗口、转换模式与开启状态读数。排查"读数丢失"
+    /// 类问题（issue #13、#14）时，靠它区分窗口不存在、消息超时和线程/HKL 变化。
     /// </summary>
     public string Describe() =>
-        $"hkl=0x{Hkl.ToInt64():X8} tid={ThreadId} ime=0x{ImeWnd.ToInt64():X} cmode={ConversionMode}";
+        $"hkl=0x{Hkl.ToInt64():X8} tid={ThreadId} ime=0x{ImeWnd.ToInt64():X} cmode={ConversionMode} open={OpenStatus}";
 
     public static InputState Current()
     {
@@ -32,7 +46,8 @@ internal readonly record struct InputState(uint ThreadId, uint ProcessId, IntPtr
         if (hkl == IntPtr.Zero) return default;
 
         IntPtr ime = NativeMethods.ImmGetDefaultIMEWnd(hwnd);
-        return new InputState(tid, pid, hkl, ime, ime == IntPtr.Zero ? -1 : ReadConversionMode(ime));
+        if (ime == IntPtr.Zero) return new InputState(tid, pid, hkl, IntPtr.Zero, -1, -1);
+        return new InputState(tid, pid, hkl, ime, ReadConversionMode(ime), ReadOpenStatus(ime));
     }
 
     /// <summary>
@@ -68,6 +83,26 @@ internal readonly record struct InputState(uint ThreadId, uint ProcessId, IntPtr
         {
             IntPtr ok = NativeMethods.SendMessageTimeoutW(imeWnd, NativeMethods.WM_IME_CONTROL,
                 (IntPtr)NativeMethods.IMC_GETCONVERSIONMODE, IntPtr.Zero,
+                NativeMethods.SMTO_ABORTIFHUNG, 40, out IntPtr result);
+            return ok == IntPtr.Zero ? -1 : result.ToInt32();
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>
+    /// 读取输入法开启状态。默认 IME 窗口自己应答这条消息，所以应答习惯稳定的输入法
+    /// （微软拼音恒 1）和不把中英状态同步进转换模式的输入法（微信输入法 0↔1）都能
+    /// 读到值；读不到记 -1，判定退回只看转换模式。
+    /// </summary>
+    private static int ReadOpenStatus(IntPtr imeWnd)
+    {
+        try
+        {
+            IntPtr ok = NativeMethods.SendMessageTimeoutW(imeWnd, NativeMethods.WM_IME_CONTROL,
+                (IntPtr)NativeMethods.IMC_GETOPENSTATUS, IntPtr.Zero,
                 NativeMethods.SMTO_ABORTIFHUNG, 40, out IntPtr result);
             return ok == IntPtr.Zero ? -1 : result.ToInt32();
         }
