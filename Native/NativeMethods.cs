@@ -487,6 +487,10 @@ internal static partial class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
 
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern bool QueryFullProcessImageNameW(IntPtr hProcess, uint dwFlags,
+        System.Text.StringBuilder lpExeName, ref uint lpdwSize);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CloseHandle(IntPtr hObject);
 

@@ -423,6 +423,11 @@ internal sealed class InputStateWatcher : IDisposable
 /// 窗，采样新前台的输入状态，与切换前最后一次读到的状态对比，真的变了才弹卡。系统没开
 /// 每窗口输入法时，切窗口不改变输入状态，这里自然安静；开了之后语言或中英文模式恢复成
 /// 另一个窗口的样子，才响一声。
+///
+/// 一个例外要主动压掉：点任务栏的输入指示器选语言。浮层抢一下前台再还给原窗口，本来
+/// 会被当成一次"输入状态恢复"弹卡——但那是用户亲手用鼠标选的，结果看得见，不该再多
+/// 提示一遍。识别方式：壳层表面（任务栏、TextInputHost 浮层）占用前台后短时间内回到
+/// 原窗口，视为任务栏交互，只重新采样不报变化。
 /// </remarks>
 internal sealed class ForegroundWatcher : IDisposable
 {
@@ -449,6 +454,21 @@ internal sealed class ForegroundWatcher : IDisposable
     private InputState _base;
     private bool _hasBase;
     private int _ticks;
+
+    /// <summary>
+    /// 壳层表面（任务栏、输入指示器浮层）最近一次占用前台的时刻，-1 表示不在壳层流程里。
+    /// </summary>
+    private long _shellAt = -1;
+
+    /// <summary>最近一个非壳层的前台窗口。任务是栏交互结束时前台会还给它，靠它认出"回来了"。</summary>
+    private IntPtr _appHwnd;
+
+    /// <summary>
+    /// 离开壳层表面后多久之内回到原窗口，仍算同一次任务栏交互。浮层是轻Dismiss关闭的，
+    /// 关闭、前台归还、语言落地之间隔着几十到几百毫秒，留足余量；超过它就是用户真的
+    /// 先点开浮层、又自己点去了别的程序，按正常前台切换处理。
+    /// </summary>
+    private const long ShellReturnMs = 1500;
 
     /// <summary>焦点切换让输入状态变了。第一个参数是新前台的完整状态，第二个是切换前的基准。</summary>
     public event Action<InputState, InputState>? InputStateRestored;
@@ -483,13 +503,99 @@ internal sealed class ForegroundWatcher : IDisposable
         if (!AppSettings.Instance.ShowLanguageTip || !AppSettings.Instance.ShowLanguageOnWindowSwitch)
             return;
 
+        // 任务栏/输入指示器浮层自己抢了前台：记下时刻，等它把前台还给原窗口。
+        // 浮层本身不参与语言提示——在它上面读到的输入状态是浮层进程自己的，没有意义。
+        if (IsShellSurface(hwnd))
+        {
+            _shellAt = EventTime.Now;
+            return;
+        }
+
+        // 离开浮层后短时间内回到原窗口：用户刚用鼠标亲手选完语言。结果就摆在
+        // 屏幕上，用户肯定看到了，不再多提示一遍（产品决策：任务栏点击切换语言
+        // 一律不弹卡）。清空基准让这一轮观察窗只重新采样、不报变化。
+        bool taskbarReturn = _shellAt >= 0
+            && EventTime.Now - _shellAt < ShellReturnMs
+            && hwnd == _appHwnd;
+        _shellAt = -1;
+        _appHwnd = hwnd;
+
+        if (taskbarReturn)
+        {
+            Diag.Write("taskbar language switch, suppress restore tip");
+            _base = _observed;
+            _hasBase = false;
+            _ticks = 0;
+            if (!_poll.IsEnabled) _poll.Start();
+            return;
+        }
+
         // 基准必须早于切换：此刻旧窗口已经让出前台，想读也读不到了。好在语言只会因为
-        // 按键（按键监听在喂 Observe）或焦点切换（这里自己采）而变，_observed 不会陈旧；
-        // 鼠标点语言栏切输入法是两边都覆盖不到的既有盲区，基准因此旧掉时最多白等一场。
+        // 按键（按键监听在喂 Observe）或焦点切换（这里自己采）而变，_observed 不会陈旧。
         _base = _observed;
         _hasBase = _hasObserved;
         _ticks = 0;
         if (!_poll.IsEnabled) _poll.Start();
+    }
+
+    /// <summary>
+    /// 前台窗口是不是壳层表面：任务栏（Shell_TrayWnd，含副屏任务栏）或输入指示器/
+    /// 触摸键盘浮层（TextInputHost.exe 托管的 CoreWindow）。开始菜单、搜索、操作中心
+    /// 虽然同为 CoreWindow 宿主，但进程不同，不算——它们打开再关闭不影响语言，
+    /// 混进来反而会吞掉紧随其后的正常恢复提示。
+    /// </summary>
+    private static bool IsShellSurface(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+
+        try
+        {
+            var cls = new System.Text.StringBuilder(64);
+            if (NativeMethods.GetClassNameW(hwnd, cls, cls.Capacity) <= 0) return false;
+
+            switch (cls.ToString())
+            {
+                case "Shell_TrayWnd":
+                case "Shell_SecondaryTrayWnd":
+                    return true;
+                case "Windows.UI.Core.CoreWindow":
+                    return IsProcess(hwnd, "TextInputHost.exe");
+                default:
+                    return false;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsProcess(IntPtr hwnd, string name)
+    {
+        try
+        {
+            uint pid = NativeMethods.GetWindowThreadProcessId(hwnd, out pid);
+            if (pid == 0) return false;
+
+            IntPtr proc = NativeMethods.OpenProcess(NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (proc == IntPtr.Zero) return false;
+            try
+            {
+                var path = new System.Text.StringBuilder(512);
+                uint size = (uint)path.Capacity;
+                if (!NativeMethods.QueryFullProcessImageNameW(proc, 0, path, ref size)) return false;
+                return string.Equals(System.IO.Path.GetFileName(path.ToString(0, (int)size)),
+                    name, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                NativeMethods.CloseHandle(proc);
+            }
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void Poll()
