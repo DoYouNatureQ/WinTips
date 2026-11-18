@@ -4,7 +4,7 @@
 // @name:zh-CN      WinTips 键盘状态提示
 // @description     Shows a Win11-style floating OSD for Caps/Num/Scroll Lock, Insert and copy/paste/cut
 // @description:zh-CN 按下大写/数字/滚动锁定、Insert 或复制/粘贴/剪切时弹出 Win11 质感的浮窗提示
-// @version         1.6.1
+// @version         1.6.2
 // @author          DoYouNatureQ
 // @github          https://github.com/DoYouNatureQ
 // @homepage        https://github.com/DoYouNatureQ/WinTips
@@ -39,8 +39,8 @@ gesture instead, behind an optional setting that is off by default.
 
 - **Blurred backdrop, live.** The card blurs what is behind it and keeps it
   refreshing (Windows 10 2004 and later), so video and scrolling pages move
-  through as a soft wash, with the same saturation lift the system acrylic
-  applies. *Card material → Solid* for an opaque card.
+  through as a soft wash, matching the standalone app's material. *Card
+  material → Solid* for an opaque card.
 - **Windows 11 look, Windows 10 included.** The mod paints the card itself, so
   it needs neither system acrylic nor rounded corners. Per-monitor DPI,
   light/dark theme and the accent color are followed; labels are drawn by
@@ -998,11 +998,9 @@ Theme CurrentTheme() {
         return t;
     }
 
-    // Slightly translucent so the card reads as a floating layer even though it
-    // is drawn by us rather than by the DWM backdrop material.
-    const BYTE alpha = 238;
-    t.surface = t.dark ? Color(alpha, 0x2B, 0x2B, 0x2B)
-                       : Color(alpha, 0xFB, 0xFB, 0xFB);
+    // Fully opaque, matching the standalone app's solid card (OsdSurface).
+    t.surface = t.dark ? Color(255, 0x2B, 0x2B, 0x2B)
+                       : Color(255, 0xFB, 0xFB, 0xFB);
     // Acrylic is a tint over the blurred backdrop. The alpha comes from the
     // tint opacity setting (20-90%, default 55), which is the same knob the
     // WinTips app exposes: low values keep the wallpaper visible through the
@@ -2288,28 +2286,10 @@ void BlurAxis(BYTE* bits, int width, int height, int radius, bool horizontal) {
     }
 }
 
-// DWM's acrylic lifts background saturation by about 1.25x on top of the blur
-// - that is most of why the system material reads "vivid" where a plain blurred
-// wash reads dull. Applied after blurring so the static grab, the live refresh
-// and the --shot harness all land on the same look. Fixed point: with
-// sat = 1.25 the per-channel result is (C*320 - lum) >> 8, where lum is 0.25 of
-// the luma times 256 (5/39/20 for B/G/R; they sum to exactly 64).
-void SaturateBackdrop(Surface& image) {
-    if (!image.bits) {
-        return;
-    }
-    for (int y = 0; y < image.height; y++) {
-        BYTE* row = (BYTE*)image.bits + (size_t)y * image.stride;
-        for (int x = 0; x < image.width; x++) {
-            BYTE* px = row + x * 4;
-            const int lum = px[0] * 5 + px[1] * 39 + px[2] * 20;
-            for (int c = 0; c < 3; c++) {
-                const int v = (px[c] * 320 - lum) >> 8;
-                px[c] = (BYTE)Clamp(v, 0, 255);
-            }
-        }
-    }
-}
+// No saturation lift on purpose: the standalone WinTips app paints the same
+// blur without one, and the two editions are meant to look alike. A 1.25x
+// lift was tried here and dropped - over dark wallpapers it brightened the
+// backdrop (grey 30 read as 37) and the card read thinner than the app's.
 
 void BlurBackdrop(Surface& image, int radius, int passes) {
     if (!image.bits || radius <= 0) {
@@ -2319,7 +2299,6 @@ void BlurBackdrop(Surface& image, int radius, int passes) {
         BlurAxis((BYTE*)image.bits, image.width, image.height, radius, true);
         BlurAxis((BYTE*)image.bits, image.width, image.height, radius, false);
     }
-    SaturateBackdrop(image);
 }
 
 // A screen copy of an elevated window comes back black without an error code,
@@ -2431,8 +2410,8 @@ void PaintCardBackground(Graphics& g, const GraphicsPath& card, float width,
 
     // The glass edge is lit from above and fades out towards the bottom: the
     // eye decides "this is a pane of glass" mostly from the boundary, and a
-    // border at one flat alpha reads like a sticker instead. Solid keeps the
-    // original flat border - there is no glass to catch the light.
+    // border at one flat alpha reads like a sticker instead. Solid matches the
+    // app's solid card: a plain filled surface with no outline at all.
     if (acrylic && !theme.highContrast) {
         LinearGradientBrush lit(
             PointF(0.0f, 0.0f), PointF(0.0f, height),
@@ -2442,7 +2421,7 @@ void PaintCardBackground(Graphics& g, const GraphicsPath& card, float width,
                        : Color(0x14, 0x00, 0x00, 0x00));
         Pen border(&lit, 1.0f);
         g.DrawPath(&border, &card);
-    } else {
+    } else if (acrylic) {
         Pen border(theme.border, 1.0f);
         g.DrawPath(&border, &card);
     }
@@ -3401,9 +3380,11 @@ void StartLiveCapture() {
     g_livePad = (int)std::lround((float)kLivePaddingDip *
                                  std::max(1.0f, g_scale));
     // Two blur passes need a wider radius to match the three-pass snapshot;
-    // 16 * 1.25 = 20, the same split the WinTips app makes.
+    // 16 * 1.25 = 20, the same split the WinTips app makes. The radius stays
+    // in screen pixels like the app's - it does not grow with display
+    // scaling, so both editions blur by the same physical amount.
     g_liveRadius = (int)std::lround((float)g_settings.blurRadius *
-                                    kLiveRadiusScale * std::max(1.0f, g_scale));
+                                    kLiveRadiusScale);
 
     g_liveWake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!g_liveWake) {
@@ -3928,7 +3909,10 @@ void RefreshBackdrop() {
         DwmFlush();
     }
 
-    int radius = (int)std::lround((float)g_settings.blurRadius * g_scale);
+    // Screen pixels, like the app's GlassBlurRadius: no display-scaling
+    // factor, so the blur depth matches the standalone edition on every
+    // monitor regardless of DPI.
+    int radius = g_settings.blurRadius;
     int pad = (int)std::lround((float)kStaticPaddingDip * std::max(1.0f, g_scale));
     HDC screen = GetDC(nullptr);
     CaptureBackdrop(screen, g_posX, g_posY, g_cardWidth, g_cardHeight, radius,

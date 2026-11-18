@@ -36,8 +36,8 @@ gesture instead, behind an optional setting that is off by default.
 
 - **Blurred backdrop, live.** The card blurs what is behind it and keeps it
   refreshing (Windows 10 2004 and later), so video and scrolling pages move
-  through as a soft wash, with the same saturation lift the system acrylic
-  applies. *Card material → Solid* for an opaque card.
+  through as a soft wash, matching the standalone app's material. *Card
+  material → Solid* for an opaque card.
 - **Windows 11 look, Windows 10 included.** The mod paints the card itself, so
   it needs neither system acrylic nor rounded corners. Per-monitor DPI,
   light/dark theme and the accent color are followed; labels are drawn by

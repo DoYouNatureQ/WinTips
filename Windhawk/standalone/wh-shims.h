@@ -94,6 +94,7 @@ static int Wh_GetIntSetting(const wchar_t* name, ...) {
         {L"notifyLanguage", 1},  {L"displayMs", 2000},
         {L"animationPercent", 100},
         {L"tipScale", 100},      {L"tintOpacity", 55},
+        {L"blurRadius", 16},
         {L"offsetX", 0},         {L"offsetY", 0},
         {L"suppressFullscreen", 0},
     };
