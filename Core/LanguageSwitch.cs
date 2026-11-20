@@ -482,11 +482,6 @@ internal sealed class ForegroundWatcher : IDisposable
 
     public void Start()
     {
-        // WinEvent 钩子没有 UnhookWinEvent 之外的手段回收，重复 Start 会把旧句柄
-        // 直接顶丢（既停不掉也关不掉）。和 KeyStateWatcher/RawInputWatcher 一样
-        // 加重入保护。
-        if (_hook != IntPtr.Zero) return;
-
         _hook = NativeMethods.SetWinEventHook(
             NativeMethods.EVENT_SYSTEM_FOREGROUND, NativeMethods.EVENT_SYSTEM_FOREGROUND,
             IntPtr.Zero, _proc, 0, 0,
@@ -579,8 +574,7 @@ internal sealed class ForegroundWatcher : IDisposable
     {
         try
         {
-            // 返回值是线程 ID，进程 ID 在 out 参数里——不能让返回值把它覆盖掉。
-            NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
+            uint pid = NativeMethods.GetWindowThreadProcessId(hwnd, out pid);
             if (pid == 0) return false;
 
             IntPtr proc = NativeMethods.OpenProcess(NativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);

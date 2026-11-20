@@ -1,5 +1,3 @@
-using System.Threading;
-using System.Threading.Tasks;
 using WinTips.Native;
 
 namespace WinTips.Core;
@@ -28,18 +26,8 @@ namespace WinTips.Core;
 /// </remarks>
 internal static class LockState
 {
-    /// <summary>
-    /// 同一个键在这个窗口内只放行一次。窗口只负责挡路径间的时间戳抖动，不是挡"人手多快"：
-    /// 一次按下在钩子与 Raw Input 两条路径上的时间戳实测完全一致，靠 <c>at &lt;= last</c> 就能
-    /// 挡住，窗口只需要覆盖毫秒级的抖动余量。曾经设过 200ms，理由是"人不可能那么快连按两
-    /// 次锁定键"——实测被推翻（快速点两下是真实存在的操作），窗口把第二次真实按下当成重复
-    /// 挡掉后，累加器翻一次、系统翻两次，状态从此反相。收窄到 50ms：人手连按两次锁定键的
-    /// 间隔远大于这个值，而路径间抖动到不了这个值。
-    /// </summary>
-    private const int SameKindWindowMs = 50;
-
-    /// <summary>被窗口挡下的上报要延迟校验，等前台程序把这次 keydown 处理完再读真实状态。</summary>
-    private const int VerifyDelayMs = 250;
+    /// <summary>同一个键在这个窗口内只放行一次。人不可能 200ms 内连按两次锁定键。</summary>
+    private const int SameKindWindowMs = 200;
 
     /// <summary>没有采样区间的调用方传这个值：只按按键时刻判定。</summary>
     private const long NoFloor = long.MinValue;
@@ -89,16 +77,7 @@ internal static class LockState
 
         lock (Gate)
         {
-            // 被窗口规则挡下的上报是唯一能造成反相的挡法（时间戳判定挡的是迟到重复，
-            // 采样区间挡的是钩子先报过的那一次，都不会漏真实按下），只有它值得校验。
-            long last = LastFired[index];
-            bool windowBlocked = since == NoFloor && at > last && at - last < SameKindWindowMs;
-
-            if (!Allow(kind, at, since, SameKindWindowMs))
-            {
-                if (windowBlocked) ScheduleVerify(kind, index, at);
-                return false;
-            }
+            if (!Allow(kind, at, since, SameKindWindowMs)) return false;
 
             On[index] = !On[index];
             on = On[index];
@@ -153,74 +132,12 @@ internal static class LockState
         if (at <= last) return false;
 
         // 两条路径对同一次按下的时刻本就该相等：钩子的 KBDLLHOOKSTRUCT.time 与 Raw Input
-        // 的 GetMessageTime 实测完全一致，所以 `at <= last` 那条才是跨路径去重的主力。这里
-        // 只留一个小窗口兜时间戳抖动；设大过（200ms），结果把人手快速连按的第二次真实按下
-        // 也挡了——见 <see cref="SameKindWindowMs"/> 的注释。剪贴板组合键传 0 跳过这条，
-        // 见 <see cref="AcceptClipboard"/>。
+        // 的 GetMessageTime 实测完全一致。留 200ms 是给路径间的抖动——人手不可能在 200ms
+        // 内连按两次同一个锁定键。剪贴板组合键传 0 跳过这条，见 <see cref="AcceptClipboard"/>。
         if (at - last < windowMs) return false;
 
         LastFired[index] = at;
         return true;
-    }
-
-    /// <summary>每个键一个在途校验标志：0 空闲，1 已安排。防止同键连续挡下时堆一堆重复校验。</summary>
-    private static readonly int[] VerifyPending = new int[8];
-
-    /// <summary>
-    /// 被窗口挡下的上报可能是重复，也可能是被吃掉的真实连按——从上报本身分辨不出来，
-    /// 只能延迟一会儿问系统。若真实状态和累加器不一致就静默拉回，把已经反相的状态救回来。
-    /// </summary>
-    private static void ScheduleVerify(TipKind kind, int index, long at)
-    {
-        if (Interlocked.Exchange(ref VerifyPending[index], 1) == 1) return;
-
-        Task.Delay(VerifyDelayMs).ContinueWith(_ =>
-        {
-            // Verify 里的 AttachThreadInput/GetKeyState 必须在有消息队列的线程上做——
-            // 和 Initialize 一样得在 UI 线程。ContinueWith 默认落在没有输入队列的线程池
-            // 线程上：Attach 要么失败（校验永远无效），要么读到与消息处理脱节的镜像，
-            // 把累加器"修正"成错值。派回 UI 线程再读。
-            var dispatcher = System.Windows.Application.Current?.Dispatcher;
-            if (dispatcher is null)
-            {
-                Interlocked.Exchange(ref VerifyPending[index], 0);
-                return;
-            }
-            dispatcher.BeginInvoke(
-                System.Windows.Threading.DispatcherPriority.Background,
-                new System.Action(() => Verify(kind, index, at)));
-        });
-    }
-
-    private static void Verify(TipKind kind, int index, long at)
-    {
-        try
-        {
-            // 启动基线用的同一套读法，但语义不同：那时读的是"按键之前的旧镜像"，这里
-            // 前台程序已把 keydown 处理完，镜像就是翻转后的真实态。读不到（前台提权、
-            // 受保护进程）只能维持累加器——好在那条链路上轮询是唯一上报，不容易错位。
-            bool? truth = TryReadFromForeground(kind);
-            if (truth is null) return;
-
-            lock (Gate)
-            {
-                if (On[index] != truth.Value)
-                {
-                    On[index] = truth.Value;
-                    // 校验确认了这次按下是真的：把它记入时间线，迟到的重复上报才继续挡得住。
-                    if (at > LastFired[index]) LastFired[index] = at;
-                    Diag.Write($"verify {kind} resync to {(truth.Value ? "on" : "off")}");
-                }
-                else
-                {
-                    Diag.Write($"verify {kind} ok");
-                }
-            }
-        }
-        finally
-        {
-            Interlocked.Exchange(ref VerifyPending[index], 0);
-        }
     }
 
     /// <summary>

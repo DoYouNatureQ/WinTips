@@ -387,66 +387,22 @@ public partial class TrayMenuWindow : Window
         Activate();
         InstallOutsideClickHook();
 
-        double menuW = ActualWidth, menuH = ActualHeight;
+        double scale = 1.0;
+        var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        if (source?.CompositionTarget != null)
+        {
+            double m = source.CompositionTarget.TransformToDevice.M11;
+            if (m > 0) scale = m;
+        }
         NativeMethods.GetCursorPos(out var cursor);
+        double cx = cursor.X / scale;
 
-        // 光标落在哪块显示器，菜单就归哪块管：Win11 每个显示器都有自己的任务栏，
-        // 在副屏任务栏上右键，菜单不能被钳回主屏。定位全程用物理像素、最后用
-        // SetWindowPos 一步落位，绕开 DIP 换算——窗口此刻被摆在 (-200000,-200000)，
-        // TransformToDevice 给出的是那块屏（甚至虚拟屏左上角所在屏）的缩放，不是
-        // 目标屏的，拿它除光标坐标在混合 DPI 下会系统性偏移。
-        var monitor = TaskbarInfo.GetMonitor(
-            NativeMethods.MonitorFromPoint(new NativeMethods.POINT { X = cursor.X, Y = cursor.Y },
-                NativeMethods.MONITOR_DEFAULTTONEAREST));
+        double menuW = ActualWidth, menuH = ActualHeight;
 
-        if (monitor.HasValue)
-        {
-            // 目标屏的有效 DPI：菜单的 DIP 尺寸换算成物理像素要用它。
-            double scale = 1.0;
-            if (NativeMethods.GetDpiForMonitor(monitor.Value.Handle, 0 /* MDT_EFFECTIVE_DPI */,
-                    out uint dpiX, out _) == 0 && dpiX > 0)
-            {
-                scale = dpiX / 96.0;
-            }
+        double bottomLimit = UsableBottom(scale);
 
-            var area = monitor.Value.Bounds;
-            var work = TaskbarInfo.UsableRect(monitor.Value.Handle) ?? area;
-
-            int menuPxW = (int)Math.Ceiling(menuW * scale);
-            int menuPxH = (int)Math.Ceiling(menuH * scale);
-            int pad = (int)Math.Round(8 * scale);
-
-            // 右缘对齐光标；屏幕右边界装不下就往回拉，菜单本身比屏还宽时贴住左缘。
-            // 不能用 Math.Clamp 一把梭——窄屏下 max < min 会直接抛异常，菜单静默打不开。
-            int left = cursor.X - menuPxW;
-            int minLeft = area.Left + pad;
-            int maxLeft = Math.Max(minLeft, area.Right - menuPxW - pad);
-            left = Math.Min(Math.Max(left, minLeft), maxLeft);
-
-            // 底缘贴任务栏上方（托盘菜单的惯例），高度塞不下工作区时顶到上沿。
-            int top = work.Bottom - menuPxH - pad;
-            if (top < work.Top) top = work.Top;
-
-            var hwnd = new WindowInteropHelper(this).Handle;
-            NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, left, top, 0, 0,
-                NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
-        }
-        else
-        {
-            // 兜底：显示器信息拿不到（几乎不会发生）就按主屏 DIP 放，同样防 Clamp 倒置。
-            double scale = 1.0;
-            var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
-            if (source?.CompositionTarget != null)
-            {
-                double m = source.CompositionTarget.TransformToDevice.M11;
-                if (m > 0) scale = m;
-            }
-            double cx = cursor.X / scale;
-            double bottomLimit = UsableBottom(scale);
-            double leftMax = SystemParameters.PrimaryScreenWidth - menuW - 8;
-            Left = Math.Min(Math.Max(cx - menuW, 8), Math.Max(8, leftMax));
-            Top = Math.Max(8, bottomLimit - menuH - 8);
-        }
+        Left = Math.Clamp(cx - menuW, 8, SystemParameters.PrimaryScreenWidth - menuW - 8);
+        Top = Math.Max(8, bottomLimit - menuH - 8);
 
         // 此刻窗口已挪到最终位置、但整体还是透明的：正好拍一张干净的桌面快照。
         CaptureGlass();

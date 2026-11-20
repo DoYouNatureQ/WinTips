@@ -320,11 +320,6 @@ internal static class BackdropCapture
 
             previous = SelectObject(memDc, bitmap);
             if (!BitBlt(memDc, 0, 0, width, height, screenDc, x, y, SRCCOPY)) return false;
-
-            // GetDIBits 的文档要求调用时位图不能选进任何 DC，先摘出来再读——
-            // 不摘的话个别驱动下会失败或读到错数据，表现为偶发"实时模糊失效"。
-            SelectObject(memDc, previous);
-            previous = IntPtr.Zero;
             return ReadPixels(memDc, bitmap, width, height, bytes, pixels);
         }
         finally
@@ -351,9 +346,7 @@ internal static class BackdropCapture
             },
         };
 
-        // 返回值是拷贝的扫描行数：部分成功时剩余区域是池化缓冲的脏数据（上一张图的残影），
-        // 必须整幅拷满才算成功。
-        if (GetDIBits(memDc, bitmap, 0, (uint)height, pixels, ref info, DIB_RGB_COLORS) != height)
+        if (GetDIBits(memDc, bitmap, 0, (uint)height, pixels, ref info, DIB_RGB_COLORS) == 0)
             return false;
 
         for (int i = 3; i < bytes; i += 4) pixels[i] = 255;

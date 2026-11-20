@@ -139,8 +139,6 @@ public partial class SettingsWindow : Window
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
         LanguageDesc.Foreground = secondary;
-        LangWindowSwitchDesc.Foreground = secondary;
-        UpdateDesc.Foreground = secondary;
         FocusMonitorDesc.Foreground = secondary;
         FontDesc.Foreground = secondary;
         StartupHint.Foreground = secondary;
@@ -416,11 +414,11 @@ public partial class SettingsWindow : Window
 
     private StartupChangeResult _lastStartupResult = StartupChangeResult.Ok;
 
-    private async void ApplyStartup(bool enable)
+    private void ApplyStartup(bool enable)
     {
         if (_syncingStartup) return;
 
-        var result = await StartupManager.SetEnabledAsync(enable);
+        var result = StartupManager.SetEnabled(enable);
         bool actual = StartupManager.IsEnabled();
 
         _syncingStartup = true;
@@ -561,15 +559,7 @@ public partial class SettingsWindow : Window
 
     private void UpdateCompactLayout()
     {
-        // Window.ActualWidth 是外框宽（含非客户区边框），而双列装不装得下取决于内容区宽。
-        // 用内容面板的渲染宽反推非客户区宽再判定：外框宽落在 740~755 之间时内容区其实
-        // 已不足 740，双列装不下，也该切单列。
-        double chrome = 0;
-        if (Panel.ActualWidth > 0)
-        {
-            chrome = Math.Max(0, ActualWidth - Panel.ActualWidth - Panel.Margin.Left - Panel.Margin.Right);
-        }
-        bool compact = ActualWidth > 0 && ActualWidth - chrome < CompactWidthThreshold;
+        bool compact = ActualWidth > 0 && ActualWidth < CompactWidthThreshold;
         if (compact == _compactLayout) return;
         _compactLayout = compact;
 

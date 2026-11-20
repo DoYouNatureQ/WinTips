@@ -66,14 +66,11 @@ internal static class Diag
         if (path is null) return;
         try
         {
-                lock (Gate)
-                {
-                    // InvariantCulture：自定义格式里的 ":" 是"时间分隔符占位符"，会随系统
-                    // 区域设置漂移（如部分欧洲文化输出 12.30.00），跨机器解析日志会踩坑。
-                    File.AppendAllText(path,
-                        $"{DateTime.Now.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture)} {line}\n");
-                    if (++_writes % TrimEvery == 0) Trim(path);
-                }
+            lock (Gate)
+            {
+                File.AppendAllText(path, $"{DateTime.Now:HH:mm:ss.fff} {line}\n");
+                if (++_writes % TrimEvery == 0) Trim(path);
+            }
         }
         catch
         {
