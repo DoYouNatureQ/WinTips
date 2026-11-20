@@ -8,7 +8,17 @@ public sealed class KeyboardHook : IDisposable
 {
     private IntPtr _hook;
     private readonly NativeMethods.LowLevelKeyboardProc _proc;
-    private readonly HashSet<uint> _down = new();
+
+    /// <summary>按着的键 → 最近一次事件时刻。每次 keydown/keyup 都刷新，长按的自动重复就是心跳。</summary>
+    private readonly Dictionary<uint, long> _down = new();
+
+    /// <summary>
+    /// 按着的键超过这么久没有新事件就视为"已丢失抬起"。前台是提权窗口时系统不回调本进程
+    /// 的低级钩子（见 ForegroundLevel），在那边松开的修饰键收不到 keyup——没有这条自愈，
+    /// 残留的 Ctrl 会让回到普通窗口后的每一次 C 都被当成 Ctrl+C 弹提示。正常长按靠自动
+    /// 重复持续刷新时间戳，不会被误清。
+    /// </summary>
+    private const long DownStaleMs = 5000;
 
     /// <summary>锁定键被按下，第二个参数是按键发生的时刻（见 <see cref="EventTime"/>）。</summary>
     public event Action<TipKind, long>? ToggleChanged;
@@ -48,9 +58,13 @@ public sealed class KeyboardHook : IDisposable
         {
             uint msg = (uint)wParam.ToInt64();
             var info = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
+            long now = Environment.TickCount64;
+            PurgeStale(now);
             if (msg is NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN)
             {
-                if (_down.Add(info.vkCode))
+                bool first = !_down.ContainsKey(info.vkCode);
+                _down[info.vkCode] = now;
+                if (first)
                 {
                     // Shift 是否算"单独按下"：按下那一刻只有它自己在按着。Alt+Shift、
                     // Ctrl+Shift 这类组合在按下瞬间就能排除；Shift 按住期间再碰任何
@@ -59,7 +73,15 @@ public sealed class KeyboardHook : IDisposable
 
                     if (IsSwitchCandidate(info.vkCode))
                     {
-                        try { SwitchKeyDown?.Invoke(InputState.Current()); } catch { }
+                        // InputState.Current() 要做两次跨进程 SendMessageTimeout（各 40ms），
+                        // 不能在钩子回调里做：低级钩子回调与全系统输入串行，反复超时（默认
+                        // 300ms）会被系统静默摘钩。转出去到 UI 线程读——和下面 TipKind 的
+                        // 转发同一模式。代价是基准读数晚了几毫秒，观察窗有 2 秒，兜得住。
+                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                            System.Windows.Threading.DispatcherPriority.Send, () =>
+                        {
+                            try { SwitchKeyDown?.Invoke(InputState.Current()); } catch { }
+                        });
                     }
 
                     // AltGr 到达为 Left Ctrl + Right Alt（钩子里是 0xA2 + 0xA5），
@@ -67,9 +89,9 @@ public sealed class KeyboardHook : IDisposable
                     // "@"，不排除就会在每次打邮箱时弹出粘贴提示。只看 Right Alt——
                     // Ctrl+LeftAlt 在任何布局上都不是 AltGr，排除它会丢掉真实的
                     // Ctrl+Alt+C（与模组版 ClipCtrlDown 同一取舍）。
-                    bool ctrl = IsDown(0xA2, 0xA3, 0x11) && !_down.Contains(0xA5);
+                    bool ctrl = IsDown(0xA2, 0xA3, 0x11) && !_down.ContainsKey(0xA5);
                     bool shift = IsDown(0xA0, 0xA1, 0x10);
-                    bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
+                    bool win = _down.ContainsKey(0x5B) || _down.ContainsKey(0x5C);
 
                     TipKind? kind = info.vkCode switch
                     {
@@ -137,7 +159,12 @@ public sealed class KeyboardHook : IDisposable
                     _shiftSolo = false;
                     if (solo)
                     {
-                        try { SoloShiftReleased?.Invoke(); } catch { }
+                        // OnSoloShift 内部也要读 InputState.Current()，同样不能在回调里做。
+                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                            System.Windows.Threading.DispatcherPriority.Send, () =>
+                        {
+                            try { SoloShiftReleased?.Invoke(); } catch { }
+                        });
                     }
                 }
             }
@@ -146,12 +173,27 @@ public sealed class KeyboardHook : IDisposable
     }
 
     private bool IsDown(uint left, uint right, uint generic) =>
-        _down.Contains(left) || _down.Contains(right) || _down.Contains(generic);
+        _down.ContainsKey(left) || _down.ContainsKey(right) || _down.ContainsKey(generic);
+
+    /// <summary>清掉太久没动静的"按着"记录——它们的 keyup 多半被 UIPI 吞了。</summary>
+    private void PurgeStale(long now)
+    {
+        if (_down.Count == 0) return;
+        List<uint>? stale = null;
+        foreach (var (vk, at) in _down)
+        {
+            if (now - at > DownStaleMs) (stale ??= new List<uint>()).Add(vk);
+        }
+        if (stale != null)
+        {
+            foreach (uint vk in stale) _down.Remove(vk);
+        }
+    }
 
     private bool IsSwitchCandidate(uint vk)
     {
         bool ctrl = IsDown(0xA2, 0xA3, 0x11);
-        bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
+        bool win = _down.ContainsKey(0x5B) || _down.ContainsKey(0x5C);
         bool alt = IsDown(0xA4, 0xA5, 0x12);
 
         return vk switch

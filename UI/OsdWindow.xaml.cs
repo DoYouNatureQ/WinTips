@@ -241,7 +241,11 @@ public partial class OsdWindow : Window
         if (!AllowsTransparency) DwmChrome.SetFrameExtended(hwnd, true);
 
         src.AddHook(WndProc);
-        NativeMethods.AddClipboardFormatListener(hwnd);
+        // 注册失败（句柄失效等）会静默丢掉全部剪贴板提示，至少留一行诊断。
+        if (!NativeMethods.AddClipboardFormatListener(hwnd))
+        {
+            Diag.Write("osd: AddClipboardFormatListener failed, clipboard tips will not fire");
+        }
         // 幻影消息过滤的基线：注册之后送来的每条消息都以此刻的序号为准。
         _clipboardSeq = NativeMethods.GetClipboardSequenceNumber();
     }
@@ -251,6 +255,9 @@ public partial class OsdWindow : Window
         _topmost.End();
         StopBackdropTracking();
         StopLiveBackdrop();
+        _hideTimer.Stop();
+        _followTimer.Stop();
+        FinishWarmRender();
         AppFont.Changed -= OnUiFontChanged;
         try
         {
@@ -571,6 +578,10 @@ public partial class OsdWindow : Window
             _liveWait?.Set();
             _liveCapture.Join(400);
             _liveCapture = null;
+
+            // CaptureLoop 里超时等待会惰性创建底层 WaitHandle，只置 null 不释放的话
+            // 内核句柄要等 GC 终结器兜底；线程此时已被上面这拍停掉，可以安全释放。
+            _liveWait?.Dispose();
             _liveWait = null;
 
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -921,13 +932,23 @@ public partial class OsdWindow : Window
 
         if (_visible)
         {
-            Root.BeginAnimation(UIElement.OpacityProperty, null);
-            Root.Opacity = 1;
-            Reposition();
-            RaiseTopmost();
-            AnimateStatus(on);
-            RestartTimer();
-            StartFollow();
+            try
+            {
+                Root.BeginAnimation(UIElement.OpacityProperty, null);
+                Root.Opacity = 1;
+                Reposition();
+                RaiseTopmost();
+                AnimateStatus(on);
+                RestartTimer();
+                StartFollow();
+            }
+            catch (Exception ex)
+            {
+                // 全局异常处理器只记日志就吞掉（App.OnStartup），不就地恢复的话状态机会
+                // 停在中间态：_visible 还是 true 但隐藏定时器没跑起来，卡片永久留在屏幕上。
+                Diag.Write($"show tip (reshow) crashed: {ex.Message}");
+                HideInstantly();
+            }
             return;
         }
 
@@ -950,25 +971,35 @@ public partial class OsdWindow : Window
             Root.Opacity = 0;
         }
 
-        Show();
-        PlacePhysical(_lastLeft, _lastTop);
-        EnsureOnScreen();
-        RaiseTopmost();
-        _visible = true;
-        _shownOnce = true;
-        if (!ready)
+        try
         {
-            ApplyChrome();
-            Reposition();
+            Show();
+            PlacePhysical(_lastLeft, _lastTop);
+            EnsureOnScreen();
+            RaiseTopmost();
+            _visible = true;
+            _shownOnce = true;
+            if (!ready)
+            {
+                ApplyChrome();
+                Reposition();
+            }
+            AnimateIn();
+            StartLiveBackdrop();
+            // 能实时重抓就不必再逐帧挪取样框了：每次重抓都会按卡片当前的位置重新对准，
+            // 而这六十毫秒里卡片顶多挪几像素，模糊本来就看不出来，省下一次常驻的渲染循环。
+            if (_liveCapture is null) StartBackdropTracking();
+            if (ms > 0) AnimateStatus(on);
+            RestartTimer();
+            StartFollow();
         }
-        AnimateIn();
-        StartLiveBackdrop();
-        // 能实时重抓就不必再逐帧挪取样框了：每次重抓都会按卡片当前的位置重新对准，
-        // 而这六十毫秒里卡片顶多挪几像素，模糊本来就看不出来，省下一次常驻的渲染循环。
-        if (_liveCapture is null) StartBackdropTracking();
-        if (ms > 0) AnimateStatus(on);
-        RestartTimer();
-        StartFollow();
+        catch (Exception ex)
+        {
+            // 同上：显示到一半抛异常（StartLiveBackdrop 的 GDI/DWM 调用最可能），
+            // 必须拉回一致的隐藏态，否则卡片带着残缺的背景永久停留。
+            Diag.Write($"show tip crashed: {ex.Message}");
+            HideInstantly();
+        }
     }
 
     public void ShowLanguage(string text, double seconds)
@@ -989,7 +1020,6 @@ public partial class OsdWindow : Window
 
     public void PreviewSize(double seconds)
     {
-        int ms = (int)Math.Clamp(seconds, 0.5, 10);
         if (!_visible)
         {
             ShowTip(TipKind.CapsLock, true, seconds);
@@ -1000,7 +1030,9 @@ public partial class OsdWindow : Window
         Reposition();
         Root.BeginAnimation(UIElement.OpacityProperty, null);
         Root.Opacity = 1;
-        _hideTimer.Interval = TimeSpan.FromSeconds(ms);
+        // 和 ShowTipCore/PreviewAppearance 保持同一口径：保留小数秒，别截断成整秒
+        // （默认预览时长 1.2s，截断后只有 1s，预览比实际提示短 200ms）。
+        _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(seconds, 0.5, 10));
         RestartTimer();
     }
 

@@ -85,10 +85,17 @@ internal static class UpdateChecker
             if (string.IsNullOrEmpty(version)) return;
 
             var settings = AppSettings.Instance;
-            settings.LastUpdateCheckAt = DateTime.UtcNow;
-            // 远程不再比本地新（比如用户手动装了新版），清掉缓存让小红点熄灭。
-            settings.LatestReleaseVersion = Compare(version, AppInfo.Version) > 0 ? version : null;
-            settings.Save();
+            bool newer = Compare(version, AppInfo.Version) > 0;
+            // 设置对象归 UI 线程管：这里跑在线程池上，直接改属性、落盘会和 UI 线程的
+            // SaveSoon 定时器并发写同一个文件——后写的一方抛 IOException 被吞掉，
+            // 那一次保存连同 UI 侧刚改的设置一起丢。改动调度回 UI 线程再落盘。
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                settings.LastUpdateCheckAt = DateTime.UtcNow;
+                // 远程不再比本地新（比如用户手动装了新版），清掉缓存让小红点熄灭。
+                settings.LatestReleaseVersion = newer ? version : null;
+                settings.Save();
+            });
 
             if (Compare(version, AppInfo.Version) <= 0) return;
 

@@ -117,7 +117,11 @@ internal sealed class RawInputWatcher : IDisposable
         long at = EventTime.Rebase((uint)NativeMethods.GetMessageTime());
 
         uint size = 0;
-        NativeMethods.GetRawInputData(lParam, NativeMethods.RID_INPUT, IntPtr.Zero, ref size, headerSize);
+        // 首调失败返回 (uint)-1 且不动 pcbSize；显式判一下，别只靠"失败时 size 保持 0"
+        // 这个文档没明说的行为兜底。
+        if (NativeMethods.GetRawInputData(lParam, NativeMethods.RID_INPUT, IntPtr.Zero, ref size, headerSize)
+            == uint.MaxValue)
+            return;
         if (size == 0 || size > 1024) return;
 
         IntPtr buffer = Marshal.AllocHGlobal((int)size);

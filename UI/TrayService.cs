@@ -63,6 +63,7 @@ internal sealed class TrayService : IDisposable
 
     private void AddIcon()
     {
+        ReleaseIcon();
         (_icon, _iconOwned) = AppIcons.TrayIcon();
 
         var data = MakeData();
@@ -72,10 +73,21 @@ internal sealed class TrayService : IDisposable
         data.szTip = TooltipText;
 
         _added = NativeMethods.Shell_NotifyIconW(NativeMethods.NIM_ADD, ref data);
-        if (!_added) return;
+        if (!_added)
+        {
+            // 注册失败时图标句柄滞留到下次 TaskbarCreated 才释放；owned 句柄在这里
+            // 就该归还，否则失败路径上白丢一份内核资源。
+            ReleaseIcon();
+            return;
+        }
 
+        // NIM_SETVERSION 失败会让托盘停留在旧版协议：lParam 不再是事件码，
+        // WM_CONTEXTMENU 永远不来，右键菜单/双击全部失灵。至少留一行诊断。
         data.uVersion = NativeMethods.NOTIFYICON_VERSION_4;
-        NativeMethods.Shell_NotifyIconW(NativeMethods.NIM_SETVERSION, ref data);
+        if (!NativeMethods.Shell_NotifyIconW(NativeMethods.NIM_SETVERSION, ref data))
+        {
+            Diag.Write("tray: NIM_SETVERSION failed, menu events may not fire");
+        }
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -117,9 +129,9 @@ internal sealed class TrayService : IDisposable
         var menu = new TrayMenuWindow(
             _openSettings,
             _exit,
-            enable =>
+            async enable =>
             {
-                var result = StartupManager.SetEnabled(enable);
+                var result = await StartupManager.SetEnabledAsync(enable);
                 AppSettings.Instance.LaunchAtStartup = StartupManager.IsEnabled();
                 AppSettings.Instance.Save();
 

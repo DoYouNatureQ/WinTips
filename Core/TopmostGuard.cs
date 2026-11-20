@@ -46,6 +46,9 @@ internal sealed class TopmostGuard
 
     private int _raises;
 
+    /// <summary>窗口持续不可见的拍数：连续这么多拍说明 End 被漏掉了，定时器自停。</summary>
+    private int _hiddenTicks;
+
     public TopmostGuard() => _timer.Tick += (_, _) => Check();
 
     /// <summary>卡片要现身了（或又换了一次内容）：先抢一次，然后开始盯。</summary>
@@ -53,6 +56,7 @@ internal sealed class TopmostGuard
     {
         _hwnd = hwnd;
         _raises = 0;
+        _hiddenTicks = 0;
         _timer.Interval = TimeSpan.FromMilliseconds(IntervalMs);
         Raise(hwnd);
         if (!_timer.IsEnabled) _timer.Start();
@@ -80,9 +84,15 @@ internal sealed class TopmostGuard
             return;
         }
 
-        // 窗口已经收起来了（WPF 的 Hide 不一定会走到 End），这一拍直接跳过；
-        // 下一次 Begin 会重新带起定时器。
-        if (!NativeMethods.IsWindowVisible(hwnd)) return;
+        // 窗口已经收起来了（WPF 的 Hide 不一定会走到 End）：数着拍子等，连续 20 拍
+        // （约 2 秒）还不可见就认定 End 被漏掉，自停定时器——否则它会以 100ms 一拍
+        // 永久空转，卡片明明不在了还一直在唤醒 UI 线程。下一次 Begin 会重置一切。
+        if (!NativeMethods.IsWindowVisible(hwnd))
+        {
+            if (++_hiddenTicks >= 20) End();
+            return;
+        }
+        _hiddenTicks = 0;
 
         IntPtr cover = FindCover(hwnd);
         if (cover == IntPtr.Zero) return;

@@ -22,6 +22,7 @@ internal static class ForegroundLevel
     private static readonly uint SelfLevel = ReadSelf();
 
     private static IntPtr _lastHwnd;
+    private static uint _lastPid;
     private static bool _lastRaised;
     private static bool _hasLast;
 
@@ -43,8 +44,11 @@ internal static class ForegroundLevel
         // GetAsyncKeyState，代价可以忽略。
         if (hwnd == IntPtr.Zero) return true;
 
-        // 前台窗口在一次按键期间不会变，按句柄缓存，免得每 50ms 开一次进程令牌。
-        if (_hasLast && hwnd == _lastHwnd) return _lastRaised;
+        // 前台窗口在一次按键期间不会变，按"句柄 + 进程 ID"缓存，免得每 50ms 开一次
+        // 进程令牌。只比句柄不够：窗口销毁后句柄值会被系统复用，可能安到另一个
+        // 完整性级别完全不同的进程头上；进程 ID 是便宜的一手校验。
+        NativeMethods.GetWindowThreadProcessId(hwnd, out uint pid);
+        if (_hasLast && hwnd == _lastHwnd && pid == _lastPid) return _lastRaised;
 
         uint rid = OfWindow(hwnd);
         bool raised = rid == 0 || rid > SelfRid;
@@ -55,6 +59,7 @@ internal static class ForegroundLevel
         }
 
         _lastHwnd = hwnd;
+        _lastPid = pid;
         _lastRaised = raised;
         _hasLast = true;
         return raised;

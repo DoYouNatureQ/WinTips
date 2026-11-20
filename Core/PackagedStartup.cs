@@ -10,18 +10,18 @@ internal static class PackagedStartup
     {
         try
         {
-            var task = GetTask();
+            var task = GetTaskAsync().GetAwaiter().GetResult();
             return task is not null && task.State == StartupTaskState.Enabled;
         }
         catch { return false; }
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public static StartupChangeResult SetEnabled(bool enable)
+    public static async Task<StartupChangeResult> SetEnabledAsync(bool enable)
     {
         try
         {
-            var task = GetTask();
+            var task = await GetTaskAsync();
             if (task is null) return StartupChangeResult.Failed;
 
             if (!enable)
@@ -30,7 +30,9 @@ internal static class PackagedStartup
                 return StartupChangeResult.Ok;
             }
 
-            return Await(task.RequestEnableAsync()) switch
+            // RequestEnableAsync 可能要拉取注册信息甚至等系统确认，耗时以秒计。
+            // 绝不能在 UI 线程上同步等它（设置页会假死），必须真异步。
+            return (await task.RequestEnableAsync()) switch
             {
                 StartupTaskState.Enabled => StartupChangeResult.Ok,
                 StartupTaskState.DisabledByUser => StartupChangeResult.BlockedByUser,
@@ -42,12 +44,9 @@ internal static class PackagedStartup
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static StartupTask? GetTask()
+    private static async Task<StartupTask?> GetTaskAsync()
     {
-        try { return Await(StartupTask.GetAsync(StartupManager.TaskId)); }
+        try { return await StartupTask.GetAsync(StartupManager.TaskId); }
         catch { return null; }
     }
-
-    private static T Await<T>(Windows.Foundation.IAsyncOperation<T> operation) =>
-        operation.AsTask().GetAwaiter().GetResult();
 }

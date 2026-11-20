@@ -35,15 +35,21 @@ internal static class StartupManager
         return PackagedStartup.IsEnabled();
     }
 
-    public static StartupChangeResult SetEnabled(bool enable)
+    /// <summary>
+    /// 开关开机自启。打包版要等 WinRT 异步操作（可能秒级），必须异步调用，
+    /// 别在 UI 线程上 .Result/.Wait——设置页会假死。
+    /// </summary>
+    public static Task<StartupChangeResult> SetEnabledAsync(bool enable)
     {
         if (!IsPackaged)
         {
-            WriteRunValue(enable);
-            return StartupChangeResult.Ok;
+            // 写注册表失败必须让调用方知道：吞掉后 UI 会显示"已开启自启"而注册表里
+            // 根本没有值（被组策略限制、虚拟化重定向、ProcessPath 拿不到都可能失败），
+            // 重启后不生效，用户还以为设置好了。注册表写很快，留在调用线程上即可。
+            return Task.FromResult(WriteRunValue(enable) ? StartupChangeResult.Ok : StartupChangeResult.Failed);
         }
 
-        return PackagedStartup.SetEnabled(enable);
+        return PackagedStartup.SetEnabledAsync(enable);
     }
 
     private static bool DetectPackaged()
@@ -67,7 +73,7 @@ internal static class StartupManager
         catch { return false; }
     }
 
-    private static void WriteRunValue(bool enable)
+    private static bool WriteRunValue(bool enable)
     {
         try
         {
@@ -75,14 +81,19 @@ internal static class StartupManager
             if (enable)
             {
                 var exe = Environment.ProcessPath;
-                if (!string.IsNullOrEmpty(exe)) key.SetValue(RunValue, $"\"{exe}\"");
+                if (string.IsNullOrEmpty(exe)) return false;
+                key.SetValue(RunValue, $"\"{exe}\"");
             }
             else if (key.GetValue(RunValue) != null)
             {
                 key.DeleteValue(RunValue);
             }
+            return key.GetValue(RunValue) != null || !enable;
         }
-        catch { }
+        catch
+        {
+            return false;
+        }
     }
 
     public static void OpenSystemStartupSettings()

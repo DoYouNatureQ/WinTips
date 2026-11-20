@@ -209,7 +209,12 @@ public sealed class AppSettings
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, SaveOptions));
+            // 先写临时文件再原子替换：直接覆盖写若在半途崩溃/掉电，settings.json 会截断，
+            // 下次 Load 反序列化失败全部回默认，用户的个性化配置就全丢了。
+            string tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, SaveOptions));
+            if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null);
+            else File.Move(tmp, FilePath);
         }
         catch { }
     }
