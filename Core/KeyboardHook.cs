@@ -8,7 +8,19 @@ public sealed class KeyboardHook : IDisposable
 {
     private IntPtr _hook;
     private readonly NativeMethods.LowLevelKeyboardProc _proc;
-    private readonly HashSet<uint> _down = new();
+
+    /// <summary>
+    /// 正按着的键 → 最近一次 keydown 的时刻。字典而不是集合，是为了能回收残键：
+    /// 丢一次 KEYUP（钩子超时被系统跳过、注入按键没有配对、远程桌面重连）就留下
+    /// 一条永不清除的记录，"Shift 单独按下"的判定从此永远数不对（按下时
+    /// <see cref="_down"/> 的 Count 不再是 1），中英提示的推断链整条哑掉——表现
+    /// 就是"前一阵还弹，后来彻底不弹"。回收除了超时还要 GetAsyncKeyState 确认
+    /// 物理上已松开：真按住的键（长按 Shift 不产生重复 keydown）不会被误收。
+    /// </summary>
+    private readonly Dictionary<uint, long> _down = new();
+
+    /// <summary>残键在表里停留多久后回收。自动重复不断刷新物理按下状态，正常按键到不了这个岁数。</summary>
+    private const long StaleKeyMs = 5000;
 
     /// <summary>锁定键被按下，第二个参数是按键发生的时刻（见 <see cref="EventTime"/>）。</summary>
     public event Action<TipKind, long>? ToggleChanged;
@@ -50,7 +62,8 @@ public sealed class KeyboardHook : IDisposable
             var info = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
             if (msg is NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN)
             {
-                if (_down.Add(info.vkCode))
+                ReapStaleKeys();
+                if (_down.TryAdd(info.vkCode, EventTime.Rebase(info.time)))
                 {
                     // Shift 是否算"单独按下"：按下那一刻只有它自己在按着。Alt+Shift、
                     // Ctrl+Shift 这类组合在按下瞬间就能排除；Shift 按住期间再碰任何
@@ -67,9 +80,9 @@ public sealed class KeyboardHook : IDisposable
                     // "@"，不排除就会在每次打邮箱时弹出粘贴提示。只看 Right Alt——
                     // Ctrl+LeftAlt 在任何布局上都不是 AltGr，排除它会丢掉真实的
                     // Ctrl+Alt+C（与模组版 ClipCtrlDown 同一取舍）。
-                    bool ctrl = IsDown(0xA2, 0xA3, 0x11) && !_down.Contains(0xA5);
+                    bool ctrl = IsDown(0xA2, 0xA3, 0x11) && !_down.ContainsKey(0xA5);
                     bool shift = IsDown(0xA0, 0xA1, 0x10);
-                    bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
+                    bool win = _down.ContainsKey(0x5B) || _down.ContainsKey(0x5C);
 
                     TipKind? kind = info.vkCode switch
                     {
@@ -145,13 +158,39 @@ public sealed class KeyboardHook : IDisposable
         return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
+    /// <summary>
+    /// 回收残键：在表里待超了时限、且 GetAsyncKeyState 确认物理上已松开的键，它的
+    /// KEYUP 一定是被丢了。不清掉，按下的键永远数不到"只有它自己"，SoloShift 从此
+    /// 检测不到。每次 keydown 前跑一遍：表通常为空或一两条，GetAsyncKeyState 也便宜。
+    /// </summary>
+    private void ReapStaleKeys()
+    {
+        if (_down.Count == 0) return;
+
+        long now = EventTime.Now;
+        List<uint>? stale = null;
+        foreach ((uint vk, long at) in _down)
+        {
+            if (now - at <= StaleKeyMs) continue;
+            if ((NativeMethods.GetAsyncKeyState((int)vk) & 0x8000) != 0) continue;
+            (stale ??= new List<uint>()).Add(vk);
+        }
+
+        if (stale is null) return;
+        foreach (uint vk in stale)
+        {
+            _down.Remove(vk);
+            Diag.Write($"reap stale key 0x{vk:X2}, keyup was never delivered");
+        }
+    }
+
     private bool IsDown(uint left, uint right, uint generic) =>
-        _down.Contains(left) || _down.Contains(right) || _down.Contains(generic);
+        _down.ContainsKey(left) || _down.ContainsKey(right) || _down.ContainsKey(generic);
 
     private bool IsSwitchCandidate(uint vk)
     {
         bool ctrl = IsDown(0xA2, 0xA3, 0x11);
-        bool win = _down.Contains(0x5B) || _down.Contains(0x5C);
+        bool win = _down.ContainsKey(0x5B) || _down.ContainsKey(0x5C);
         bool alt = IsDown(0xA4, 0xA5, 0x12);
 
         return vk switch

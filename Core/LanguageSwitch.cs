@@ -146,11 +146,30 @@ internal sealed class InputStateWatcher : IDisposable
 
     /// <summary>
     /// 系统读数是否被观察到真的跟随过一次切换。被证实过的读数值得信任：
-    /// 它沉默就是"没有变化"，Shift 手势不再去顶它；也正因为它可靠，
-    /// 读数短暂丢失时更可能是线程正忙，等它恢复而不是按推断翻面。
-    /// 一次置位、不再清除——输入法的应答习惯不会在会话中途改变。
+    /// 它沉默就是"没有变化"，Shift 手势不再去顶它。但"证实"会过期——搜狗这类
+    /// 输入法的同步是半可靠的：有的版本同步、有的不同步，同一台输入法也可能在
+    /// 会话中途改藏状态。连续静默超时后由 <see cref="_readingDistrusted"/> 接管
+    /// （见观察窗超时分支），读数重新被观察到跟随切换（系统路径报一次）时恢复。
     /// </summary>
     private bool _readMoved;
+
+    /// <summary>
+    /// 带手势的观察窗静默超时多少个之后，把曾被证实过的读数降级为不可信。
+    /// 压制逻辑的前提是"读数沉默 = 没变化"，这个前提在半同步的输入法（搜狗）
+    /// 身上会过期：读数藏起来之后，每次 Shift 切换都被压到观察窗超时、整次
+    /// 吞掉——正是用户报的"提示经常不弹"。两个整窗（各 2 秒）的沉默足以证明
+    /// 读数不再跟随手势，此后改回推断主导。
+    /// </summary>
+    private const int SilentWindowsBeforeDistrust = 2;
+
+    /// <summary>带 Shift 手势的观察窗静默超时的连续计数。被系统路径的成功上报清零。</summary>
+    private int _silentWindows;
+
+    /// <summary>
+    /// 读数已降级：不再用它的沉默压制 Shift 手势，改回推断主导。只有读数重新被
+    /// 观察到跟随切换（系统路径报了一次）才解除——手势上报证明不了读数活着。
+    /// </summary>
+    private bool _readingDistrusted;
 
     /// <summary>本次观察窗内"读数丢失"是否已经写过诊断日志，避免每拍刷屏。</summary>
     private bool _loggedReadLost;
@@ -205,9 +224,22 @@ internal sealed class InputStateWatcher : IDisposable
 
         InputState now = InputState.Current();
 
+        // 两个早退点必须留痕：用户报"按了 Shift 不弹"时，先要分清手势是根本没送
+        // 到这里（钩子层问题），还是在这两道门槛上被丢的。之前这里静默返回，现场
+        // 完全无法排查。
+        if (!now.IsUsable)
+        {
+            Diag.Write("solo shift hint dropped: foreground state unreadable");
+            return;
+        }
+
         // 推断只对中文输入法生效：美式键盘按 Shift 是正常输入不是切换；日文等其他
         // IME 的 Shift 语义也不同，翻了只会报错"中文/英文"。
-        if (!now.IsUsable || !IsChineseImeLayout(now.Hkl)) return;
+        if (!IsChineseImeLayout(now.Hkl))
+        {
+            Diag.Write($"solo shift hint dropped: not a Chinese IME layout, hkl=0x{now.Hkl.ToInt64():X8}");
+            return;
+        }
 
         _hintCount++;
         Touch(now);
@@ -223,7 +255,19 @@ internal sealed class InputStateWatcher : IDisposable
             // 带着待处理的 Shift 超时说明这一轮什么都报不出来——issue #13 的
             // 静默丢失。留一行诊断，让人能看出超时那一刻的读数状态。
             if (_hintCount > 0)
+            {
                 Diag.Write($"watch window timed out, drop {_hintCount} shift hint(s), last[{_last.Describe()}]");
+
+                // 连续多个带手势的窗口都静默超时，而读数曾被证实过跟随切换——说明
+                // 这台输入法又把状态藏起来了（搜狗的同步是半可靠的）。降级它，别让
+                // 压制逻辑把之后的每次切换都吞掉。
+                _silentWindows++;
+                if (_readMoved && !_readingDistrusted && _silentWindows >= SilentWindowsBeforeDistrust)
+                {
+                    _readingDistrusted = true;
+                    Diag.Write($"reading silent across {_silentWindows} shift windows, distrust it: gesture inference takes over");
+                }
+            }
             StopWindow();
             return;
         }
@@ -283,17 +327,19 @@ internal sealed class InputStateWatcher : IDisposable
             {
                 if (now.IsNative == _last.IsNative)
                 {
-                    if (_readMoved)
+                    if (_readMoved && !_readingDistrusted)
                     {
-                        // 读数被证实跟随过切换：沉默就是没有变化，Shift 手势不值得
-                        // 去顶——这类输入法切中英文可能根本不用 Shift，报了反而错。
+                        // 读数被证实跟随过切换、也没被降级：沉默就是没有变化，
+                        // Shift 手势不值得去顶——这类输入法切中英文可能根本不用
+                        // Shift，报了反而错。但"证实"会过期：搜狗的同步是半可靠的，
+                        // 连续静默超时后超时分支会把它降级，这里就不再压制。
                         return true;
                     }
 
-                    // 读数活着但从未被观察到动过：这台输入法把状态藏着（搜狗、
-                    // 微信输入法、小狼毫都有版本如此）。推断缓存保持不动——用一条
-                    // 不可能变化的死读数播种它，会在下一拍就抵消掉刚推断出的翻面，
-                    // 把卡片钉死在错误标签上。Shift 手势接手。
+                    // 读数活着但从未被观察到动过（或已被降级）：这台输入法把状态
+                    // 藏着（搜狗、微信输入法、小狼毫都有版本如此）。推断缓存保持
+                    // 不动——用一条不可能变化的死读数播种它，会在下一拍就抵消掉刚
+                    // 推断出的翻面，把卡片钉死在错误标签上。Shift 手势接手。
                     return InferTick();
                 }
 
@@ -301,6 +347,9 @@ internal sealed class InputStateWatcher : IDisposable
                 _last = now;
                 _inferredNative = native;
                 _readMoved = true;
+                // 读数真的动了：重新证实，信任与计数一并恢复。
+                _silentWindows = 0;
+                _readingDistrusted = false;
                 StopWindow();
                 Diag.Write($"ime mode change (system) native={native}");
                 ImeModeChanged?.Invoke(native);
@@ -315,6 +364,8 @@ internal sealed class InputStateWatcher : IDisposable
                 bool native = now.IsNative;
                 _last = now;
                 _inferredNative = native;
+                _silentWindows = 0;
+                _readingDistrusted = false;
                 StopWindow();
                 Diag.Write($"ime mode change (system, late read) native={native}");
                 ImeModeChanged?.Invoke(native);
@@ -337,17 +388,17 @@ internal sealed class InputStateWatcher : IDisposable
             //
             // 但不能无限等：issue #13 就卡在这里。个别纯 TSF 输入法（微信输入法）
             // 按 Shift 那一拍还答得上，之后连续读不到，死等满 2 秒观察窗后整个
-            // 静默收场，这次切换就丢了。读数没被证实过（_readMoved=false）时，
-            // 有待处理的 Shift 且宽限过完仍读不到，就按按键推断翻面——宁可按
-            // 手势报，也不把用户的切换整次吞掉。读数被证实过的仍继续等：它可靠，
-            // 丢失多半是暂时的，翻错比多等一拍代价大。
+            // 静默收场，这次切换就丢了。读数没被证实过、或已被降级（搜狗半同步
+            // 的"证实"过期之后）时，有待处理的 Shift 且宽限过完仍读不到，就按
+            // 按键推断翻面——宁可按手势报，也不把用户的切换整次吞掉。仍被信任
+            // 的读数继续等：它可靠，丢失多半是暂时的，翻错比多等一拍代价大。
             if (!_loggedReadLost)
             {
                 _loggedReadLost = true;
-                Diag.Write($"mode read lost: last[{_last.Describe()}] now[{now.Describe()}] hint={_hintCount} provenRead={_readMoved}");
+                Diag.Write($"mode read lost: last[{_last.Describe()}] now[{now.Describe()}] hint={_hintCount} provenRead={_readMoved} distrusted={_readingDistrusted}");
             }
 
-            if (_hintCount > 0 && !_readMoved
+            if (_hintCount > 0 && (!_readMoved || _readingDistrusted)
                 && _hintAt >= 0 && EventTime.Now - _hintAt > InferGraceMs)
             {
                 Diag.Write($"mode read not restored {EventTime.Now - _hintAt}ms after shift, infer fallback");
@@ -396,7 +447,9 @@ internal sealed class InputStateWatcher : IDisposable
         _hintCount = 0;
         _hintAt = -1;
         _loggedReadLost = false;
-        // _readMoved 故意不清：一次置位代表这台输入法的读数整个会话内可信。
+        // _readMoved / _readingDistrusted / _silentWindows 故意不清：信任与降级都
+        // 跨观察窗保留。读数重新被观察到跟随切换（系统路径上报）才恢复信任；
+        // 手势上报证明不了读数活着，不动降级标记。
     }
 
     /// <summary>
