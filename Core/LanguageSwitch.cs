@@ -242,7 +242,25 @@ internal sealed class InputStateWatcher : IDisposable
         }
 
         _hintCount++;
-        Touch(now);
+
+        // 不在此处无条件重采样基准（issue #16）：微信输入法等在 Shift 抬起瞬间即翻转
+        // 状态，此刻采样会把刚发生的切换刷进基准，轮询从此读数恒等于基准、永远报不出
+        // 变化——Edge/Electron 等前台线程翻转落点早于本回调的场景 100% 静默超时。
+        // 基准应保持 Shift 按下时 SwitchKeyDown 采样的翻转前状态，抬起翻转后轮询才能
+        // 对比出差异，由系统路径稳定上报。观察窗已在跑就保留旧基准，对齐 Windhawk 版
+        // StartInputWatch 的做法；仅当按下时没采到可用基准（前台那一刻读不到）才在此
+        // 补采——此刻多半已是翻转后状态，但总比没有基准强。
+        if (!_hasLast)
+        {
+            Touch(now);
+        }
+        else
+        {
+            Sampled?.Invoke(now);
+            _ticks = 0;
+            if (!_poll.IsEnabled) _poll.Start();
+        }
+
         _hintAt = EventTime.Now;
 
         Diag.Write($"solo shift hint #{_hintCount}");
