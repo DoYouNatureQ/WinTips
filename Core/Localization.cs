@@ -115,14 +115,14 @@ public static class Loc
             "Уведомление при переключении окон",
             "Aviso al cambiar de ventana", "Aviso ao alternar janelas");
         Add("RowLanguageOnSwitchDesc",
-            "开启系统的“允许我为每个应用窗口使用不同输入法”后，切窗口引起的语言或中英文变化也弹出提示（需开启上面的输入法提示）",
-            "開啟系統的「允許我為每個應用程式視窗使用不同輸入法」後，切換視窗引起的語言或中英文變化也會提示（需開啟上面的輸入法提示）",
-            "With Windows' \"Let me use a different input method for each app window\" on, a language or Chinese/English change caused by switching windows also shows the tip (requires the input language tip)",
-            "Bei aktiviertem „Eine andere Eingabemethode für jedes App-Fenster verwenden“ meldet auch ein Sprach- oder Chinesisch/Englisch-Wechsel durch einen Fensterwechsel (erfordert den Eingabesprache-Hinweis)",
-            "Windows の「アプリごとに異なる入力方法を使う」が有効な場合、ウィンドウ切り替えによる言語・中英文の変化も通知します（入力言語の通知が必要）",
-            "При включённой настройке «Разрешить отдельный метод ввода для каждого окна приложения» уведомлять и о смене языка или режима 中/EN при переключении окон (нужно уведомление о языке ввода)",
-            "Con «Permitir usar un método de entrada diferente para cada ventana de aplicación» activado, el cambio de idioma o de chino/inglés al cambiar de ventana también muestra el aviso (requiere el aviso de idioma de entrada)",
-            "Com «Permitir usar um método de entrada diferente para cada janela de aplicativo» ativado, a mudança de idioma ou de chinês/inglês ao alternar janelas também mostra o aviso (requer o aviso de idioma de entrada)");
+            "系统开启「每个应用窗口使用不同输入法」后，切窗口引起的变化也提示（需开启上面的输入法提示）",
+            "系統開啟「每個應用程式視窗使用不同輸入法」後，切換視窗引起的變化也提示（需開啟上面的輸入法提示）",
+            "With Windows' per-window input method option on, changes caused by switching windows also show the tip (requires the input language tip)",
+            "Bei aktivierter Windows-Option „Andere Eingabemethode pro App-Fenster“ meldet auch ein Wechsel durch einen Fensterwechsel (erfordert den Eingabesprache-Hinweis)",
+            "Windows の「アプリごとに異なる入力方法」が有効な場合、ウィンドウ切り替えによる変化も通知します（入力言語の通知が必要）",
+            "При включённой опции Windows «свой метод ввода для каждого окна» уведомлять и о смене при переключении окон (нужно уведомление о языке ввода)",
+            "Con la opción de Windows de un método de entrada por ventana activada, el cambio al cambiar de ventana también avisa (requiere el aviso de idioma de entrada)",
+            "Com a opção do Windows de um método de entrada por janela ativada, a mudança ao alternar janelas também avisa (requer o aviso de idioma de entrada)");
 
         Add("SectionGeneral",
             "通用", "一般", "General",
@@ -491,15 +491,51 @@ public static class Loc
             "检查更新", "檢查更新", "Check for updates",
             "Nach Updates suchen", "更新を確認", "Проверять обновления",
             "Buscar actualizaciones", "Verificar atualizações");
-        Add("RowCheckUpdatesDesc",
-            "启动后每天最多查询一次 GitHub Releases，发现新版本时在下方「获取最新版本」旁点亮小红点。除此之外不联网。",
-            "啟動後每天最多查詢一次 GitHub Releases，發現新版本時在下方「取得最新版本」旁亮起小紅點。除此之外不連網。",
-            "Queries GitHub Releases at most once a day after launch; when a new version is found, a red dot lights up next to \"Get latest version\" below. No other network access.",
-            "Prüft nach dem Start höchstens einmal täglich GitHub Releases; bei einer neuen Version leuchtet unten neben \"Neueste Version laden\" ein roter Punkt. Keine weiteren Netzwerkzugriffe.",
-            "起動後 1 日 1 回まで GitHub Releases を確認し、新しいバージョンがあれば下の「最新版を入手」の横に赤い点を表示します。それ以外は通信しません。",
-            "После запуска запрашивает GitHub Releases не чаще одного раза в сутки; при новой версии рядом с «Скачать последнюю версию» появится красная точка. Других обращений к сети нет.",
-            "Consulta GitHub Releases como máximo una vez al día tras iniciarse; si hay una versión nueva, se ilumina un punto rojo junto a «Obtener la última versión». Sin otras conexiones.",
-            "Consulta o GitHub Releases no máximo uma vez por dia após iniciar; se houver uma versão nova, um ponto vermelho acende ao lado de «Obter a última versão». Sem outras conexões.");
+
+        Add("RowExportLog",
+            "导出诊断日志", "匯出診斷日誌", "Export diagnostics",
+            "Diagnoseprotokoll exportieren", "診断ログをエクスポート", "Экспорт журнала диагностики",
+            "Exportar diagnóstico", "Exportar diagnóstico");
+        Add("BtnExportLog",
+            "一键反馈至 GitHub", "一鍵回饋至 GitHub", "Report on GitHub",
+            "Feedback auf GitHub", "GitHub へ報告", "Отзыв на GitHub",
+            "Comentar en GitHub", "Comentar no GitHub");
+        Add("ExportLogCopied",
+            "日志已自动填入反馈页；如未填入，从剪贴板粘贴即可",
+            "日誌已自動填入回饋頁；如未填入，從剪貼簿貼上即可",
+            "Log prefilled on the issue page; if missing, paste from the clipboard",
+            "Protokoll auf der Issue-Seite vorausgefüllt; falls nicht, aus der Zwischenablage einfügen",
+            "ログを issue ページに自動挿入しました。表示されない場合はクリップボードから貼り付けてください",
+            "Журнал подставлен на страницу issue; если нет — вставьте из буфера обмена",
+            "Registro rellenado en la página del issue; si no, pégalo desde el portapapeles",
+            "Registro preenchido na página do issue; se não, cole da área de transferência");
+        Add("ExportLogTitle",
+            "WinTips {0} 反馈（自动附诊断日志）",
+            "WinTips {0} 回饋（自動附診斷日誌）",
+            "WinTips {0} report (diagnostics attached)",
+            "WinTips {0}-Feedback (mit Diagnoseprotokoll)",
+            "WinTips {0} 報告（診断ログ付き）",
+            "Отзыв о WinTips {0} (с журналом диагностики)",
+            "Comentario sobre WinTips {0} (con diagnóstico)",
+            "Comentário sobre WinTips {0} (com diagnóstico)");
+        Add("ExportLogMissing",
+            "还没有诊断日志（本次会话尚未触发任何提示）",
+            "尚無診斷日誌（本次工作階段尚未觸發任何提示）",
+            "No diagnostics log yet (nothing has been triggered this session)",
+            "Noch kein Diagnoseprotokoll (in dieser Sitzung wurde nichts ausgelöst)",
+            "診断ログはまだありません（このセッションでは何も発生していません）",
+            "Журнала диагностики пока нет (в этом сеансе ничего не срабатывало)",
+            "Aún no hay registro de diagnóstico (no se ha activado nada en esta sesión)",
+            "Ainda não há registro de diagnóstico (nada foi acionado nesta sessão)");
+        Add("ExportLogFailed",
+            "复制失败，日志文件在 %TEMP%\\wintips.log，可手动打开复制。",
+            "複製失敗，日誌檔在 %TEMP%\\wintips.log，可手動開啟複製。",
+            "Copy failed. The log is at %TEMP%\\wintips.log — open and copy it manually.",
+            "Kopieren fehlgeschlagen. Das Protokoll liegt unter %TEMP%\\wintips.log – bitte manuell öffnen und kopieren.",
+            "コピーできませんでした。ログは %TEMP%\\wintips.log にあります。手動で開いてコピーしてください。",
+            "Не удалось скопировать. Журнал: %TEMP%\\wintips.log — откройте и скопируйте его вручную.",
+            "No se pudo copiar. El registro está en %TEMP%\\wintips.log; ábrelo y cópialo manualmente.",
+            "Não foi possível copiar. O registro está em %TEMP%\\wintips.log — abra e copie manualmente.");
     }
 
     private static void Add(

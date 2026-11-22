@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Threading;
@@ -174,6 +175,16 @@ internal sealed class InputStateWatcher : IDisposable
     /// <summary>本次观察窗内"读数丢失"是否已经写过诊断日志，避免每拍刷屏。</summary>
     private bool _loggedReadLost;
 
+    private long _watchStart = -1;
+
+    private readonly List<string> _reads = new();
+
+    private string _lastReadSig = string.Empty;
+
+    private const int MaxRecordedReads = 10;
+
+    private bool _loggedSuppress;
+
     /// <summary>观察窗口内收到的 Shift 单独抬起次数。连按两次净变化为零，不报。</summary>
     private int _hintCount;
 
@@ -211,7 +222,11 @@ internal sealed class InputStateWatcher : IDisposable
         }
 
         _ticks = 0;
-        if (!_poll.IsEnabled) _poll.Start();
+        if (!_poll.IsEnabled)
+        {
+            _watchStart = EventTime.Now;
+            _poll.Start();
+        }
     }
 
     /// <summary>
@@ -257,8 +272,13 @@ internal sealed class InputStateWatcher : IDisposable
         else
         {
             Sampled?.Invoke(now);
+            RecordRead(now);
             _ticks = 0;
-            if (!_poll.IsEnabled) _poll.Start();
+            if (!_poll.IsEnabled)
+            {
+                _watchStart = EventTime.Now;
+                _poll.Start();
+            }
         }
 
         _hintAt = EventTime.Now;
@@ -297,6 +317,7 @@ internal sealed class InputStateWatcher : IDisposable
         if (!now.IsUsable) return;
 
         Sampled?.Invoke(now);
+        RecordRead(now);
 
         if (!_hasLast)
         {
@@ -351,6 +372,11 @@ internal sealed class InputStateWatcher : IDisposable
                         // Shift 手势不值得去顶——这类输入法切中英文可能根本不用
                         // Shift，报了反而错。但"证实"会过期：搜狗的同步是半可靠的，
                         // 连续静默超时后超时分支会把它降级，这里就不再压制。
+                        if (!_loggedSuppress)
+                        {
+                            _loggedSuppress = true;
+                            Diag.Write($"read trusted (moved before), suppress shift gesture, ime={ImeNames.Describe(now.Hkl)}");
+                        }
                         return true;
                     }
 
@@ -458,8 +484,29 @@ internal sealed class InputStateWatcher : IDisposable
         return true;
     }
 
+    private void RecordRead(InputState state)
+    {
+        if (!Diag.Enabled || !_poll.IsEnabled || _reads.Count >= MaxRecordedReads) return;
+
+        string sig = $"{state.ConversionMode}|{state.OpenStatus}|{state.Hkl.ToInt64():X}";
+        if (sig == _lastReadSig) return;
+        _lastReadSig = sig;
+
+        string at = _watchStart >= 0 ? $"+{EventTime.Now - _watchStart}ms" : "?";
+        _reads.Add($"{at} {state.Describe()} native={(state.IsNative ? "CN" : "EN")} ime={ImeNames.Describe(state.Hkl)}");
+    }
+
     private void StopWindow()
     {
+        if (_reads.Count > 0)
+        {
+            Diag.Write($"window reads ({_reads.Count}): {string.Join(" | ", _reads)}");
+            _reads.Clear();
+        }
+        _lastReadSig = string.Empty;
+        _loggedSuppress = false;
+        _watchStart = -1;
+
         _poll.Stop();
         _hasLast = false;
         _hintCount = 0;
@@ -712,6 +759,41 @@ internal sealed class ForegroundWatcher : IDisposable
             NativeMethods.UnhookWinEvent(_hook);
             _hook = IntPtr.Zero;
         }
+    }
+}
+
+internal static class ImeNames
+{
+    private static readonly Dictionary<IntPtr, string> Cache = new();
+
+    public static string Describe(IntPtr hkl)
+    {
+        if (hkl == IntPtr.Zero) return "(none)";
+        if (Cache.TryGetValue(hkl, out string? cached)) return cached;
+
+        string name = Resolve(hkl);
+
+        if (Cache.Count >= 32) Cache.Clear();
+        Cache[hkl] = name;
+        return name;
+    }
+
+    private static string Resolve(IntPtr hkl)
+    {
+        try
+        {
+            long value = hkl.ToInt64();
+            string key = $"{(value >> 16) & 0xFFFF:X4}{value & 0xFFFF:X4}";
+            using var layout = Microsoft.Win32.Registry.LocalMachine
+                .OpenSubKey($@"SYSTEM\CurrentControlSet\Control\KeyboardLayouts\{key}");
+            if (layout?.GetValue("Layout Text") as string is { Length: > 0 } text)
+                return text;
+        }
+        catch
+        {
+        }
+
+        return $"0x{hkl.ToInt64():X8}";
     }
 }
 

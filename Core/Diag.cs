@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using WinTips.Native;
@@ -59,6 +60,30 @@ internal static class Diag
         if (value.Equals("off", StringComparison.OrdinalIgnoreCase) || value == "0") return null;
 
         return value;
+    }
+
+    public static string ReadTail(int maxLines, Predicate<string>? keep = null)
+    {
+        try
+        {
+            if (Main is null || !File.Exists(Main)) return string.Empty;
+
+            var lines = new List<string>(maxLines);
+            using var stream = new FileStream(Main, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            while (reader.ReadLine() is { } line)
+            {
+                if (keep is not null && !keep(line)) continue;
+                lines.Add(line);
+                if (lines.Count > maxLines) lines.RemoveAt(0);
+            }
+
+            return string.Join("\n", lines);
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     private static void Append(string? path, string line)

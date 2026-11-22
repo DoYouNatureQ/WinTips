@@ -139,9 +139,11 @@ public partial class SettingsWindow : Window
         CustomPosDesc.Foreground = secondary;
         AnyCopyDesc.Foreground = secondary;
         LanguageDesc.Foreground = secondary;
+        LangWindowSwitchDesc.Foreground = secondary;
         FocusMonitorDesc.Foreground = secondary;
         FontDesc.Foreground = secondary;
         StartupHint.Foreground = secondary;
+        ExportLogHint.Foreground = secondary;
         FooterText.Foreground = secondary;
         VersionLink.Foreground = secondary;
         LblKeys.Foreground = secondary;
@@ -367,6 +369,13 @@ public partial class SettingsWindow : Window
         UpdateToggle.Checked += (_, _) => Save(v => v.CheckForUpdates = true);
         UpdateToggle.Unchecked += (_, _) => Save(v => v.CheckForUpdates = false);
 
+        ExportLogBtn.Click += ExportLog_Click;
+        _exportHintReset.Tick += (_, _) =>
+        {
+            _exportHintReset.Stop();
+            ExportLogHint.Visibility = Visibility.Collapsed;
+        };
+
         LangSystemToggle.Checked += (_, _) =>
         {
             if (_syncingLanguage) return;
@@ -413,6 +422,92 @@ public partial class SettingsWindow : Window
     private bool _syncingStartup;
 
     private StartupChangeResult _lastStartupResult = StartupChangeResult.Ok;
+
+    private readonly DispatcherTimer _exportHintReset = new() { Interval = TimeSpan.FromSeconds(6) };
+
+    /// <summary>不过滤时兜底读多少行：全量日志按行数截，防止极端情况下正文失控。</summary>
+    private const int ExportLogTailLines = 150;
+
+    /// <summary>滤掉前台流水账后保留的行数。</summary>
+    private const int ExportLogFilteredLines = 150;
+
+    /// <summary>
+    /// issue 新建页 body 参数的长度上限。GitHub 对 URL 里的 body 没有公开的硬限制，
+    /// 但过长会被部分浏览器或代理截断；超过上限时 URL 里只带截断版，完整正文在剪贴板
+    /// 里兜底，提示语会引导用户粘贴。
+    /// </summary>
+    private const int ExportLogMaxBodyChars = 4000;
+
+    /// <summary>
+    /// 一键反馈：读日志尾部 → 预填进 GitHub 新建 issue 页 → 剪贴板同步放一份兜底。
+    /// 前台切换流水账（fg 行）在日志里占九成，对排查毫无信息量，滤掉之后尾部通常只剩
+    /// 几 KB，装得进 URL——用户点开链接就看到日志，不用再手动粘贴。
+    /// </summary>
+    private void ExportLog_Click(object sender, RoutedEventArgs e)
+    {
+        Diag.Write("diagnostics exported from settings");
+
+        string tail = Diag.ReadTail(ExportLogFilteredLines, IsForegroundNoise);
+        if (tail.Length == 0) tail = Diag.ReadTail(ExportLogTailLines);
+
+        if (tail.Length == 0)
+        {
+            ShowExportHint("ExportLogMissing");
+            return;
+        }
+
+        var settings = AppSettings.Instance;
+        string header = $"WinTips {AppInfo.Version} · {Environment.OSVersion.VersionString}"
+            + $" · langTip={(settings.ShowLanguageTip ? "on" : "off")}"
+            + $" windowSwitchTip={(settings.ShowLanguageOnWindowSwitch ? "on" : "off")}"
+            + $" ime={ImeNames.Describe(InputState.Current().Hkl)}";
+        string body = header + "\n\n```\n" + tail + "\n```";
+
+        bool copied = false;
+        try
+        {
+            Clipboard.SetText(body);
+            copied = true;
+        }
+        catch
+        {
+            // 剪贴板被其他进程占着是常态小概率事件；URL 预填不受影响，提示语兜底。
+        }
+
+        string urlBody = body.Length <= ExportLogMaxBodyChars ? body : body[..ExportLogMaxBodyChars];
+
+        // 标题也预填：用户剩的唯一动作就是点 Submit。标题是通用文案，具体问题
+        // （哪个输入法、什么现象）由提交者在标题或正文里补一句。
+        string title = Loc.Format("ExportLogTitle", AppInfo.Version);
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/DoYouNatureQ/WinTips/issues/new?title="
+                           + Uri.EscapeDataString(title)
+                           + "&body=" + Uri.EscapeDataString(urlBody),
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // 打不开浏览器（无默认浏览器、策略限制）时剪贴板里还有完整日志，提示已给出。
+        }
+
+        ShowExportHint(copied ? "ExportLogCopied" : "ExportLogFailed");
+    }
+
+    /// <summary>日志行格式为 "HH:mm:ss.fff 消息"，前台切换流水账在第 13 列起以 "fg " 开头。</summary>
+    private static bool IsForegroundNoise(string line) =>
+        line.Length > 16 && line[12] == ' ' && line.AsSpan(13).StartsWith("fg ");
+
+    private void ShowExportHint(string key)
+    {
+        ExportLogHint.Text = Loc.T(key);
+        ExportLogHint.Visibility = Visibility.Visible;
+        _exportHintReset.Stop();
+        _exportHintReset.Start();
+    }
 
     private void ApplyStartup(bool enable)
     {

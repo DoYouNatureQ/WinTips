@@ -247,7 +247,12 @@
                                     <TextBlock Text="{loc:Tr RowCheckUpdates}" FontSize="14" VerticalAlignment="Center"/>
                                     <ToggleButton x:Name="UpdateToggle" Style="{StaticResource Win11Switch}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                 </Grid>
-                                <TextBlock x:Name="UpdateDesc" Text="{loc:Tr RowCheckUpdatesDesc}" FontSize="11.5" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                <Grid Margin="0,10,0,0">
+                                    <TextBlock Text="{loc:Tr RowExportLog}" FontSize="14" VerticalAlignment="Center"/>
+                                    <Button x:Name="ExportLogBtn" Content="{loc:Tr BtnExportLog}" Style="{StaticResource Win11Button}"
+                                            HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                </Grid>
+                                <TextBlock x:Name="ExportLogHint" FontSize="11.5" Margin="0,3,0,0" TextWrapping="Wrap" Visibility="Collapsed"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
