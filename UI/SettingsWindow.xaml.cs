@@ -150,7 +150,7 @@ public partial class SettingsWindow : Window
         LblBehavior.Foreground = secondary;
 
         var divider = new SolidColorBrush(ThemeHelper.Divider(dark));
-        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK8b, SepK8c, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6, SepB7 })
+        foreach (var sep in new[] { SepK1, SepK2, SepK3, SepK4, SepK5, SepK6, SepK7, SepK8, SepK8b, SepK8c, SepK9, SepB1, SepB2, SepB2b, SepB3, SepB4, SepB5, SepB6, SepB7, SepB8 })
             sep.Background = divider;
     }
 
